@@ -105,6 +105,9 @@ available name; the theme currently selected is marked `(current)`.
 `terminal` uses the terminal's own ANSI colors and background. Theme names are
 case-insensitive, and an unknown name is an error that lists the valid ones.
 
+Press `T` while Grafatui runs to preview and switch themes live; see
+[Theme Picker](keyboard-and-mouse.md#theme-picker).
+
 Every theme colors the whole interface: panel chrome, popups, axes, grid,
 cursor, gauges, heatmaps, status messages, and SVG/PNG exports.
 

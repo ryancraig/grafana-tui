@@ -282,6 +282,14 @@ pub(crate) enum AppMode {
 }
 
 /// Global application state.
+/// The theme picker previews the highlighted theme live and restores
+/// `original` when cancelled.
+#[derive(Debug, Clone)]
+pub(crate) struct ThemePicker {
+    pub(crate) selected: usize,
+    pub(crate) original: Theme,
+}
+
 #[derive(Debug)]
 pub(crate) struct AppState {
     /// Prometheus client for making requests.
@@ -345,6 +353,10 @@ pub(crate) struct AppState {
     pub(crate) selected_item: Option<DashboardItemId>,
     /// UI Theme.
     pub(crate) theme: Theme,
+    /// Every selectable theme, in picker order.
+    pub(crate) themes: Vec<Theme>,
+    /// Open theme picker, if any.
+    pub(crate) theme_picker: Option<ThemePicker>,
     /// Time offset from "now" for panning backward in time (0 = live mode).
     pub(crate) time_offset: Duration,
     /// Current application mode.
@@ -431,6 +443,8 @@ impl AppState {
             layout,
             selected_item,
             theme,
+            themes: crate::theme::catalog(&[]),
+            theme_picker: None,
             time_offset: Duration::from_secs(0),
             mode: AppMode::Normal,
             search_query: String::new(),
@@ -443,6 +457,40 @@ impl AppState {
             export,
             recording: None,
             export_status: None,
+        }
+    }
+
+    /// Opens the theme picker on the current theme.
+    pub(crate) fn open_theme_picker(&mut self) {
+        let selected = self
+            .themes
+            .iter()
+            .position(|theme| theme.name == self.theme.name)
+            .unwrap_or_default();
+        self.theme_picker = Some(ThemePicker {
+            selected,
+            original: self.theme.clone(),
+        });
+    }
+
+    /// Moves the picker selection, clamped to the list, and previews it.
+    pub(crate) fn move_theme_picker(&mut self, delta: isize) {
+        let Some(picker) = self.theme_picker.as_mut() else {
+            return;
+        };
+        let last = self.themes.len().saturating_sub(1);
+        picker.selected = picker.selected.saturating_add_signed(delta).min(last);
+        if let Some(theme) = self.themes.get(picker.selected) {
+            self.theme = theme.clone();
+        }
+    }
+
+    /// Closes the picker, keeping the previewed theme or restoring the original.
+    pub(crate) fn close_theme_picker(&mut self, keep: bool) {
+        if let Some(picker) = self.theme_picker.take()
+            && !keep
+        {
+            self.theme = picker.original;
         }
     }
 
