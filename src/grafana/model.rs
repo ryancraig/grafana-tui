@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 use super::ImportDiagnostic;
+pub(super) use crate::dashboard::{Repeat, RepeatDirection};
 
 #[derive(Debug, Default)]
 pub(super) struct Dashboard {
@@ -40,7 +41,7 @@ pub(super) struct Tabs {
 #[derive(Debug)]
 pub(super) struct Tab {
     pub(super) title: String,
-    #[allow(dead_code)]
+    pub(super) repeat: Option<Repeat>,
     pub(super) source_path: String,
     pub(super) children: Vec<LayoutNode>,
 }
@@ -48,9 +49,9 @@ pub(super) struct Tab {
 #[derive(Debug)]
 pub(super) struct Row {
     pub(super) title: String,
+    pub(super) repeat: Option<Repeat>,
     pub(super) collapsed: bool,
     pub(super) hidden_header: bool,
-    #[allow(dead_code)]
     pub(super) source_path: String,
     pub(super) children: Vec<LayoutNode>,
 }
@@ -63,6 +64,11 @@ pub(super) struct Variable {
     pub(super) query: Option<String>,
     pub(super) regex: Option<String>,
     pub(super) all_value: Option<String>,
+    /// Multi-value or include-all variables are regex-escaped when interpolated.
+    pub(super) multi: bool,
+    pub(super) include_all: bool,
+    /// Statically known option values, which `All` selects.
+    pub(super) options: Vec<String>,
     #[allow(dead_code)]
     pub(super) source_path: String,
     pub(super) query_path: Option<String>,
@@ -78,6 +84,7 @@ pub(super) struct VariableCurrent {
 pub(super) struct Panel {
     pub(super) kind: String,
     pub(super) title: String,
+    pub(super) repeat: Option<Repeat>,
     pub(super) source_path: String,
     pub(super) targets: Vec<Target>,
     pub(super) count_as_skipped_if_empty: bool,

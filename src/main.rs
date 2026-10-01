@@ -136,22 +136,23 @@ async fn main() -> Result<()> {
         .filter(|color| *color != ratatui::style::Color::Reset)
         .unwrap_or(ratatui::style::Color::DarkGray);
 
-    let mut vars: HashMap<String, String> = HashMap::new();
+    let mut variables = VariableState::default();
     let mut query_vars = Vec::new();
+    let mut template = None;
     let mut dashboard_refresh_rate_ms = None;
 
     let prom = prom::PromClient::new(prometheus_url);
 
     // Build panels from Grafana import or simple queries.
-    let (title, panels, skipped_panels, imported_layout) = if let Some(path) = dashboard_path {
+    let (title, panels, skipped_panels) = if let Some(path) = dashboard_path {
         let d = grafana::load_grafana_dashboard(&path)?;
         let import_context = build_import_context(&d, config.vars.clone(), &args.var);
         print_import_diagnostics(&import_context.diagnostics);
         dashboard_refresh_rate_ms = d.refresh_rate_ms;
-        vars = import_context.vars;
+        variables = import_context.variables;
         query_vars = import_context.query_vars;
 
-        let ps = d
+        let ps: Vec<_> = d
             .queries
             .into_iter()
             .map(|q| app::PanelState {
@@ -179,20 +180,11 @@ async fn main() -> Result<()> {
                 options: q.options,
             })
             .collect();
-        (
-            format!("{} (imported)", d.title),
-            ps,
-            d.skipped_panels,
-            Some(d.layout),
-        )
+        template = Some(app::DashboardTemplate::new(d.layout, d.repeats, &ps));
+        (format!("{} (imported)", d.title), ps, d.skipped_panels)
     } else {
-        merge_user_vars(&mut vars, config.vars.clone(), &args.var);
-        (
-            "grafatui".to_string(),
-            app::default_queries(args.query),
-            0,
-            None,
-        )
+        merge_user_vars(&mut variables, config.vars.clone(), &args.var);
+        ("grafatui".to_string(), app::default_queries(args.query), 0)
     };
 
     // Determine theme
@@ -231,12 +223,17 @@ async fn main() -> Result<()> {
         }
         .validate()?,
     );
-    apply_imported_layout(&mut state, imported_layout);
     state.annotations = annotations::AnnotationState::from_source(annotation_source);
     state.autogrid_enabled = autogrid_enabled;
     state.autogrid_color = autogrid_color;
-    state.vars = vars; // <— pass variables into the app
+    state.vars = variables.vars;
+    state.var_values = variables.var_values;
+    state.regex_vars = variables.regex_vars;
     state.query_vars = query_vars;
+    // Repeats expand from the variables, so the template is applied after them.
+    if let Some(template) = template {
+        state.apply_template(template);
+    }
     state.refresh().await?;
 
     // Terminal setup
@@ -269,15 +266,6 @@ async fn main() -> Result<()> {
     terminal.show_cursor()?;
 
     res
-}
-
-fn apply_imported_layout(
-    state: &mut app::AppState,
-    imported_layout: Option<dashboard::DashboardLayout>,
-) {
-    if let Some(layout) = imported_layout {
-        state.apply_layout(layout);
-    }
 }
 
 fn load_startup_config(path: Option<std::path::PathBuf>) -> Result<Config> {
@@ -358,9 +346,18 @@ fn validate_annotation_command(program: &str, timeout: Duration) -> Result<()> {
 
 #[derive(Debug)]
 struct ImportContext {
-    vars: HashMap<String, String>,
+    variables: VariableState,
     query_vars: Vec<grafana::TemplateQueryVar>,
     diagnostics: Vec<grafana::ImportDiagnostic>,
+}
+
+/// Dashboard variables: query-formatted values, raw selections, and which
+/// variables are regex-formatted.
+#[derive(Debug, Default)]
+struct VariableState {
+    vars: HashMap<String, String>,
+    var_values: HashMap<String, Vec<String>>,
+    regex_vars: HashSet<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -388,8 +385,12 @@ fn build_import_context(
     config_vars: Option<HashMap<String, String>>,
     cli_vars: &[(String, String)],
 ) -> ImportContext {
-    let mut vars = dashboard.vars.clone();
-    let pinned_vars = merge_user_vars(&mut vars, config_vars, cli_vars);
+    let mut variables = VariableState {
+        vars: dashboard.vars.clone(),
+        var_values: dashboard.var_values.clone(),
+        regex_vars: dashboard.regex_vars.clone(),
+    };
+    let pinned_vars = merge_user_vars(&mut variables, config_vars, cli_vars);
 
     let query_vars = dashboard
         .query_vars
@@ -398,31 +399,47 @@ fn build_import_context(
         .cloned()
         .collect();
     let mut diagnostics = dashboard.diagnostics.clone();
-    diagnostics.extend(grafana::variable_diagnostics(dashboard, &vars));
+    diagnostics.extend(grafana::variable_diagnostics(dashboard, &variables.vars));
 
     ImportContext {
-        vars,
+        variables,
         query_vars,
         diagnostics,
     }
 }
 
+/// Applies config and `--var` overrides, returning the variables they pin.
+///
+/// A single user value is used verbatim, so it may be a regex. Repeating
+/// `--var` for one name selects several values, which are regex-escaped and
+/// joined like a Grafana multi-value selection and iterated by repeats.
 fn merge_user_vars(
-    vars: &mut HashMap<String, String>,
+    variables: &mut VariableState,
     config_vars: Option<HashMap<String, String>>,
     cli_vars: &[(String, String)],
 ) -> HashSet<String> {
-    let mut pinned_vars = HashSet::new();
-    if let Some(config_vars) = config_vars {
-        for (k, v) in config_vars {
-            pinned_vars.insert(k.clone());
-            vars.insert(k, v);
+    let mut selections: Vec<(String, Vec<String>)> = config_vars
+        .into_iter()
+        .flatten()
+        .map(|(name, value)| (name, vec![value]))
+        .collect();
+    let mut cli_selections: Vec<(String, Vec<String>)> = Vec::new();
+    for (name, value) in cli_vars {
+        match cli_selections.iter_mut().find(|(selected, _)| selected == name) {
+            Some((_, values)) => values.push(value.clone()),
+            None => cli_selections.push((name.clone(), vec![value.clone()])),
         }
     }
+    selections.extend(cli_selections);
 
-    for (k, v) in cli_vars {
-        pinned_vars.insert(k.clone());
-        vars.insert(k.clone(), v.clone());
+    let mut pinned_vars = HashSet::new();
+    for (name, values) in selections {
+        pinned_vars.insert(name.clone());
+        variables.vars.insert(
+            name.clone(),
+            app::format_prometheus_values(&values, values.len() > 1),
+        );
+        variables.var_values.insert(name, values);
     }
 
     pinned_vars
@@ -516,7 +533,12 @@ mod tests {
             vec![DashboardLayoutItem::Panel(0)],
         ))]);
 
-        apply_imported_layout(&mut state, Some(layout));
+        let template = app::DashboardTemplate::new(
+            layout,
+            crate::dashboard::Repeats::default(),
+            &state.panels,
+        );
+        state.apply_template(template);
 
         assert_eq!(state.visible_panel_indices(), Vec::<usize>::new());
     }
@@ -707,21 +729,53 @@ mod tests {
 
     #[test]
     fn test_merge_user_vars_applies_config_and_cli_overrides() {
-        let mut vars = HashMap::new();
-        vars.insert("job".to_string(), "dashboard".to_string());
+        let mut variables = VariableState::default();
+        variables
+            .vars
+            .insert("job".to_string(), "dashboard".to_string());
         let mut config_vars = HashMap::new();
         config_vars.insert("job".to_string(), "config".to_string());
         config_vars.insert("instance".to_string(), "config-instance".to_string());
 
         let pinned = merge_user_vars(
-            &mut vars,
+            &mut variables,
             Some(config_vars),
             &[("job".to_string(), "cli".to_string())],
         );
 
-        assert_eq!(vars.get("job"), Some(&"cli".to_string()));
-        assert_eq!(vars.get("instance"), Some(&"config-instance".to_string()));
+        assert_eq!(variables.vars.get("job"), Some(&"cli".to_string()));
+        assert_eq!(
+            variables.vars.get("instance"),
+            Some(&"config-instance".to_string())
+        );
+        assert_eq!(variables.var_values.get("job"), Some(&vec!["cli".to_string()]));
         assert!(pinned.contains("job"));
         assert!(pinned.contains("instance"));
+    }
+
+    #[test]
+    fn repeated_cli_vars_select_several_values() {
+        let mut variables = VariableState::default();
+
+        merge_user_vars(
+            &mut variables,
+            None,
+            &[
+                ("job".to_string(), "api.v1".to_string()),
+                ("job".to_string(), "web".to_string()),
+                ("re".to_string(), ".*".to_string()),
+            ],
+        );
+
+        assert_eq!(
+            variables.vars.get("job").map(String::as_str),
+            Some("(api\\\\.v1|web)")
+        );
+        assert_eq!(
+            variables.var_values.get("job"),
+            Some(&vec!["api.v1".to_string(), "web".to_string()])
+        );
+        // A single value stays verbatim, so it can still be a regex.
+        assert_eq!(variables.vars.get("re").map(String::as_str), Some(".*"));
     }
 }

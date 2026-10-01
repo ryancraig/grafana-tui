@@ -18,9 +18,12 @@ mod data;
 mod event_loop;
 mod input;
 mod state;
+mod template;
 mod variables;
 
 pub(crate) use data::{default_queries, parse_duration};
+pub(crate) use template::DashboardTemplate;
+pub(crate) use variables::{format_prometheus_values, parse_custom_variable_values};
 pub(crate) use event_loop::run_app;
 #[allow(unused_imports)]
 pub(crate) use state::{

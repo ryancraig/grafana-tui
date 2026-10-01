@@ -1,0 +1,244 @@
+apiVersion: dashboard.grafana.app/v2
+kind: Dashboard
+metadata:
+  name: grafana-v2-repeats
+spec:
+  annotations: null
+  cursorSync: ""
+  elements:
+    requests:
+      kind: Panel
+      spec:
+        data:
+          kind: QueryGroup
+          spec:
+            queries:
+            - kind: PanelQuery
+              spec:
+                hidden: false
+                query:
+                  group: prometheus
+                  kind: DataQuery
+                  spec:
+                    expr: sum by (handler) (rate(prometheus_http_requests_total{handler=~"$handler"}[5m]))
+                    legendFormat: '{{handler}}'
+                  version: v0
+                refId: A
+            queryOptions: {}
+            transformations: null
+        id: 1
+        links: null
+        title: Requests $handler
+        vizConfig:
+          group: timeseries
+          kind: VizConfig
+          spec:
+            fieldConfig:
+              defaults:
+                unit: reqps
+              overrides: null
+            options: null
+          version: ""
+    samples:
+      kind: Panel
+      spec:
+        data:
+          kind: QueryGroup
+          spec:
+            queries:
+            - kind: PanelQuery
+              spec:
+                hidden: false
+                query:
+                  group: prometheus
+                  kind: DataQuery
+                  spec:
+                    expr: scrape_samples_scraped{job=~"$job"}
+                  version: v0
+                refId: A
+            queryOptions: {}
+            transformations: null
+        id: 4
+        links: null
+        title: Samples scraped
+        vizConfig:
+          group: stat
+          kind: VizConfig
+          spec:
+            fieldConfig:
+              defaults: {}
+              overrides: null
+            options: null
+          version: ""
+    scrape:
+      kind: Panel
+      spec:
+        data:
+          kind: QueryGroup
+          spec:
+            queries:
+            - kind: PanelQuery
+              spec:
+                hidden: false
+                query:
+                  group: prometheus
+                  kind: DataQuery
+                  spec:
+                    expr: scrape_duration_seconds{job=~"$job"}
+                    legendFormat: '{{instance}}'
+                  version: v0
+                refId: A
+            queryOptions: {}
+            transformations: null
+        id: 3
+        links: null
+        title: Scrape duration
+        vizConfig:
+          group: timeseries
+          kind: VizConfig
+          spec:
+            fieldConfig:
+              defaults:
+                unit: s
+              overrides: null
+            options: null
+          version: ""
+    targets:
+      kind: Panel
+      spec:
+        data:
+          kind: QueryGroup
+          spec:
+            queries:
+            - kind: PanelQuery
+              spec:
+                hidden: false
+                query:
+                  group: prometheus
+                  kind: DataQuery
+                  spec:
+                    expr: sum(up)
+                  version: v0
+                refId: A
+            queryOptions: {}
+            transformations: null
+        id: 2
+        links: null
+        title: Targets up
+        vizConfig:
+          group: stat
+          kind: VizConfig
+          spec:
+            fieldConfig:
+              defaults: {}
+              overrides: null
+            options: null
+          version: ""
+  layout:
+    kind: RowsLayout
+    spec:
+      rows:
+      - kind: RowsLayoutRow
+        spec:
+          layout:
+            kind: GridLayout
+            spec:
+              items:
+              - kind: GridLayoutItem
+                spec:
+                  element:
+                    kind: ElementReference
+                    name: requests
+                  height: 8
+                  repeat:
+                    direction: h
+                    maxPerRow: 2
+                    mode: variable
+                    value: handler
+                  width: 12
+                  x: 0
+                  "y": 0
+              - kind: GridLayoutItem
+                spec:
+                  element:
+                    kind: ElementReference
+                    name: targets
+                  height: 4
+                  width: 24
+                  x: 0
+                  "y": 8
+          title: HTTP handlers
+      - kind: RowsLayoutRow
+        spec:
+          layout:
+            kind: AutoGridLayout
+            spec:
+              columnWidthMode: standard
+              items:
+              - kind: AutoGridLayoutItem
+                spec:
+                  element:
+                    kind: ElementReference
+                    name: scrape
+              - kind: AutoGridLayoutItem
+                spec:
+                  element:
+                    kind: ElementReference
+                    name: samples
+              maxColumnCount: 2
+              rowHeightMode: short
+          repeat:
+            mode: variable
+            value: job
+          title: Job $job
+  links: null
+  preload: false
+  tags: null
+  timeSettings:
+    autoRefresh: 5s
+    autoRefreshIntervals: null
+    fiscalYearStartMonth: 0
+    from: now-1h
+    hideTimepicker: false
+    to: now
+  title: Grafana V2 Repeats
+  variables:
+  - kind: CustomVariable
+    spec:
+      allowCustomValue: false
+      current:
+        text:
+        - All
+        value:
+        - $__all
+      hide: ""
+      includeAll: true
+      multi: true
+      name: handler
+      options: null
+      query: /api/v1/query,/api/v1/query_range,/api/v1/labels,/metrics
+      skipUrlSync: false
+  - kind: QueryVariable
+    spec:
+      allowCustomValue: false
+      current:
+        text:
+        - All
+        value:
+        - $__all
+      definition: label_values(up, job)
+      hide: ""
+      includeAll: true
+      multi: true
+      name: job
+      options: null
+      query:
+        group: prometheus
+        kind: DataQuery
+        spec:
+          query: label_values(up, job)
+        version: v0
+      refresh: onDashboardLoad
+      regex: ""
+      skipUrlSync: false
+      sort: ""

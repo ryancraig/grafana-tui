@@ -48,6 +48,12 @@ docker-compose down -v
   cargo run -- --grafana-json examples/dashboards/grafana_v2_autogrid.json --prometheus-url http://localhost:19090
   ```
 
+- `examples/dashboards/grafana_v2_repeats.yaml`: Grafana V2 resource in YAML, exported by Grafana 13, that repeats a panel over an `All` selection of HTTP handlers and a row over a dynamically resolved `job` query variable. Run it with:
+
+  ```bash
+  cargo run -- --grafana-json examples/dashboards/grafana_v2_repeats.yaml --prometheus-url http://localhost:19090
+  ```
+
 - `examples/dashboards/grafana_v2_tabs.json`: exact Grafana V2 resource with tab, row, and empty-content behavior. Focus a tab bar and use Left/Right to switch or Enter/Space to enter its content. Run it with:
 
   ```bash

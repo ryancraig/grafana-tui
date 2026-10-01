@@ -22,6 +22,7 @@ type JsonObject = serde_json::Map<String, Value>;
 struct ResolvedGridItem {
     element_name: String,
     position: model::GridPos,
+    repeat: Option<model::Repeat>,
 }
 
 #[derive(Deserialize)]
@@ -133,20 +134,17 @@ fn parse_auto_grid_layout(
         require_expected_kind(item, &item_path, "AutoGridLayoutItem")?;
         let item_spec_path = format!("{item_path}.spec");
         let item_spec = require_object_from(item, "spec", &item_spec_path)?;
-        for (field, description) in [
-            ("repeat", "repeated auto grid item"),
-            ("conditionalRendering", "conditional auto grid item rendering"),
-        ] {
-            ensure!(
-                !item_spec.contains_key(field),
-                "unsupported Grafana V2 {description} at {item_spec_path}.{field}"
-            );
-        }
+        ensure!(
+            !item_spec.contains_key("conditionalRendering"),
+            "unsupported Grafana V2 conditional auto grid item rendering at {item_spec_path}.conditionalRendering"
+        );
+        let repeat = parse_repeat(item_spec, &item_spec_path)?;
         let (element_name, element) =
             resolve_element_reference(item_spec, elements, &item_spec_path)?;
         let element_path = format!("spec.elements[{element_name:?}]");
         // Auto grid items are positioned when projected, so the panel has no grid.
-        if let Some(panel) = parse_panel(element, &element_path, None, diagnostics)? {
+        if let Some(mut panel) = parse_panel(element, &element_path, None, diagnostics)? {
+            panel.repeat = repeat;
             panels.push(panel);
         }
     }
@@ -202,15 +200,11 @@ fn parse_tabs_layout(
         let tab_spec_path = format!("{tab_path}.spec");
         let tab_spec = require_object_from(tab, "spec", &tab_spec_path)?;
         let title = optional_string_from(tab_spec, "title", &tab_spec_path)?.unwrap_or_default();
-        for (field, description) in [
-            ("repeat", "repeated tab"),
-            ("conditionalRendering", "conditional tab rendering"),
-        ] {
-            ensure!(
-                !tab_spec.contains_key(field),
-                "unsupported Grafana V2 {description} at {tab_spec_path}.{field}"
-            );
-        }
+        ensure!(
+            !tab_spec.contains_key("conditionalRendering"),
+            "unsupported Grafana V2 conditional tab rendering at {tab_spec_path}.conditionalRendering"
+        );
+        let repeat = parse_repeat(tab_spec, &tab_spec_path)?;
         let variables_path = format!("{tab_spec_path}.variables");
         ensure!(
             optional_array_from(tab_spec, "variables", &variables_path)?.is_empty(),
@@ -221,6 +215,7 @@ fn parse_tabs_layout(
         let children = parse_layout(child_layout, elements, &child_path, diagnostics)?;
         normalized.push(model::Tab {
             title,
+            repeat,
             source_path: tab_path,
             children,
         });
@@ -246,9 +241,10 @@ fn parse_grid_layout(
         let grid = parse_grid_item(item, &item_path)?;
         let element_path = format!("spec.elements[{:?}]", grid.element_name);
         let element = resolve_element(elements, &grid.element_name, &item_path)?;
-        if let Some(panel) =
+        if let Some(mut panel) =
             parse_panel(element, &element_path, Some(grid.position), diagnostics)?
         {
+            panel.repeat = grid.repeat;
             nodes.push(model::LayoutNode::Panel(panel));
         }
     }
@@ -278,15 +274,11 @@ fn parse_rows_layout(
         let collapsed = optional_bool_from(row_spec, "collapse", &row_spec_path)?;
         let hidden_header = optional_bool_from(row_spec, "hideHeader", &row_spec_path)?;
 
-        for (field, description) in [
-            ("repeat", "repeated row"),
-            ("conditionalRendering", "conditional row rendering"),
-        ] {
-            ensure!(
-                !row_spec.contains_key(field),
-                "unsupported Grafana V2 {description} at {row_spec_path}.{field}"
-            );
-        }
+        ensure!(
+            !row_spec.contains_key("conditionalRendering"),
+            "unsupported Grafana V2 conditional row rendering at {row_spec_path}.conditionalRendering"
+        );
+        let repeat = parse_repeat(row_spec, &row_spec_path)?;
 
         let variables_path = format!("{row_spec_path}.variables");
         ensure!(
@@ -303,6 +295,7 @@ fn parse_rows_layout(
         let children = parse_layout(child_layout, elements, &child_path, diagnostics)?;
         nodes.push(model::LayoutNode::Row(model::Row {
             title,
+            repeat,
             collapsed,
             hidden_header,
             source_path: row_path,
@@ -329,7 +322,9 @@ fn normalize_variables(
         let variable = match kind {
             "QueryVariable" => normalize_query_variable(spec, index, diagnostics)?,
             "TextVariable" | "ConstantVariable" | "DatasourceVariable" | "IntervalVariable"
-            | "CustomVariable" | "GroupByVariable" => Some(normalize_option_variable(spec, index)?),
+            | "CustomVariable" | "GroupByVariable" => {
+                Some(normalize_option_variable(kind, spec, index)?)
+            }
             "SwitchVariable" => Some(normalize_switch_variable(spec, index)?),
             "AdhocVariable" => {
                 diagnostics.push(super::ImportDiagnostic::new(
@@ -407,13 +402,28 @@ fn normalize_query_variable(
         query: query.as_ref().map(|(query, _)| query.clone()),
         regex: optional_string(spec, "regex"),
         all_value: optional_string(spec, "allValue"),
+        multi: optional_bool_from(spec, "multi", &source_path)?,
+        include_all: optional_bool_from(spec, "includeAll", &source_path)?,
+        options: option_values(spec),
         source_path,
         query_path: query.map(|(_, path)| path),
     }))
 }
 
-fn normalize_option_variable(spec: &JsonObject, index: usize) -> Result<model::Variable> {
+fn normalize_option_variable(
+    kind: &str,
+    spec: &JsonObject,
+    index: usize,
+) -> Result<model::Variable> {
     let source_path = format!("spec.variables[{index}]");
+    let mut options = option_values(spec);
+    if options.is_empty()
+        && matches!(kind, "CustomVariable" | "IntervalVariable")
+        && let Some(query) = spec.get("query").and_then(Value::as_str)
+    {
+        let json = spec.get("valuesFormat").and_then(Value::as_str) == Some("json");
+        options = crate::app::parse_custom_variable_values(query, json);
+    }
     Ok(model::Variable {
         name: require_string_from(spec, "name", &format!("{source_path}.spec.name"))?.to_string(),
         kind: None,
@@ -421,9 +431,27 @@ fn normalize_option_variable(spec: &JsonObject, index: usize) -> Result<model::V
         query: None,
         regex: None,
         all_value: optional_string(spec, "allValue"),
+        multi: optional_bool_from(spec, "multi", &source_path)?,
+        include_all: optional_bool_from(spec, "includeAll", &source_path)?,
+        options,
         source_path,
         query_path: None,
     })
+}
+
+/// Values of a variable's saved `options`, excluding Grafana's `$__all` entry.
+fn option_values(spec: &JsonObject) -> Vec<String> {
+    spec.get("options")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|option| match option.get("value")? {
+            Value::String(value) => Some(value.clone()),
+            Value::Number(value) => Some(value.to_string()),
+            _ => None,
+        })
+        .filter(|value| value != "$__all")
+        .collect()
 }
 
 fn normalize_switch_variable(spec: &JsonObject, index: usize) -> Result<model::Variable> {
@@ -440,6 +468,9 @@ fn normalize_switch_variable(spec: &JsonObject, index: usize) -> Result<model::V
         query: None,
         regex: None,
         all_value: None,
+        multi: false,
+        include_all: false,
+        options: Vec::new(),
         source_path,
         query_path: None,
     })
@@ -547,11 +578,7 @@ fn parse_grid_item(value: &Value, path: &str) -> Result<ResolvedGridItem> {
     );
     let spec_path = format!("{path}.spec");
     let spec = require_object_from(item, "spec", &spec_path)?;
-    let repeat_path = format!("{spec_path}.repeat");
-    ensure!(
-        !spec.contains_key("repeat"),
-        "unsupported Grafana V2 repeated grid item at {repeat_path}"
-    );
+    let repeat = parse_repeat(spec, &spec_path)?;
     let x = require_i32_from(spec, "x", &format!("{spec_path}.x"))?;
     let y = require_i32_from(spec, "y", &format!("{spec_path}.y"))?;
     let w = require_i32_from(spec, "width", &format!("{spec_path}.width"))?;
@@ -561,7 +588,46 @@ fn parse_grid_item(value: &Value, path: &str) -> Result<ResolvedGridItem> {
     Ok(ResolvedGridItem {
         element_name,
         position: model::GridPos { x, y, w, h },
+        repeat,
     })
+}
+
+/// Reads a `repeat` option of a grid item, auto grid item, row, or tab spec.
+///
+/// Every V2 repeat is `{mode: "variable", value}`; grid items may also set
+/// `direction` (`h` or `v`) and `maxPerRow`. An empty `value` means no repeat.
+fn parse_repeat(spec: &JsonObject, spec_path: &str) -> Result<Option<model::Repeat>> {
+    let repeat_path = format!("{spec_path}.repeat");
+    let Some(repeat) = optional_object_from(spec, "repeat", &repeat_path)? else {
+        return Ok(None);
+    };
+    if let Some(mode) = optional_string_from(repeat, "mode", &repeat_path)? {
+        ensure!(
+            mode == "variable",
+            "unsupported Grafana V2 repeat mode `{mode}` at {repeat_path}.mode: expected `variable`"
+        );
+    }
+    let Some(variable) = optional_string_from(repeat, "value", &repeat_path)?
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+    let direction = match optional_string_from(repeat, "direction", &repeat_path)?.as_deref() {
+        Some("v") => model::RepeatDirection::Vertical,
+        Some("h") | None => model::RepeatDirection::Horizontal,
+        Some(other) => anyhow::bail!(
+            "invalid Grafana V2 repeat direction `{other}` at {repeat_path}.direction: expected `h` or `v`"
+        ),
+    };
+    let max_per_row = optional_number_from(repeat, "maxPerRow", &repeat_path)?
+        .filter(|count| *count >= 1.0)
+        .map(|count| count.round().min(f64::from(u16::MAX)) as u16);
+    Ok(Some(model::Repeat {
+        variable,
+        direction,
+        max_per_row,
+    }))
 }
 
 /// Reads the `element` reference of a grid or auto grid item spec.
@@ -714,6 +780,7 @@ fn parse_panel(
     };
 
     Ok(Some(model::Panel {
+        repeat: None,
         kind: raw.spec.viz_config.group,
         title: raw.spec.title,
         source_path: path.to_string(),

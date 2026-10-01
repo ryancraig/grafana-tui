@@ -1,9 +1,15 @@
+use std::collections::HashMap;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct RowId(usize);
 
 impl RowId {
     pub(crate) const fn new(value: usize) -> Self {
         Self(value)
+    }
+
+    pub(crate) const fn value(self) -> usize {
+        self.0
     }
 }
 
@@ -13,6 +19,56 @@ pub(crate) struct TabGroupId(usize);
 impl TabGroupId {
     pub(crate) const fn new(value: usize) -> Self {
         Self(value)
+    }
+
+    pub(crate) const fn value(self) -> usize {
+        self.0
+    }
+}
+
+/// Direction in which a repeated panel's copies are laid out.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum RepeatDirection {
+    /// Side by side across the full grid width, wrapping after `max_per_row`.
+    #[default]
+    Horizontal,
+    /// Stacked below each other at the source panel's width.
+    Vertical,
+}
+
+/// Repeats an item once per selected value of a dashboard variable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Repeat {
+    pub(crate) variable: String,
+    pub(crate) direction: RepeatDirection,
+    /// Copies per row for horizontal panel repeats; Grafana defaults to 4.
+    pub(crate) max_per_row: Option<u16>,
+}
+
+impl Repeat {
+    #[cfg(test)]
+    pub(crate) fn new(variable: impl Into<String>) -> Self {
+        Self {
+            variable: variable.into(),
+            direction: RepeatDirection::default(),
+            max_per_row: None,
+        }
+    }
+}
+
+/// Repeat settings of an imported layout, keyed by the ids it was imported with.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Repeats {
+    pub(crate) panels: HashMap<usize, Repeat>,
+    pub(crate) rows: HashMap<RowId, Repeat>,
+    /// Keyed by tab group and the tab's position within it.
+    pub(crate) tabs: HashMap<(TabGroupId, usize), Repeat>,
+}
+
+impl Repeats {
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.panels.is_empty() && self.rows.is_empty() && self.tabs.is_empty()
     }
 }
 
@@ -216,6 +272,15 @@ impl DashboardLayout {
         self.visible_items().first().map(|item| item.id)
     }
 
+    /// Copies row collapse state and active tabs from `previous` onto the rows and
+    /// tab groups with the same ids, so rebuilding a layout keeps what was open.
+    pub(crate) fn restore_state(&mut self, previous: &DashboardLayout) {
+        let mut rows = HashMap::new();
+        let mut tabs = HashMap::new();
+        collect_state(&previous.items, &mut rows, &mut tabs);
+        apply_state(&mut self.items, &rows, &tabs);
+    }
+
     pub(crate) fn nearest_visible_ancestor(&self, id: DashboardItemId) -> Option<DashboardItemId> {
         let visible = self.visible_items();
         if visible.iter().any(|item| item.id == id) {
@@ -232,6 +297,56 @@ impl DashboardLayout {
         }
 
         self.first_visible()
+    }
+}
+
+fn collect_state(
+    items: &[DashboardLayoutItem],
+    rows: &mut HashMap<RowId, bool>,
+    tabs: &mut HashMap<TabGroupId, Option<usize>>,
+) {
+    for item in items {
+        match item {
+            DashboardLayoutItem::Row(row) => {
+                rows.insert(row.id, row.collapsed);
+                collect_state(&row.children, rows, tabs);
+            }
+            DashboardLayoutItem::Tabs(group) => {
+                tabs.insert(group.id, group.active);
+                for tab in &group.tabs {
+                    collect_state(&tab.children, rows, tabs);
+                }
+            }
+            DashboardLayoutItem::Panel(_) | DashboardLayoutItem::AutoGrid(_) => {}
+        }
+    }
+}
+
+fn apply_state(
+    items: &mut [DashboardLayoutItem],
+    rows: &HashMap<RowId, bool>,
+    tabs: &HashMap<TabGroupId, Option<usize>>,
+) {
+    for item in items {
+        match item {
+            DashboardLayoutItem::Row(row) => {
+                if let Some(&collapsed) = rows.get(&row.id) {
+                    row.collapsed = collapsed;
+                }
+                apply_state(&mut row.children, rows, tabs);
+            }
+            DashboardLayoutItem::Tabs(group) => {
+                if let Some(&active) = tabs.get(&group.id) {
+                    group.active = active
+                        .map(|index| index.min(group.tabs.len().saturating_sub(1)))
+                        .filter(|_| !group.tabs.is_empty());
+                }
+                for tab in &mut group.tabs {
+                    apply_state(&mut tab.children, rows, tabs);
+                }
+            }
+            DashboardLayoutItem::Panel(_) | DashboardLayoutItem::AutoGrid(_) => {}
+        }
     }
 }
 

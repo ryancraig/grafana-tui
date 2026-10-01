@@ -33,8 +33,15 @@ pub(crate) struct DashboardImport {
     pub(crate) queries: Vec<QueryPanel>,
     /// Recursive layout of panels and rows.
     pub(crate) layout: crate::dashboard::DashboardLayout,
-    /// Variables extracted from `templating.list`.
+    /// Variables extracted from `templating.list`, formatted for interpolation.
     pub(crate) vars: HashMap<String, String>,
+    /// Raw selected values per variable, before formatting into `vars`; `All`
+    /// selects every known option. Repeats iterate these and titles show them.
+    pub(crate) var_values: HashMap<String, Vec<String>>,
+    /// Multi-value and include-all variables, whose values are regex-escaped.
+    pub(crate) regex_vars: HashSet<String>,
+    /// Repeat settings for panels, rows, and tabs in `layout`.
+    pub(crate) repeats: crate::dashboard::Repeats,
     /// Dynamic query variables extracted from `templating.list`.
     pub(crate) query_vars: Vec<TemplateQueryVar>,
     /// Number of panels that were skipped (unsupported types).
@@ -77,6 +84,12 @@ pub(crate) struct TemplateQueryVar {
     pub(crate) regex: Option<String>,
     /// JSON-ish source path for the variable query.
     pub(crate) query_path: String,
+    /// Whether `All` is selected, so every resolved value is used.
+    pub(crate) select_all: bool,
+    /// Replaces the resolved values when `All` is selected, if set.
+    pub(crate) all_value: Option<String>,
+    /// Whether values are regex-escaped, as for multi-value or include-all variables.
+    pub(crate) regex_values: bool,
 }
 
 /// A single panel extracted from Grafana.
@@ -376,6 +389,7 @@ mod tests {
 
     fn test_model_panel(kind: &str, expr: Option<&str>) -> model::LayoutNode {
         model::LayoutNode::Panel(model::Panel {
+            repeat: None,
             kind: kind.into(),
             title: kind.into(),
             source_path: format!("layout.{kind}"),
@@ -402,6 +416,7 @@ mod tests {
         let dashboard = model::Dashboard {
             title: "Rows".into(),
             layout: vec![model::LayoutNode::Row(model::Row {
+                repeat: None,
                 title: "Group".into(),
                 collapsed: false,
                 hidden_header: false,
@@ -741,15 +756,8 @@ mod tests {
     }
 
     #[test]
-    fn v2_auto_grid_rejects_deferred_and_malformed_items_at_native_paths() {
+    fn v2_auto_grid_rejects_conditions_and_malformed_items_at_native_paths() {
         for (spec, expected) in [
-            (
-                serde_json::json!({"items": [{"kind": "AutoGridLayoutItem", "spec": {
-                    "element": {"kind": "ElementReference", "name": "panel-1"},
-                    "repeat": {"mode": "variable", "value": "job"}
-                }}]}),
-                "spec.layout.spec.items[0].spec.repeat",
-            ),
             (
                 serde_json::json!({"items": [{"kind": "AutoGridLayoutItem", "spec": {
                     "element": {"kind": "ElementReference", "name": "panel-1"},
@@ -825,9 +833,8 @@ mod tests {
     }
 
     #[test]
-    fn v2_tabs_reject_deferred_semantics_at_native_paths() {
+    fn v2_tabs_reject_conditions_and_scoped_variables_at_native_paths() {
         for (field, value) in [
-            ("repeat", serde_json::json!({"value": "job"})),
             (
                 "conditionalRendering",
                 serde_json::json!({"kind": "ConditionalRenderingGroup"}),
@@ -941,12 +948,8 @@ mod tests {
     }
 
     #[test]
-    fn v2_rows_reject_deferred_semantics_at_native_paths() {
+    fn v2_rows_reject_conditions_and_scoped_variables_at_native_paths() {
         for (field, value) in [
-            (
-                "repeat",
-                serde_json::json!({"mode": "variable", "value": "job"}),
-            ),
             (
                 "conditionalRendering",
                 serde_json::json!({"kind": "ConditionalRenderingGroup", "spec": {}}),
@@ -1444,7 +1447,12 @@ mod tests {
             dashboard.vars.get("job").map(String::as_str),
             Some("api|worker")
         );
-        assert!(dashboard.query_vars.is_empty());
+        assert_eq!(dashboard.query_vars.len(), 1);
+        assert!(dashboard.query_vars[0].select_all);
+        assert_eq!(
+            dashboard.query_vars[0].all_value.as_deref(),
+            Some("api|worker")
+        );
     }
 
     #[test]
@@ -2011,15 +2019,133 @@ mod tests {
     }
 
     #[test]
-    fn rejects_v2_grid_item_repeat_presence() {
+    fn v2_grid_item_repeat_is_recorded_for_its_panel() {
         let mut json = valid_v2_resource();
-        json["spec"]["layout"]["spec"]["items"][0]["spec"]["repeat"] = serde_json::Value::Null;
-        assert!(
-            parse_grafana_dashboard(&json.to_string())
-                .unwrap_err()
-                .to_string()
-                .contains("spec.layout.spec.items[0].spec.repeat")
+        make_v2_panel_importable(&mut json);
+        json["spec"]["variables"] = serde_json::json!([
+            {"kind": "CustomVariable", "spec": {"name": "job", "query": "api,worker"}}
+        ]);
+        let item = &mut json["spec"]["layout"]["spec"]["items"][0]["spec"];
+        item["repeat"] = serde_json::json!({
+            "mode": "variable",
+            "value": "job",
+            "direction": "v",
+            "maxPerRow": 2
+        });
+
+        let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
+
+        assert_eq!(
+            dashboard.repeats.panels.get(&0),
+            Some(&crate::dashboard::Repeat {
+                variable: "job".to_string(),
+                direction: crate::dashboard::RepeatDirection::Vertical,
+                max_per_row: Some(2),
+            })
         );
+        assert!(dashboard.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn v2_null_or_empty_repeats_are_ignored() {
+        for repeat in [
+            serde_json::Value::Null,
+            serde_json::json!({"mode": "variable", "value": ""}),
+        ] {
+            let mut json = valid_v2_resource();
+            make_v2_panel_importable(&mut json);
+            json["spec"]["layout"]["spec"]["items"][0]["spec"]["repeat"] = repeat;
+
+            let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
+
+            assert!(dashboard.repeats.is_empty());
+            assert!(dashboard.diagnostics.is_empty());
+        }
+    }
+
+    #[test]
+    fn v2_repeats_of_undefined_variables_render_once_with_a_diagnostic() {
+        let mut json = valid_v2_resource();
+        make_v2_panel_importable(&mut json);
+        json["spec"]["layout"]["spec"]["items"][0]["spec"]["repeat"] =
+            serde_json::json!({"mode": "variable", "value": "missing"});
+
+        let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
+
+        assert!(dashboard.repeats.is_empty());
+        assert_eq!(dashboard.queries.len(), 1);
+        assert_eq!(dashboard.diagnostics.len(), 1);
+        assert_eq!(dashboard.diagnostics[0].code, "unknown_repeat_variable");
+        assert_eq!(dashboard.diagnostics[0].path, "spec.elements[\"panel-1\"]");
+    }
+
+    #[test]
+    fn v2_rejects_malformed_repeats_at_native_paths() {
+        for (repeat, expected) in [
+            (serde_json::json!({"mode": "query", "value": "job"}), "repeat.mode"),
+            (serde_json::json!({"value": "job", "direction": "x"}), "repeat.direction"),
+            (serde_json::json!({"value": 1}), "repeat.value"),
+            (serde_json::json!([]), "repeat"),
+        ] {
+            let mut json = valid_v2_resource();
+            json["spec"]["layout"]["spec"]["items"][0]["spec"]["repeat"] = repeat.clone();
+
+            let error = parse_grafana_dashboard(&json.to_string())
+                .unwrap_err()
+                .to_string();
+
+            assert!(
+                error.contains(&format!("spec.layout.spec.items[0].spec.{expected}")),
+                "{repeat}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn v2_row_tab_and_auto_grid_repeats_are_recorded() {
+        let mut json = valid_v2_resource();
+        make_v2_panel_importable(&mut json);
+        json["spec"]["variables"] = serde_json::json!([
+            {"kind": "CustomVariable", "spec": {"name": "dc", "query": "eu,us"}}
+        ]);
+        let repeat = serde_json::json!({"mode": "variable", "value": "dc"});
+        json["spec"]["layout"] = serde_json::json!({
+            "kind": "TabsLayout",
+            "spec": {"tabs": [{"kind": "TabsLayoutTab", "spec": {
+                "title": "$dc",
+                "repeat": repeat,
+                "layout": {"kind": "RowsLayout", "spec": {"rows": [{"kind": "RowsLayoutRow", "spec": {
+                    "title": "Row $dc",
+                    "repeat": repeat,
+                    "layout": {"kind": "AutoGridLayout", "spec": {"items": [{
+                        "kind": "AutoGridLayoutItem",
+                        "spec": {
+                            "element": {"kind": "ElementReference", "name": "panel-1"},
+                            "repeat": repeat
+                        }
+                    }]}}
+                }}]}}
+            }}]}
+        });
+
+        let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
+
+        let dc = crate::dashboard::Repeat::new("dc");
+        assert_eq!(dashboard.repeats.panels.get(&0), Some(&dc));
+        assert_eq!(
+            dashboard.repeats.rows.get(&crate::dashboard::RowId::new(0)),
+            Some(&dc)
+        );
+        assert_eq!(
+            dashboard
+                .repeats
+                .tabs
+                .get(&(crate::dashboard::TabGroupId::new(0), 0)),
+            Some(&dc)
+        );
+        // Without a saved selection, the first option is selected.
+        assert_eq!(dashboard.var_values.get("dc"), Some(&vec!["eu".to_string()]));
+        assert_eq!(dashboard.vars.get("dc").map(String::as_str), Some("eu"));
     }
 
     #[test]
@@ -2215,6 +2341,74 @@ mod tests {
     }
 
     #[test]
+    fn classic_repeats_are_recorded_and_saved_copies_are_skipped() {
+        let dashboard = parse_grafana_dashboard(
+            r#"{
+                "title": "Classic repeats",
+                "templating": {"list": [{
+                    "name": "instance",
+                    "type": "custom",
+                    "query": "a,b\\,c,label : d",
+                    "multi": true,
+                    "includeAll": true,
+                    "current": {"text": ["All"], "value": ["$__all"]}
+                }]},
+                "panels": [
+                    {
+                        "type": "timeseries",
+                        "title": "CPU $instance",
+                        "repeat": "instance",
+                        "repeatDirection": "v",
+                        "maxPerRow": 3,
+                        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 4},
+                        "targets": [{"expr": "up{instance=~\"$instance\"}"}]
+                    },
+                    {
+                        "type": "timeseries",
+                        "title": "CPU b",
+                        "repeatPanelId": 1,
+                        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 4},
+                        "targets": [{"expr": "up"}]
+                    },
+                    {
+                        "type": "row",
+                        "title": "Row $instance",
+                        "repeat": "instance",
+                        "collapsed": true,
+                        "gridPos": {"x": 0, "y": 4, "w": 24, "h": 1},
+                        "panels": []
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(dashboard.queries.len(), 1);
+        assert_eq!(
+            dashboard.repeats.panels.get(&0),
+            Some(&crate::dashboard::Repeat {
+                variable: "instance".to_string(),
+                direction: crate::dashboard::RepeatDirection::Vertical,
+                max_per_row: Some(3),
+            })
+        );
+        assert_eq!(
+            dashboard.repeats.rows.get(&crate::dashboard::RowId::new(0)),
+            Some(&crate::dashboard::Repeat::new("instance"))
+        );
+        // Custom options split on unescaped commas, and `text : value` keeps the value.
+        assert_eq!(
+            dashboard.var_values.get("instance"),
+            Some(&vec!["a".to_string(), "b,c".to_string(), "d".to_string()])
+        );
+        assert_eq!(
+            dashboard.vars.get("instance").map(String::as_str),
+            Some("(a|b,c|d)")
+        );
+        assert!(dashboard.regex_vars.contains("instance"));
+    }
+
+    #[test]
     fn test_parse_dashboard_vars() {
         let json = r#"
         {
@@ -2241,7 +2435,15 @@ mod tests {
             dashboard.vars.get("job"),
             Some(&"node-exporter".to_string())
         );
-        assert_eq!(dashboard.vars.get("instance"), Some(&"server1".to_string()));
+        // Several selected values become a regex alternation, as in Grafana.
+        assert_eq!(
+            dashboard.vars.get("instance").map(String::as_str),
+            Some("(server1|server2)")
+        );
+        assert_eq!(
+            dashboard.var_values.get("instance"),
+            Some(&vec!["server1".to_string(), "server2".to_string()])
+        );
     }
 
     #[test]
@@ -2435,10 +2637,14 @@ mod tests {
         let dashboard = load_grafana_dashboard(&path).unwrap();
         std::fs::remove_file(path).unwrap();
 
-        assert_eq!(dashboard.query_vars.len(), 2);
+        assert_eq!(dashboard.query_vars.len(), 3);
         assert_eq!(dashboard.query_vars[0].query, "label_values(up, instance)");
         assert_eq!(dashboard.query_vars[0].regex.as_deref(), Some("/(.+)/"));
+        assert!(!dashboard.query_vars[0].select_all);
         assert_eq!(dashboard.query_vars[1].query, "label_values(model_name)");
+        // `All` still resolves its options, so repeats can iterate them.
+        assert!(dashboard.query_vars[2].select_all);
+        assert_eq!(dashboard.query_vars[2].all_value.as_deref(), Some(".*"));
         assert_eq!(dashboard.vars.get("all_instance"), Some(&".*".to_string()));
     }
 

@@ -1,0 +1,347 @@
+{
+  "kind": "Dashboard",
+  "apiVersion": "dashboard.grafana.app/v2",
+  "metadata": {
+    "name": "grafatui-repeats",
+    "namespace": "default",
+    "uid": "83d25359-2898-42c2-a969-f8e8904e77b5",
+    "resourceVersion": "1790888212953016",
+    "generation": 1,
+    "creationTimestamp": "2026-10-01T20:56:52Z",
+    "labels": {
+      "grafana.app/deprecatedInternalID": "2582879614611456"
+    },
+    "annotations": {
+      "grafana.app/createdBy": "anonymous:0"
+    }
+  },
+  "spec": {
+    "annotations": null,
+    "cursorSync": "",
+    "elements": {
+      "latency": {
+        "kind": "Panel",
+        "spec": {
+          "id": 2,
+          "title": "p$quantile latency",
+          "links": null,
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "prom"
+                      },
+                      "spec": {
+                        "expr": "histogram_quantile($quantile, sum by (le) (rate(prometheus_http_request_duration_seconds_bucket[5m])))"
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": null,
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "",
+            "spec": {
+              "options": null,
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": null
+              }
+            }
+          }
+        }
+      },
+      "requests": {
+        "kind": "Panel",
+        "spec": {
+          "id": 1,
+          "title": "Requests $handler",
+          "links": null,
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "prom"
+                      },
+                      "spec": {
+                        "expr": "sum(rate(prometheus_http_requests_total{handler=~\"$handler\"}[5m]))"
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": null,
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "",
+            "spec": {
+              "options": null,
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": null
+              }
+            }
+          }
+        }
+      },
+      "up": {
+        "kind": "Panel",
+        "spec": {
+          "id": 3,
+          "title": "Up",
+          "links": null,
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "query": {
+                      "kind": "DataQuery",
+                      "group": "prometheus",
+                      "version": "v0",
+                      "datasource": {
+                        "name": "prom"
+                      },
+                      "spec": {
+                        "expr": "up"
+                      }
+                    },
+                    "refId": "A",
+                    "hidden": false
+                  }
+                }
+              ],
+              "transformations": null,
+              "queryOptions": {}
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "stat",
+            "version": "",
+            "spec": {
+              "options": null,
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": null
+              }
+            }
+          }
+        }
+      }
+    },
+    "layout": {
+      "kind": "RowsLayout",
+      "spec": {
+        "rows": [
+          {
+            "kind": "RowsLayoutRow",
+            "spec": {
+              "title": "Handlers",
+              "layout": {
+                "kind": "GridLayout",
+                "spec": {
+                  "items": [
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 0,
+                        "width": 12,
+                        "height": 6,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "requests"
+                        },
+                        "repeat": {
+                          "mode": "variable",
+                          "value": "handler",
+                          "direction": "h",
+                          "maxPerRow": 2
+                        }
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "x": 0,
+                        "y": 6,
+                        "width": 24,
+                        "height": 4,
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "up"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "kind": "RowsLayoutRow",
+            "spec": {
+              "title": "Quantile $quantile",
+              "repeat": {
+                "mode": "variable",
+                "value": "quantile"
+              },
+              "layout": {
+                "kind": "AutoGridLayout",
+                "spec": {
+                  "maxColumnCount": 2,
+                  "columnWidthMode": "standard",
+                  "rowHeightMode": "short",
+                  "items": [
+                    {
+                      "kind": "AutoGridLayoutItem",
+                      "spec": {
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "latency"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "kind": "RowsLayoutRow",
+            "spec": {
+              "title": "By tab",
+              "layout": {
+                "kind": "TabsLayout",
+                "spec": {
+                  "tabs": [
+                    {
+                      "kind": "TabsLayoutTab",
+                      "spec": {
+                        "title": "$handler",
+                        "layout": {
+                          "kind": "GridLayout",
+                          "spec": {
+                            "items": [
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "width": 24,
+                                  "height": 6,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "requests"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        },
+                        "repeat": {
+                          "mode": "variable",
+                          "value": "handler"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "links": null,
+    "preload": false,
+    "tags": null,
+    "timeSettings": {
+      "from": "",
+      "to": "",
+      "autoRefresh": "",
+      "autoRefreshIntervals": null,
+      "hideTimepicker": false,
+      "fiscalYearStartMonth": 0
+    },
+    "title": "Grafatui repeats",
+    "variables": [
+      {
+        "kind": "CustomVariable",
+        "spec": {
+          "name": "handler",
+          "query": "/api/v1/query,/api/v1/query_range,/metrics",
+          "current": {
+            "text": [
+              "All"
+            ],
+            "value": [
+              "$__all"
+            ]
+          },
+          "options": null,
+          "multi": true,
+          "includeAll": true,
+          "hide": "",
+          "skipUrlSync": false,
+          "allowCustomValue": false
+        }
+      },
+      {
+        "kind": "CustomVariable",
+        "spec": {
+          "name": "quantile",
+          "query": "0.5,0.99",
+          "current": {
+            "text": [
+              "0.5",
+              "0.99"
+            ],
+            "value": [
+              "0.5",
+              "0.99"
+            ]
+          },
+          "options": null,
+          "multi": true,
+          "includeAll": false,
+          "hide": "",
+          "skipUrlSync": false,
+          "allowCustomValue": false
+        }
+      }
+    ]
+  }
+}

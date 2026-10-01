@@ -28,6 +28,15 @@ struct RawVar {
     current: Option<RawVarCurrent>,
     #[serde(rename = "allValue")]
     all_value: Option<String>,
+    multi: Option<bool>,
+    #[serde(rename = "includeAll")]
+    include_all: Option<bool>,
+    options: Option<Vec<RawVarOption>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawVarOption {
+    value: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -56,6 +65,36 @@ struct RawPanel {
     #[serde(rename = "fieldConfig")]
     field_config: Option<RawFieldConfig>,
     options: Option<RawPanelOptions>,
+    repeat: Option<String>,
+    #[serde(rename = "repeatDirection")]
+    repeat_direction: Option<String>,
+    #[serde(rename = "maxPerRow")]
+    max_per_row: Option<Value>,
+    /// Set on copies Grafana generated for a repeated panel.
+    #[serde(rename = "repeatPanelId")]
+    repeat_panel_id: Option<Value>,
+}
+
+impl RawPanel {
+    fn repeat(&self) -> Option<model::Repeat> {
+        let variable = self.repeat.as_deref().map(str::trim)?;
+        if variable.is_empty() {
+            return None;
+        }
+        Some(model::Repeat {
+            variable: variable.to_string(),
+            direction: match self.repeat_direction.as_deref() {
+                Some("v") => model::RepeatDirection::Vertical,
+                _ => model::RepeatDirection::Horizontal,
+            },
+            max_per_row: self
+                .max_per_row
+                .as_ref()
+                .and_then(Value::as_u64)
+                .and_then(|count| u16::try_from(count).ok())
+                .filter(|count| *count > 0),
+        })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -178,7 +217,27 @@ impl RawVar {
 
     fn normalize(self, index: usize) -> model::Variable {
         let query = self.query_string();
+        let mut options: Vec<String> = self
+            .options
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|option| match option.value? {
+                Value::String(value) => Some(value),
+                Value::Number(value) => Some(value.to_string()),
+                _ => None,
+            })
+            .filter(|value| value != "$__all")
+            .collect();
+        if options.is_empty()
+            && self.var_type.as_deref() == Some("custom")
+            && let Some(query) = query.as_deref()
+        {
+            options = crate::app::parse_custom_variable_values(query, false);
+        }
         model::Variable {
+            multi: self.multi.unwrap_or(false),
+            include_all: self.include_all.unwrap_or(false),
+            options,
             name: self.name,
             kind: self.var_type,
             current: self.current.map(|current| model::VariableCurrent {
@@ -202,6 +261,10 @@ fn normalize_layout(panels: Vec<RawPanel>, path: &str) -> Vec<model::LayoutNode>
 
     for (index, panel) in panels.into_iter().enumerate() {
         let source_path = format!("{path}[{index}]");
+        if panel.repeat_panel_id.is_some() {
+            // Grafatui expands repeats itself, so drop copies saved by older Grafana.
+            continue;
+        }
         if panel.panel_type == "row" {
             if let Some((row, _)) = expanded_row.take() {
                 output.push(model::LayoutNode::Row(row));
@@ -241,6 +304,7 @@ fn normalize_classic_row(
         .grid_pos
         .as_ref()
         .map_or(0, |grid| grid.y.saturating_add(grid.h));
+    let repeat = panel.repeat();
     let children = normalize_layout(
         panel.panels.unwrap_or_default(),
         &format!("{source_path}.panels"),
@@ -252,6 +316,7 @@ fn normalize_classic_row(
     (
         model::Row {
             title: panel.title.unwrap_or_default(),
+            repeat,
             collapsed,
             hidden_header: false,
             source_path,
@@ -280,6 +345,7 @@ fn normalize_classic_panel(
     source_path: String,
     row_base_y: Option<i32>,
 ) -> model::LayoutNode {
+    let repeat = panel.repeat();
     let field_defaults = panel.field_config.and_then(|config| {
         config.defaults.map(|defaults| model::FieldDefaults {
             unit: defaults.unit,
@@ -317,6 +383,7 @@ fn normalize_classic_panel(
         })
     });
     model::LayoutNode::Panel(model::Panel {
+        repeat,
         kind: panel.panel_type,
         title: panel.title.unwrap_or_default(),
         source_path: source_path.clone(),

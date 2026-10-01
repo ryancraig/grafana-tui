@@ -19,8 +19,142 @@ use crate::grafana::TemplateQueryVar;
 use crate::prom;
 use anyhow::{Result, anyhow};
 use regex::Regex;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::Duration;
+
+/// Replaces `$name` and `${name}` references whose name `lookup` resolves.
+///
+/// Names are read greedily, as Grafana's `\$(\w+)` does, so `$job_name` never
+/// matches a variable called `job`. Unresolved references, and `${name:format}`
+/// references, are copied unchanged. Substituted values are not scanned again.
+pub(crate) fn substitute_variables<'a>(
+    text: &str,
+    mut lookup: impl FnMut(&str) -> Option<Cow<'a, str>>,
+) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(position) = rest.find('$') {
+        out.push_str(&rest[..position]);
+        let after = &rest[position + 1..];
+        let (name, consumed) = if let Some(braced) = after.strip_prefix('{') {
+            match braced.find('}') {
+                Some(end) => (&braced[..end], end + 2),
+                None => ("", 0),
+            }
+        } else {
+            let end = after
+                .find(|ch: char| !is_variable_name_char(ch))
+                .unwrap_or(after.len());
+            (&after[..end], end)
+        };
+        let value = (!name.is_empty() && name.chars().all(is_variable_name_char))
+            .then(|| lookup(name))
+            .flatten();
+        match value {
+            Some(value) => {
+                out.push_str(&value);
+                rest = &after[consumed..];
+            }
+            None => {
+                out.push('$');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+fn is_variable_name_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_'
+}
+
+/// Formats selected variable values for a PromQL expression.
+///
+/// Mirrors Grafana's Prometheus `interpolateQueryExpr` (classic escaping): a
+/// variable that is neither multi-value nor include-all is inserted verbatim;
+/// otherwise each value is regex-escaped for use inside a PromQL string, and
+/// several values become an alternation such as `(a|b)`.
+pub(crate) fn format_prometheus_values(values: &[String], regex: bool) -> String {
+    match values {
+        [] => String::new(),
+        [value] if !regex => value.clone(),
+        [value] => prometheus_regex_escape(value),
+        values => format!(
+            "({})",
+            values
+                .iter()
+                .map(|value| prometheus_regex_escape(value))
+                .collect::<Vec<_>>()
+                .join("|")
+        ),
+    }
+}
+
+/// Grafana's `prometheusSpecialRegexEscape`: backslashes become four backslashes
+/// and regex metacharacters gain two, so they survive PromQL string unescaping.
+fn prometheus_regex_escape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\\\\\"),
+            '$' | '^' | '*' | '{' | '}' | '[' | ']' | '+' | '?' | '.' | '(' | ')' | '|' => {
+                out.push_str("\\\\");
+                out.push(ch);
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// Parses a custom variable's option values.
+///
+/// The CSV form follows Grafana's `CustomVariable`: commas separate options unless
+/// escaped as `\,`, and `text : value` entries contribute their value. The JSON
+/// form (`valuesFormat: json`) is an array of strings or `{text, value}` objects.
+pub(crate) fn parse_custom_variable_values(query: &str, json: bool) -> Vec<String> {
+    if json {
+        return serde_json::from_str::<Vec<serde_json::Value>>(query)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|option| match option {
+                serde_json::Value::String(value) => Some(value),
+                serde_json::Value::Object(option) => option
+                    .get("value")
+                    .or_else(|| option.get("text"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string),
+                _ => None,
+            })
+            .collect();
+    }
+
+    let mut values = Vec::new();
+    let mut current = String::new();
+    let mut chars = query.chars().peekable();
+    let mut push = |current: &mut String| {
+        let text = current.trim();
+        let value = text.rsplit_once(" : ").map_or(text, |(_, value)| value.trim());
+        if !value.is_empty() {
+            values.push(value.to_string());
+        }
+        current.clear();
+    };
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\\' if chars.peek() == Some(&',') => {
+                current.push(',');
+                chars.next();
+            }
+            ',' => push(&mut current),
+            _ => current.push(ch),
+        }
+    }
+    push(&mut current);
+    values
+}
 
 enum PrometheusVariableQuery {
     LabelValues {
@@ -37,15 +171,39 @@ pub(crate) async fn refresh_query_variables(
     step: Duration,
     end_ts: i64,
     vars: &mut HashMap<String, String>,
+    var_values: &mut HashMap<String, Vec<String>>,
 ) -> Result<()> {
     for query_var in query_vars {
-        let Some(value) =
-            resolve_query_variable(prometheus, query_var, range, step, end_ts, vars).await?
-        else {
+        let values = resolve_query_variable(prometheus, query_var, range, step, end_ts, vars)
+            .await?
+            .into_iter()
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>();
+        if values.is_empty() {
             continue;
-        };
+        }
 
-        vars.insert(query_var.name.clone(), value);
+        let selected = if query_var.select_all {
+            values
+        } else {
+            // Keep a saved selection that is still offered, as Grafana does on load;
+            // otherwise select the first value.
+            match var_values.get(&query_var.name) {
+                Some(selected)
+                    if !selected.is_empty()
+                        && selected.iter().all(|value| values.contains(value)) =>
+                {
+                    selected.clone()
+                }
+                _ => values.into_iter().take(1).collect(),
+            }
+        };
+        let formatted = match query_var.all_value.as_ref() {
+            Some(all_value) if query_var.select_all => all_value.clone(),
+            _ => format_prometheus_values(&selected, query_var.regex_values),
+        };
+        vars.insert(query_var.name.clone(), formatted);
+        var_values.insert(query_var.name.clone(), selected);
     }
 
     Ok(())
@@ -58,7 +216,7 @@ async fn resolve_query_variable(
     step: Duration,
     end_ts: i64,
     vars: &HashMap<String, String>,
-) -> Result<Option<String>> {
+) -> Result<Vec<String>> {
     let expanded_query = expand_expr(&query_var.query, range, step, vars);
     let query = parse_prometheus_variable_query(&expanded_query)?;
     let start_ts = end_ts - range.as_secs() as i64;
@@ -79,10 +237,7 @@ async fn resolve_query_variable(
         }
     };
 
-    Ok(first_value(apply_regex(
-        values,
-        query_var.regex.as_deref(),
-    )?))
+    apply_regex(values, query_var.regex.as_deref())
 }
 
 fn parse_prometheus_variable_query(query: &str) -> Result<PrometheusVariableQuery> {
@@ -163,10 +318,6 @@ fn apply_regex(values: Vec<String>, regex: Option<&str>) -> Result<Vec<String>> 
         .collect())
 }
 
-fn first_value(values: Vec<String>) -> Option<String> {
-    values.into_iter().find(|value| !value.is_empty())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,6 +355,6 @@ mod tests {
 
         let values = apply_regex(values, Some(r#"/instance="([^"]+)"/"#)).unwrap();
 
-        assert_eq!(first_value(values), Some("node-2".to_string()));
+        assert_eq!(values, ["node-2", "node-1"]);
     }
 }

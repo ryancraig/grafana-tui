@@ -94,8 +94,9 @@ array of non-empty strings.
 Omit `panel_titles` to target all eligible graph and timeseries panels, as in
 the first event. When `panel_titles` is present, it must contain one or more
 non-blank titles and each title is matched exactly and case-sensitively against
-eligible graph/timeseries panel titles. `null`, an empty array, and blank
-titles are validation errors.
+eligible graph/timeseries panel titles as displayed, after dashboard variables
+are interpolated (so a repeated panel's copies each have their own title).
+`null`, an empty array, and blank titles are validation errors.
 
 If a title occurs on multiple eligible panels, the event fans out to all of
 them and Grafatui shows one warning for that duplicate title. A title that is

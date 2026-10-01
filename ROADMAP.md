@@ -158,8 +158,8 @@ This is the main backlog, ordered by Grafana parity domain.
 
 | Feature | Grafana field / behavior | User value | Complexity | Status |
 |---|---|---|---|---|
-| **Multi-value variables** | `templating.list[].multi` | Imported dashboards can query multiple instances/jobs | 🟡 | 📋 |
-| **Include-all variables** | `templating.list[].includeAll` | Grafana "All" semantics work more predictably | 🟡 | 📋 |
+| **Multi-value variables** | `templating.list[].multi` | Imported dashboards can query multiple instances/jobs | 🟡 | ✅ |
+| **Include-all variables** | `templating.list[].includeAll` | Grafana "All" semantics work more predictably | 🟡 | ✅ |
 | **Variable option sorting** | `templating.list[].sort` | Deterministic variable values from Prometheus | 🟢 | 📋 |
 | **Variable picker UI** | `templating.list[].options` | Users can switch variable values without restarting | 🟡 | 📋 |
 | **Format modifiers** | `${var:regex}`, `${var:pipe}`, `${var:csv}` | Common Grafana PromQL templates import correctly | 🟡 | 📋 |
@@ -199,10 +199,11 @@ This is the main backlog, ordered by Grafana parity domain.
 
 ### 9. Grafana Dashboard Schema v2
 
-The first v2 milestone is format compatibility: accept JSON resources with the
-exact `dashboard.grafana.app/v2` API version and map the subset that has an
-existing Grafatui equivalent. Unsupported v2-only layout semantics must fail
-with a clear import error rather than silently changing the dashboard.
+Grafatui accepts JSON and YAML resources with the exact
+`dashboard.grafana.app/v2` API version. V2 semantics with a terminal equivalent
+are implemented; browser-only settings, such as viewport-filling rows, are
+accepted and ignored. Semantics that are not implemented yet fail with a clear
+import error rather than silently changing the dashboard.
 
 | Feature | Grafana field / behavior | User value | Complexity | Status |
 |---|---|---|---|---|
@@ -210,7 +211,7 @@ with a clear import error rather than silently changing the dashboard.
 | **Rows layout** | `RowsLayout` and nested row layouts | Preserves dashboard grouping and collapsed sections | 🔴 | ✅ |
 | **Tabs layout** | `TabsLayout` and nested tabs | Preserves tabbed dashboard organization | 🔴 | ✅ |
 | **Auto-grid layout** | `AutoGridLayout` | Preserves automatic panel placement and sizing | 🔴 | ✅ |
-| **Repeat and dynamic layouts** | Layout and element `repeat` settings | Expands panels or groups from variable values | 🔴 | 📋 |
+| **Repeat and dynamic layouts** | Layout and element `repeat` settings | Expands panels or groups from variable values | 🔴 | ✅ |
 | **Conditional rendering** | `conditionalRendering` on supported containers | Shows or hides content using v2 conditions | 🔴 | 📋 |
 | **Nested layout variables** | Variables scoped to rows and tabs | Preserves local variable scope in dynamic dashboards | 🔴 | 📋 |
 | **Library panel resolution** | `LibraryPanel` element references | Imports reusable panels by resolving their external definitions | 🔴 | 📋 |
