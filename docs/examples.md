@@ -1,6 +1,10 @@
 # Examples
 
 The repository includes example Grafana dashboards and a local demo environment.
+Every example dashboard is a Grafana 13 V2 resource. The core examples were
+converted from Classic JSON by Grafana itself; their Classic originals are kept
+in `tests/fixtures/grafana/classic_examples`, and a test checks that both
+formats import to the same dashboard, so either works with `--grafana-json`.
 
 ## Demo Stack
 
@@ -73,6 +77,7 @@ docker-compose down -v
   ```
 
 - `examples/demo/vllm/grafana.json`: vLLM-oriented dashboard for the mock demo services.
+- `examples/demo/vllm_demo.json`: compact vLLM cluster overview for the mock demo services.
 
 ## More Detail
 

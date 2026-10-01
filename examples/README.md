@@ -50,6 +50,13 @@ The optional first argument is the Git repository path and defaults to `.`.
 
 ## Dashboards
 
+Every dashboard here is a Grafana 13 V2 resource. `prometheus_demo.json`,
+`all_visualizations.json`, `instant_queries.json`, `thresholds_demo.json`,
+`simple_test.json`, and the vLLM demo dashboards were converted from Classic
+JSON by Grafana 13.2.3; the Classic originals live in
+`tests/fixtures/grafana/classic_examples`, and a test checks that both formats
+import identically.
+
 
 ### `prometheus_demo.json`
 **Recommended for first-time users!** A comprehensive dashboard designed for the included demo environment.
@@ -68,8 +75,8 @@ Demonstrates all supported panel types in a single dashboard:
 - **Heatmap**: Color-coded time-series intensity
 
 ### `instant_queries.json`
-Demonstrates explicit `targets[].instant` support and the default instant query
-behavior used by Gauge, Bar Gauge, and Table panels.
+Demonstrates queries marked `instant` and the default instant query behavior
+used by Gauge, Bar Gauge, and Table panels.
 
 ### `thresholds_demo.json`
 Demonstrates threshold rendering, threshold marker styles, and explicit field

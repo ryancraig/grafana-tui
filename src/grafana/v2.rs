@@ -364,16 +364,18 @@ fn normalize_query_variable(
     }
     let query_spec_path = format!("{query_path}.spec");
     let query_spec = require_object_from(query, "spec", &query_spec_path)?;
-    let query = query_spec
-        .get("query")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|query| !query.is_empty())
-        .map(|query| {
-            (
-                query.to_string(),
-                format!("{source_path}.spec.query.spec.query"),
-            )
+    // Grafana stores a Classic variable's plain string query, when it converts
+    // the dashboard to V2, as `__legacyStringValue`.
+    let query = ["query", "__legacyStringValue"]
+        .into_iter()
+        .find_map(|key| {
+            let query = query_spec.get(key)?.as_str()?.trim();
+            (!query.is_empty()).then(|| {
+                (
+                    query.to_string(),
+                    format!("{source_path}.spec.query.spec.{key}"),
+                )
+            })
         })
         .or_else(|| {
             spec.get("definition")
