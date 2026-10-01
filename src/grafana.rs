@@ -716,7 +716,6 @@ mod tests {
                 "variables",
                 serde_json::json!([{"kind": "TextVariable", "spec": {"name": "x"}}]),
             ),
-            ("fillScreen", serde_json::json!(true)),
         ] {
             let error =
                 parse_grafana_dashboard(&v2_row_resource_with_field(field, value).to_string())
@@ -793,7 +792,10 @@ mod tests {
     fn v2_rows_accept_empty_deferred_fields() {
         for (field, value) in [
             ("variables", serde_json::json!([])),
+            ("variables", serde_json::Value::Null),
             ("fillScreen", serde_json::json!(false)),
+            ("fillScreen", serde_json::json!(true)),
+            ("title", serde_json::Value::Null),
         ] {
             let dashboard =
                 parse_grafana_dashboard(&v2_row_resource_with_field(field, value).to_string())
@@ -1239,22 +1241,104 @@ mod tests {
         assert_eq!(v2.vars.get("region"), classic.vars.get("region"));
     }
 
+    /// Applies a named malformation to `v2_compatibility.json`'s only panel.
+    fn v2_compatibility_with_panel_case(case: &str) -> serde_json::Value {
+        let mut json: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/grafana/v2_compatibility.json"
+        ))
+        .unwrap();
+        let panel = &mut json["spec"]["elements"]["panel-1"]["spec"];
+        match case {
+            "missing_title" => {
+                panel.as_object_mut().unwrap().remove("title");
+            }
+            "wrong_title_type" => panel["title"] = serde_json::json!(1),
+            "missing_transformations" => {
+                panel["data"]["spec"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("transformations");
+            }
+            "wrong_transformations_type" => {
+                panel["data"]["spec"]["transformations"] = serde_json::json!({})
+            }
+            "missing_hidden" => {
+                panel["data"]["spec"]["queries"][0]["spec"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("hidden");
+            }
+            "wrong_hidden_type" => {
+                panel["data"]["spec"]["queries"][0]["spec"]["hidden"] =
+                    serde_json::json!("false")
+            }
+            "missing_data_query_group" => {
+                panel["data"]["spec"]["queries"][0]["spec"]["query"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("group");
+            }
+            "wrong_data_query_group_type" => {
+                panel["data"]["spec"]["queries"][0]["spec"]["query"]["group"] =
+                    serde_json::json!(1)
+            }
+            "missing_data_query_spec" => {
+                panel["data"]["spec"]["queries"][0]["spec"]["query"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("spec");
+            }
+            "wrong_data_query_spec_type" => {
+                panel["data"]["spec"]["queries"][0]["spec"]["query"]["spec"] =
+                    serde_json::json!([])
+            }
+            "missing_viz_group" => {
+                panel["vizConfig"].as_object_mut().unwrap().remove("group");
+            }
+            "wrong_viz_group_type" => panel["vizConfig"]["group"] = serde_json::json!(1),
+            "missing_viz_spec" => {
+                panel["vizConfig"].as_object_mut().unwrap().remove("spec");
+            }
+            "wrong_viz_spec_type" => panel["vizConfig"]["spec"] = serde_json::json!([]),
+            "missing_field_config" => {
+                panel["vizConfig"]["spec"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("fieldConfig");
+            }
+            "wrong_field_config_type" => {
+                panel["vizConfig"]["spec"]["fieldConfig"] = serde_json::json!([])
+            }
+            "missing_defaults" => {
+                panel["vizConfig"]["spec"]["fieldConfig"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("defaults");
+            }
+            "wrong_defaults_type" => {
+                panel["vizConfig"]["spec"]["fieldConfig"]["defaults"] = serde_json::json!([])
+            }
+            "missing_options" => {
+                panel["vizConfig"]["spec"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("options");
+            }
+            "wrong_options_type" => {
+                panel["vizConfig"]["spec"]["options"] = serde_json::json!([])
+            }
+            _ => unreachable!(),
+        }
+        json
+    }
+
     #[test]
     fn rejects_malformed_required_v2_panel_fields_at_native_paths() {
         let cases = [
-            ("missing_title", "spec.elements[\"panel-1\"].spec.title"),
             ("wrong_title_type", "spec.elements[\"panel-1\"].spec.title"),
-            (
-                "missing_transformations",
-                "spec.elements[\"panel-1\"].spec.data.spec.transformations",
-            ),
             (
                 "wrong_transformations_type",
                 "spec.elements[\"panel-1\"].spec.data.spec.transformations",
-            ),
-            (
-                "missing_hidden",
-                "spec.elements[\"panel-1\"].spec.data.spec.queries[0].spec.hidden",
             ),
             (
                 "wrong_hidden_type",
@@ -1269,143 +1353,25 @@ mod tests {
                 "spec.elements[\"panel-1\"].spec.data.spec.queries[0].spec.query.group",
             ),
             (
-                "missing_data_query_spec",
-                "spec.elements[\"panel-1\"].spec.data.spec.queries[0].spec.query.spec",
-            ),
-            (
                 "wrong_data_query_spec_type",
                 "spec.elements[\"panel-1\"].spec.data.spec.queries[0].spec.query.spec",
             ),
-            (
-                "missing_viz_group",
-                "spec.elements[\"panel-1\"].spec.vizConfig.group",
-            ),
-            (
-                "wrong_viz_group_type",
-                "spec.elements[\"panel-1\"].spec.vizConfig.group",
-            ),
-            (
-                "missing_viz_spec",
-                "spec.elements[\"panel-1\"].spec.vizConfig.spec",
-            ),
-            (
-                "wrong_viz_spec_type",
-                "spec.elements[\"panel-1\"].spec.vizConfig.spec",
-            ),
-            (
-                "missing_field_config",
-                "spec.elements[\"panel-1\"].spec.vizConfig.spec.fieldConfig",
-            ),
+            ("missing_viz_group", "spec.elements[\"panel-1\"].spec.vizConfig.group"),
+            ("wrong_viz_group_type", "spec.elements[\"panel-1\"].spec.vizConfig.group"),
+            ("wrong_viz_spec_type", "spec.elements[\"panel-1\"].spec.vizConfig.spec"),
             (
                 "wrong_field_config_type",
                 "spec.elements[\"panel-1\"].spec.vizConfig.spec.fieldConfig",
             ),
             (
-                "missing_defaults",
-                "spec.elements[\"panel-1\"].spec.vizConfig.spec.fieldConfig.defaults",
-            ),
-            (
                 "wrong_defaults_type",
                 "spec.elements[\"panel-1\"].spec.vizConfig.spec.fieldConfig.defaults",
             ),
-            (
-                "missing_options",
-                "spec.elements[\"panel-1\"].spec.vizConfig.spec.options",
-            ),
-            (
-                "wrong_options_type",
-                "spec.elements[\"panel-1\"].spec.vizConfig.spec.options",
-            ),
+            ("wrong_options_type", "spec.elements[\"panel-1\"].spec.vizConfig.spec.options"),
         ];
 
         for (case, expected_path) in cases {
-            let mut json: serde_json::Value = serde_json::from_str(include_str!(
-                "../tests/fixtures/grafana/v2_compatibility.json"
-            ))
-            .unwrap();
-            let panel = &mut json["spec"]["elements"]["panel-1"]["spec"];
-            match case {
-                "missing_title" => {
-                    panel.as_object_mut().unwrap().remove("title");
-                }
-                "wrong_title_type" => panel["title"] = serde_json::json!(1),
-                "missing_transformations" => {
-                    panel["data"]["spec"]
-                        .as_object_mut()
-                        .unwrap()
-                        .remove("transformations");
-                }
-                "wrong_transformations_type" => {
-                    panel["data"]["spec"]["transformations"] = serde_json::json!({})
-                }
-                "missing_hidden" => {
-                    panel["data"]["spec"]["queries"][0]["spec"]
-                        .as_object_mut()
-                        .unwrap()
-                        .remove("hidden");
-                }
-                "wrong_hidden_type" => {
-                    panel["data"]["spec"]["queries"][0]["spec"]["hidden"] =
-                        serde_json::json!("false")
-                }
-                "missing_data_query_group" => {
-                    panel["data"]["spec"]["queries"][0]["spec"]["query"]
-                        .as_object_mut()
-                        .unwrap()
-                        .remove("group");
-                }
-                "wrong_data_query_group_type" => {
-                    panel["data"]["spec"]["queries"][0]["spec"]["query"]["group"] =
-                        serde_json::json!(1)
-                }
-                "missing_data_query_spec" => {
-                    panel["data"]["spec"]["queries"][0]["spec"]["query"]
-                        .as_object_mut()
-                        .unwrap()
-                        .remove("spec");
-                }
-                "wrong_data_query_spec_type" => {
-                    panel["data"]["spec"]["queries"][0]["spec"]["query"]["spec"] =
-                        serde_json::json!([])
-                }
-                "missing_viz_group" => {
-                    panel["vizConfig"].as_object_mut().unwrap().remove("group");
-                }
-                "wrong_viz_group_type" => panel["vizConfig"]["group"] = serde_json::json!(1),
-                "missing_viz_spec" => {
-                    panel["vizConfig"].as_object_mut().unwrap().remove("spec");
-                }
-                "wrong_viz_spec_type" => panel["vizConfig"]["spec"] = serde_json::json!([]),
-                "missing_field_config" => {
-                    panel["vizConfig"]["spec"]
-                        .as_object_mut()
-                        .unwrap()
-                        .remove("fieldConfig");
-                }
-                "wrong_field_config_type" => {
-                    panel["vizConfig"]["spec"]["fieldConfig"] = serde_json::json!([])
-                }
-                "missing_defaults" => {
-                    panel["vizConfig"]["spec"]["fieldConfig"]
-                        .as_object_mut()
-                        .unwrap()
-                        .remove("defaults");
-                }
-                "wrong_defaults_type" => {
-                    panel["vizConfig"]["spec"]["fieldConfig"]["defaults"] = serde_json::json!([])
-                }
-                "missing_options" => {
-                    panel["vizConfig"]["spec"]
-                        .as_object_mut()
-                        .unwrap()
-                        .remove("options");
-                }
-                "wrong_options_type" => {
-                    panel["vizConfig"]["spec"]["options"] = serde_json::json!([])
-                }
-                _ => unreachable!(),
-            };
-
+            let json = v2_compatibility_with_panel_case(case);
             let error = parse_grafana_dashboard(&json.to_string())
                 .expect_err(case)
                 .to_string();
@@ -1417,11 +1383,56 @@ mod tests {
     }
 
     #[test]
-    fn rejects_malformed_required_v2_panel_id_and_links_at_native_paths() {
+    fn v2_panels_default_fields_that_real_exports_omit() {
+        for case in [
+            "missing_title",
+            "missing_transformations",
+            "missing_hidden",
+            "missing_data_query_spec",
+            "missing_viz_spec",
+            "missing_field_config",
+            "missing_defaults",
+            "missing_options",
+        ] {
+            let json = v2_compatibility_with_panel_case(case);
+            let dashboard = parse_grafana_dashboard(&json.to_string())
+                .unwrap_or_else(|error| panic!("{case}: {error:#}"));
+            assert_eq!(dashboard.layout.visible_panel_indices().len(), 1, "{case}");
+        }
+    }
+
+    #[test]
+    fn v2_panels_accept_absent_or_null_id_and_links() {
+        for (field, value) in [
+            ("id", None),
+            ("id", Some(serde_json::Value::Null)),
+            ("links", None),
+            ("links", Some(serde_json::Value::Null)),
+        ] {
+            let mut json: serde_json::Value = serde_json::from_str(include_str!(
+                "../tests/fixtures/grafana/v2_compatibility.json"
+            ))
+            .unwrap();
+            let panel = json["spec"]["elements"]["panel-1"]["spec"]
+                .as_object_mut()
+                .unwrap();
+            match value {
+                Some(value) => {
+                    panel.insert(field.to_string(), value);
+                }
+                None => {
+                    panel.remove(field);
+                }
+            }
+            parse_grafana_dashboard(&json.to_string())
+                .unwrap_or_else(|error| panic!("{field}: {error:#}"));
+        }
+    }
+
+    #[test]
+    fn rejects_malformed_v2_panel_id_and_links_at_native_paths() {
         for (case, expected_path) in [
-            ("missing_id", "spec.elements[\"panel-1\"].spec.id"),
             ("wrong_id_type", "spec.elements[\"panel-1\"].spec.id"),
-            ("missing_links", "spec.elements[\"panel-1\"].spec.links"),
             ("wrong_links_type", "spec.elements[\"panel-1\"].spec.links"),
         ] {
             let mut json: serde_json::Value = serde_json::from_str(include_str!(
@@ -1430,13 +1441,7 @@ mod tests {
             .unwrap();
             let panel = &mut json["spec"]["elements"]["panel-1"]["spec"];
             match case {
-                "missing_id" => {
-                    panel.as_object_mut().unwrap().remove("id");
-                }
                 "wrong_id_type" => panel["id"] = serde_json::json!("1"),
-                "missing_links" => {
-                    panel.as_object_mut().unwrap().remove("links");
-                }
                 "wrong_links_type" => panel["links"] = serde_json::json!({}),
                 _ => unreachable!(),
             }
@@ -1489,7 +1494,81 @@ mod tests {
                 dashboard.diagnostics[0].path,
                 format!("spec.elements[{name:?}]")
             );
+            assert_eq!(
+                dashboard.diagnostics[0]
+                    .message
+                    .contains("Share dashboard with another instance"),
+                kind == "LibraryPanel",
+                "{kind}: {}",
+                dashboard.diagnostics[0].message
+            );
         }
+    }
+
+    #[test]
+    fn v2_prometheus_compatible_datasource_groups_import_as_prometheus() {
+        for group in [
+            "grafana-amazonprometheus-datasource",
+            "grafana-azureprometheus-datasource",
+        ] {
+            let mut json = valid_v2_resource();
+            make_v2_panel_importable(&mut json);
+            let query = &mut json["spec"]["elements"]["panel-1"]["spec"]["data"]["spec"]["queries"][0];
+            query["spec"]["query"]["group"] = group.into();
+
+            let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
+
+            assert_eq!(dashboard.queries.len(), 1, "{group}");
+            assert!(dashboard.diagnostics.is_empty(), "{group}");
+        }
+    }
+
+    /// `v2_grafana13_export.json` is a dashboard authored through Grafana 13.2.3's
+    /// `dashboard.grafana.app/v2` API and read back unchanged apart from dropping
+    /// `status`, so it carries the server's real serialization: unset slices are
+    /// `null`, `vizConfig.version` is empty, and the query-less text panel's query
+    /// group has an empty `kind`.
+    #[test]
+    fn v2_grafana13_export_imports_server_serialized_nulls() {
+        let dashboard = parse_grafana_dashboard(include_str!(
+            "../tests/fixtures/grafana/v2_grafana13_export.json"
+        ))
+        .unwrap();
+
+        assert_eq!(dashboard.title, "Grafatui native V2");
+        assert_eq!(dashboard.refresh_rate_ms, Some(30_000));
+        let titles: Vec<_> = dashboard.queries.iter().map(|q| q.title.as_str()).collect();
+        assert_eq!(titles, ["Scrape duration", "Targets up"]);
+        assert_eq!(
+            dashboard.queries[1].query_modes,
+            [crate::app::QueryMode::Instant]
+        );
+        assert_eq!(dashboard.vars.get("job").map(String::as_str), Some("prometheus"));
+        assert_eq!(dashboard.vars.get("quantile").map(String::as_str), Some("0.9"));
+        assert_eq!(dashboard.query_vars.len(), 1);
+        assert_eq!(dashboard.skipped_panels, 1);
+        assert_eq!(dashboard.diagnostics.len(), 1);
+        assert_eq!(dashboard.diagnostics[0].code, "skipped_panel");
+        assert_eq!(dashboard.diagnostics[0].path, "spec.elements[\"panel-3\"]");
+    }
+
+    /// `v2_grafana13_external_export.json` applies Grafana's "Share dashboard with
+    /// another instance" rules to the export above: query datasources are replaced
+    /// by export labels and query variable selections are cleared.
+    #[test]
+    fn v2_grafana13_external_export_resolves_variables_dynamically() {
+        let dashboard = parse_grafana_dashboard(include_str!(
+            "../tests/fixtures/grafana/v2_grafana13_external_export.json"
+        ))
+        .unwrap();
+
+        assert_eq!(dashboard.queries.len(), 2);
+        assert!(!dashboard.vars.contains_key("job"));
+        assert_eq!(dashboard.vars.get("quantile").map(String::as_str), Some("0.9"));
+        assert_eq!(dashboard.query_vars.len(), 1);
+        assert_eq!(dashboard.query_vars[0].name, "job");
+        assert_eq!(dashboard.query_vars[0].query, "label_values(up, job)");
+        assert_eq!(dashboard.diagnostics.len(), 1);
     }
 
     #[test]

@@ -17,9 +17,21 @@ same Grafatui behavior as Classic JSON.
 
 Rows and tabs may recursively contain `GridLayout`, `RowsLayout`, or `TabsLayout`.
 Auto-grid, repeat, conditional rendering, nested non-empty layout variables,
-library panels, and Resource YAML remain unsupported; unsupported V2 layouts
-and fields are fatal import errors. Repeated grid items are also rejected rather
-than silently changing the dashboard.
+and Resource YAML remain unsupported; unsupported V2 layouts and fields are
+fatal import errors. Repeated grid items are also rejected rather than silently
+changing the dashboard.
+
+Grafana's resource API writes empty lists and objects as `null` (for example
+`links`, `transformations`, `options`, and `variables`), and its exporter may
+omit them entirely. Grafatui treats both the same as an empty value, so
+dashboards exported from Grafana 13 import unchanged. Exports made with
+**Share dashboard with another instance** enabled also work: their queries carry
+no datasource and run against the Prometheus server given by `--prometheus-url`.
+
+Library panels are exported as a reference to the library panel's uid, without
+the panel itself, so Grafatui skips them with an import diagnostic. Enable
+**Share dashboard with another instance** when exporting to inline library
+panels into the dashboard.
 
 ## Export From Grafana
 

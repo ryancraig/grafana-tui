@@ -36,17 +36,21 @@ unsupported advanced V2 dashboards. See the
 | V2 field or behavior | Status | Notes |
 |---|---|---|
 | Exact `apiVersion: dashboard.grafana.app/v2` | ✅ Supported | Other resource versions are rejected |
+| Grafana 13 **Export as code** and API output | ✅ Supported | Absent or `null` lists and objects (`links`, `transformations`, `options`, `overrides`, `variables`, …) are treated as empty, as Grafana's API serializes them |
+| **Share dashboard with another instance** exports | ✅ Supported | Queries without a `datasource` use the configured Prometheus; cleared query variable selections resolve dynamically |
 | `spec.layout.kind: GridLayout` | ✅ Supported | `GridLayoutItem` coordinates map to Grafatui's fixed 24-column grid |
 | `spec.layout.kind: RowsLayout` | ✅ Supported | Nested `GridLayout` and `RowsLayout` children preserve row titles, nesting, collapsed state, and hidden-header transparency |
 | `spec.layout.kind: TabsLayout` | ✅ Supported | Nested grid, row, and tab children preserve titles and show one active tab per group |
 | Inline `Panel` elements | ✅ Supported | Supported panel visualization groups map through the Classic-equivalent importer |
-| Prometheus `PanelQuery` queries | ✅ Supported | Non-Prometheus datasources emit import diagnostics and are skipped |
+| Prometheus `PanelQuery` queries | ✅ Supported | `prometheus`, `grafana-amazonprometheus-datasource`, and `grafana-azureprometheus-datasource` query groups are imported; other datasources emit import diagnostics and are skipped |
+| `RowsLayoutRow.spec.fillScreen` | ⛔ Not Applicable | Accepted and ignored; terminal rows size to their content |
 | Top-level `spec.variables` | 🔶 Partial | Supported variable kinds map to Grafatui variables; unsupported kinds emit diagnostics |
 | `spec.timeSettings.autoRefresh` | ✅ Supported | Used as the dashboard refresh interval |
 | `vizConfig.spec.fieldConfig` | 🔶 Partial | The supported Classic-equivalent field configuration subset applies |
 | Auto-grid layouts | ❌ Not Implemented | Rejected as fatal import errors |
 | Repeated grid items and row repeat | ❌ Not Implemented | Rejected as fatal import errors |
-| Conditional rendering, non-empty nested variables, and library panels | ❌ Not Implemented | Deferred V2 features |
+| Conditional rendering and non-empty nested variables | ❌ Not Implemented | Deferred V2 features |
+| `LibraryPanel` elements | ❌ Not Implemented | Exports reference library panels by uid only; they are skipped with a diagnostic. Export with **Share dashboard with another instance** enabled to inline them |
 
 Grafana V2 Resource YAML remains unsupported. Use a Classic export for any
 advanced V2 dashboard outside this grid, rows, and tabs subset.
