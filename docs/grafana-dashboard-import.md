@@ -246,14 +246,15 @@ grafatui --validate --format json --grafana-json ./dash.json
 
 ## Hidden Targets
 
-Grafatui honors `targets[].hide` by skipping hidden targets during import.
-Panels with a mix of hidden and visible targets render only the visible target
-queries.
+Grafatui skips hidden queries during import: `targets[].hide` in Classic JSON
+and `PanelQuery` `hidden` in V2 resources. Panels with a mix of hidden and
+visible queries render only the visible ones.
 
 ## Query Modes
 
-Grafatui honors `targets[].instant` from Grafana dashboard JSON. Targets marked
-as instant use the Prometheus instant `query` endpoint, while range targets use
+Grafatui honors a query's `instant` setting: `targets[].instant` in Classic JSON,
+and `instant` in the Prometheus query `spec` of a V2 `PanelQuery`. Instant
+queries use the Prometheus instant `query` endpoint, while range queries use
 `query_range`.
 
 If a target does not specify `instant`, Gauge, Bar Gauge, and Table panels

@@ -2591,6 +2591,77 @@ mod tests {
         );
     }
 
+    /// What an import means for the dashboard, leaving out source paths, which
+    /// differ between the Classic and V2 formats.
+    fn import_semantics(import: &DashboardImport) -> String {
+        let panels: Vec<String> = import
+            .queries
+            .iter()
+            .map(|panel| {
+                format!(
+                    "{:?}",
+                    (
+                        &panel.title,
+                        &panel.exprs,
+                        &panel.legends,
+                        &panel.query_modes,
+                        panel.grid.map(|grid| (grid.x, grid.y, grid.w, grid.h)),
+                        &panel.panel_type,
+                        &panel.thresholds,
+                        (panel.min, panel.max, panel.autogrid),
+                        &panel.display,
+                        &panel.options,
+                    )
+                )
+            })
+            .collect();
+        let mut vars: Vec<_> = import.vars.iter().collect();
+        vars.sort();
+        let query_vars: Vec<_> = import
+            .query_vars
+            .iter()
+            .map(|var| (&var.name, &var.query, &var.regex, var.select_all))
+            .collect();
+        let diagnostics: Vec<_> = import
+            .diagnostics
+            .iter()
+            .map(|diagnostic| (&diagnostic.code, &diagnostic.message))
+            .collect();
+        format!(
+            "title: {}\nrefresh: {:?}\nskipped: {}\nvars: {vars:?}\nquery vars: {query_vars:?}\nlayout: {:?}\ndiagnostics: {diagnostics:?}\npanels:\n{}",
+            import.title,
+            import.refresh_rate_ms,
+            import.skipped_panels,
+            import.layout,
+            panels.join("\n")
+        )
+    }
+
+    /// The V2 example dashboards are Grafana 13.2.3's own conversions of the
+    /// Classic dashboards kept in `tests/fixtures/grafana/classic_examples`, so
+    /// both formats must import to the same dashboard.
+    #[test]
+    fn classic_examples_and_their_v2_conversions_import_identically() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        for (classic, example) in [
+            ("all_visualizations.json", "examples/dashboards/all_visualizations.json"),
+            ("instant_queries.json", "examples/dashboards/instant_queries.json"),
+            ("prometheus_demo.json", "examples/dashboards/prometheus_demo.json"),
+            ("simple_test.json", "examples/dashboards/simple_test.json"),
+            ("thresholds_demo.json", "examples/dashboards/thresholds_demo.json"),
+            ("vllm_demo.json", "examples/demo/vllm_demo.json"),
+            ("vllm_grafana.json", "examples/demo/vllm/grafana.json"),
+        ] {
+            let classic = load_grafana_dashboard(
+                &root.join("tests/fixtures/grafana/classic_examples").join(classic),
+            )
+            .unwrap();
+            let v2 = load_grafana_dashboard(&root.join(example)).unwrap();
+
+            assert_eq!(import_semantics(&v2), import_semantics(&classic), "{example}");
+        }
+    }
+
     #[test]
     fn classic_repeats_are_recorded_and_saved_copies_are_skipped() {
         let dashboard = parse_grafana_dashboard(
