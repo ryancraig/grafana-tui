@@ -25,15 +25,69 @@ use super::variables::{format_prometheus_values, substitute_variables};
 use crate::conditions::{ConditionGroup, ConditionTarget, Conditions};
 use crate::dashboard::{
     DashboardAutoGrid, DashboardLayout, DashboardLayoutItem, DashboardRow, DashboardTab,
-    DashboardTabs, Repeat, RepeatDirection, Repeats, RowId, TabGroupId,
+    DashboardTabs, Repeat, RepeatDirection, Repeats, RowId, SectionId, TabGroupId,
 };
+use crate::grafana::{SectionVariable, TemplateQueryVar};
+
+/// Values that section query variables resolved to, per section copy and the
+/// scope it was resolved in.
+pub(crate) type ResolvedSections = HashMap<(SectionId, Scope), HashMap<String, Vec<String>>>;
 
 /// Grafana's default number of horizontal repeat copies per row.
 const DEFAULT_MAX_PER_ROW: u16 = 4;
 const GRID_COLUMNS: i32 = 24;
 
-/// Variable values bound by enclosing repeats, outermost first.
-pub(crate) type Scope = Vec<(String, String)>;
+/// A variable bound for an item and everything inside it: a repeat copy's
+/// value, or a variable that a row or tab defines.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct ScopeBinding {
+    pub(crate) name: String,
+    /// Raw selected values.
+    pub(crate) values: Vec<String>,
+    /// Query text replacing the formatted values, such as an `allValue`.
+    pub(crate) formatted: Option<String>,
+    /// Whether values are regex-escaped in queries.
+    pub(crate) regex: bool,
+    /// Whether `All` is selected.
+    pub(crate) all: bool,
+}
+
+impl ScopeBinding {
+    /// A repeat copy's binding: one value, formatted as that variable's only selection.
+    pub(crate) fn repeat(name: &str, value: &str, regex: bool) -> Self {
+        Self {
+            name: name.to_string(),
+            values: vec![value.to_string()],
+            formatted: None,
+            regex,
+            all: false,
+        }
+    }
+
+    /// The value substituted into queries.
+    pub(crate) fn query_value(&self) -> String {
+        self.formatted
+            .clone()
+            .unwrap_or_else(|| format_prometheus_values(&self.values, self.regex))
+    }
+
+    /// The value shown in titles, with several values joined like Grafana's text.
+    fn text(&self) -> String {
+        if self.values.is_empty() {
+            self.formatted.clone().unwrap_or_default()
+        } else {
+            self.values.join(" + ")
+        }
+    }
+}
+
+/// Variables bound by enclosing repeats and sections, outermost first; later
+/// bindings shadow earlier ones.
+pub(crate) type Scope = Vec<ScopeBinding>;
+
+pub(crate) fn find_binding<'s>(scope: &'s [ScopeBinding], name: &str) -> Option<&'s ScopeBinding> {
+    scope.iter().rev().find(|binding| binding.name == name)
+}
 
 /// The dashboard's variables, as repeats and titles see them.
 pub(crate) struct Variables<'a> {
@@ -41,15 +95,19 @@ pub(crate) struct Variables<'a> {
     pub(crate) formatted: &'a HashMap<String, String>,
     /// Raw selected values.
     pub(crate) values: &'a HashMap<String, Vec<String>>,
+    /// Variables whose values are regex-escaped in queries.
+    pub(crate) regex: &'a HashSet<String>,
+    /// Resolved values of section query variables.
+    pub(crate) sections: &'a ResolvedSections,
 }
 
 impl Variables<'_> {
-    /// Interpolates `$name` references in a title. A repeat's own value wins;
-    /// other variables show their selected values joined like Grafana's text.
+    /// Interpolates `$name` references in a title. Variables bound in `scope`
+    /// win; other variables show their selected values joined like Grafana's text.
     pub(crate) fn title(&self, title: &str, scope: &Scope) -> String {
         substitute_variables(title, |name| {
-            if let Some((_, value)) = scope.iter().rev().find(|(variable, _)| variable == name) {
-                return Some(Cow::Owned(value.clone()));
+            if let Some(binding) = find_binding(scope, name) {
+                return Some(Cow::Owned(binding.text()));
             }
             match self.values.get(name) {
                 Some(values) if !values.is_empty() => Some(Cow::Owned(values.join(" + "))),
@@ -58,28 +116,30 @@ impl Variables<'_> {
         })
     }
 
-    fn repeat_values(&self, name: &str) -> &[String] {
-        self.values.get(name).map_or(&[], Vec::as_slice)
+    /// The values a repeat over `name` iterates, and whether they are regex-escaped.
+    fn repeat_values<'s>(&'s self, scope: &'s Scope, name: &str) -> (&'s [String], bool) {
+        match find_binding(scope, name) {
+            Some(binding) => (&binding.values, binding.regex),
+            None => (
+                self.values.get(name).map_or(&[], Vec::as_slice),
+                self.regex.contains(name),
+            ),
+        }
     }
 }
 
-/// Query variables for a panel: the dashboard's, with each value bound by an
-/// enclosing repeat formatted as that variable's only selection.
+/// Query variables for a panel: the dashboard's, overridden by the variables
+/// bound in its scope.
 pub(crate) fn scoped_vars<'a>(
     vars: &'a HashMap<String, String>,
     scope: Option<&Scope>,
-    regex: &HashSet<String>,
 ) -> Cow<'a, HashMap<String, String>> {
     let Some(scope) = scope.filter(|scope| !scope.is_empty()) else {
         return Cow::Borrowed(vars);
     };
     let mut vars = vars.clone();
-    for (name, value) in scope {
-        let formatted = format_prometheus_values(
-            std::slice::from_ref(value),
-            regex.contains(name.as_str()),
-        );
-        vars.insert(name.clone(), formatted);
+    for binding in scope {
+        vars.insert(binding.name.clone(), binding.query_value());
     }
     Cow::Owned(vars)
 }
@@ -91,6 +151,7 @@ pub(crate) struct DashboardTemplate {
     layout: DashboardLayout,
     repeats: Repeats,
     conditions: Conditions,
+    sections: HashMap<SectionId, Vec<SectionVariable>>,
     panels: Vec<PanelTemplate>,
     clones: CloneIds,
 }
@@ -163,12 +224,24 @@ pub(crate) struct MaterializedCondition {
     pub(crate) scope: Scope,
 }
 
+/// A copy of a row or tab whose variables include Prometheus query variables.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SectionInstance {
+    pub(crate) id: SectionId,
+    /// Variables bound around the section, which its queries are expanded with.
+    pub(crate) scope: Scope,
+    pub(crate) queries: Vec<TemplateQueryVar>,
+    /// Imported selections, which resolution keeps while they are offered.
+    pub(crate) selected: HashMap<String, Vec<String>>,
+}
+
 /// A layout with repeats expanded, and the panels it shows.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Materialized {
     pub(crate) layout: DashboardLayout,
     pub(crate) panels: Vec<PanelInstance>,
     pub(crate) conditions: Vec<MaterializedCondition>,
+    pub(crate) sections: Vec<SectionInstance>,
 }
 
 impl DashboardTemplate {
@@ -178,6 +251,7 @@ impl DashboardTemplate {
             layout,
             repeats,
             conditions: Conditions::default(),
+            sections: HashMap::new(),
             panels: panels
                 .iter()
                 .map(|panel| PanelTemplate {
@@ -200,6 +274,15 @@ impl DashboardTemplate {
         self
     }
 
+    /// Adds the variables rows and tabs define, keyed by their imported ids.
+    pub(crate) fn with_sections(
+        mut self,
+        sections: HashMap<SectionId, Vec<SectionVariable>>,
+    ) -> Self {
+        self.sections = sections;
+        self
+    }
+
     /// Expands repeats for the current variable values.
     ///
     /// The first copy of each repeated item keeps the item's own id, so a
@@ -208,6 +291,8 @@ impl DashboardTemplate {
         let mut builder = Builder {
             repeats: &self.repeats,
             conditions: &self.conditions,
+            sections: &self.sections,
+            section_instances: Vec::new(),
             templates: &self.panels,
             clones: &mut self.clones,
             variables,
@@ -219,6 +304,7 @@ impl DashboardTemplate {
             layout: DashboardLayout::new(items),
             panels: builder.panels,
             conditions: builder.materialized_conditions,
+            sections: builder.section_instances,
         }
     }
 }
@@ -257,6 +343,8 @@ struct RepeatCopy {
 struct Builder<'a, 'v> {
     repeats: &'a Repeats,
     conditions: &'a Conditions,
+    sections: &'a HashMap<SectionId, Vec<SectionVariable>>,
+    section_instances: Vec<SectionInstance>,
     templates: &'a [PanelTemplate],
     clones: &'a mut CloneIds,
     variables: &'a Variables<'v>,
@@ -397,12 +485,15 @@ impl Builder<'_, '_> {
         primary: bool,
         output: &mut Vec<DashboardLayoutItem>,
     ) {
-        for copy in self.copies(self.repeats.rows.get(&row.id), scope, primary) {
+        let section = SectionId::Row(row.id);
+        let repeat = self.repeats.rows.get(&row.id);
+        for mut copy in self.repeat_section(section, repeat, scope, primary) {
             let id = if copy.primary {
                 row.id
             } else {
                 self.clones.row(row.id, &copy.scope)
             };
+            self.bind_section(section, repeat, &mut copy.scope);
             if let Some(group) = self.conditions.rows.get(&row.id) {
                 self.materialized_conditions.push(MaterializedCondition {
                     target: ConditionTarget::Row(id),
@@ -429,9 +520,11 @@ impl Builder<'_, '_> {
         };
         let mut tabs = Vec::new();
         for (position, tab) in group.tabs.iter().enumerate() {
+            let section = SectionId::Tab(group.id, position);
             let repeat = self.repeats.tabs.get(&(group.id, position));
             let condition = self.conditions.tabs.get(&(group.id, position));
-            for copy in self.copies(repeat, scope, primary) {
+            for mut copy in self.repeat_section(section, repeat, scope, primary) {
+                self.bind_section(section, repeat, &mut copy.scope);
                 if let Some(condition) = condition {
                     self.materialized_conditions.push(MaterializedCondition {
                         target: ConditionTarget::Tab(id, tabs.len()),
@@ -453,11 +546,101 @@ impl Builder<'_, '_> {
         DashboardLayoutItem::Tabs(materialized)
     }
 
+    /// The copies of a row or tab. A section's own variables are visible to its
+    /// repeat, as Grafana looks variables up from the section itself.
+    fn repeat_section(
+        &self,
+        section: SectionId,
+        repeat: Option<&Repeat>,
+        scope: &Scope,
+        primary: bool,
+    ) -> Vec<RepeatCopy> {
+        let mut section_scope = scope.clone();
+        section_scope.extend(self.section_bindings(section, scope));
+        self.copies(repeat, &section_scope, primary)
+            .into_iter()
+            .map(|copy| {
+                // Drop the section bindings again; `bind_section` adds them per copy.
+                let mut copy_scope = scope.clone();
+                copy_scope.extend(copy.scope.into_iter().skip(section_scope.len()));
+                RepeatCopy {
+                    scope: copy_scope,
+                    primary: copy.primary,
+                }
+            })
+            .collect()
+    }
+
+    /// Adds a section copy's variables to its scope, resolved in that copy's
+    /// scope so they can depend on its repeat value. The repeat value itself is
+    /// not shadowed.
+    fn bind_section(&mut self, section: SectionId, repeat: Option<&Repeat>, scope: &mut Scope) {
+        let Some(definitions) = self.sections.get(&section) else {
+            return;
+        };
+        let queries: Vec<TemplateQueryVar> = definitions
+            .iter()
+            .filter_map(|definition| definition.query.clone())
+            .collect();
+        if !queries.is_empty() {
+            self.section_instances.push(SectionInstance {
+                id: section,
+                scope: scope.clone(),
+                queries,
+                selected: definitions
+                    .iter()
+                    .filter(|definition| !definition.values.is_empty())
+                    .map(|definition| (definition.name.clone(), definition.values.clone()))
+                    .collect(),
+            });
+        }
+        let bindings: Vec<ScopeBinding> = self
+            .section_bindings(section, scope)
+            .into_iter()
+            .filter(|binding| repeat.is_none_or(|repeat| repeat.variable != binding.name))
+            .collect();
+        scope.extend(bindings);
+    }
+
+    /// Bindings for a section's variables: resolved values for query variables,
+    /// otherwise the imported selection. Variables without a value are left out,
+    /// so references to them fall through to the dashboard's variables.
+    fn section_bindings(&self, section: SectionId, scope: &Scope) -> Vec<ScopeBinding> {
+        let Some(definitions) = self.sections.get(&section) else {
+            return Vec::new();
+        };
+        let resolved = self.variables.sections.get(&(section, scope.clone()));
+        definitions
+            .iter()
+            .filter_map(|definition| {
+                let values = resolved
+                    .and_then(|resolved| resolved.get(&definition.name))
+                    .unwrap_or(&definition.values)
+                    .clone();
+                let formatted = if definition.all {
+                    definition
+                        .all_value
+                        .clone()
+                        .or_else(|| values.is_empty().then(|| ".*".to_string()))
+                } else {
+                    None
+                };
+                (!values.is_empty() || formatted.is_some()).then(|| ScopeBinding {
+                    name: definition.name.clone(),
+                    values,
+                    formatted,
+                    regex: definition.regex,
+                    all: definition.all,
+                })
+            })
+            .collect()
+    }
+
     /// The copies of an item repeated over its variable's selected values. An
     /// item without a repeat, or whose variable has no values, appears once.
     fn copies(&self, repeat: Option<&Repeat>, scope: &Scope, primary: bool) -> Vec<RepeatCopy> {
-        let values = repeat.map_or(&[][..], |repeat| {
-            self.variables.repeat_values(&repeat.variable)
+        let (values, regex) = repeat.map_or((&[][..], false), |repeat| {
+            self.variables.repeat_values(scope, &repeat.variable)
         });
         let Some(repeat) = repeat.filter(|_| !values.is_empty()) else {
             return vec![RepeatCopy {
@@ -470,7 +653,7 @@ impl Builder<'_, '_> {
             .enumerate()
             .map(|(position, value)| {
                 let mut scope = scope.clone();
-                scope.push((repeat.variable.clone(), value.clone()));
+                scope.push(ScopeBinding::repeat(&repeat.variable, value, regex));
                 RepeatCopy {
                     scope,
                     primary: primary && position == 0,
@@ -542,6 +725,8 @@ mod tests {
     struct Vars {
         formatted: HashMap<String, String>,
         values: HashMap<String, Vec<String>>,
+        regex: HashSet<String>,
+        sections: ResolvedSections,
     }
 
     impl Vars {
@@ -559,13 +744,21 @@ mod tests {
                 .iter()
                 .map(|(name, values)| (name.clone(), format_prometheus_values(values, true)))
                 .collect();
-            Self { formatted, values }
+            let regex = values.keys().cloned().collect();
+            Self {
+                formatted,
+                values,
+                regex,
+                sections: ResolvedSections::new(),
+            }
         }
 
         fn get(&self) -> Variables<'_> {
             Variables {
                 formatted: &self.formatted,
                 values: &self.values,
+                regex: &self.regex,
+                sections: &self.sections,
             }
         }
     }
@@ -616,6 +809,8 @@ mod tests {
         let materialized = template.materialize(&Variables {
             formatted: &import.vars,
             values: &import.var_values,
+            regex: &import.regex_vars,
+            sections: &ResolvedSections::new(),
         });
 
         let titles: Vec<_> = materialized
@@ -714,7 +909,7 @@ mod tests {
         );
         let titles: Vec<_> = materialized.panels.iter().map(|p| p.title.as_str()).collect();
         assert_eq!(titles, ["CPU a", "CPU b", "CPU c", "CPU d", "CPU e", "Below"]);
-        assert_eq!(materialized.panels[4].scope, [("dc".to_string(), "e".to_string())]);
+        assert_eq!(materialized.panels[4].scope, [ScopeBinding::repeat("dc", "e", true)]);
     }
 
     #[test]
@@ -865,14 +1060,60 @@ mod tests {
             .collect();
         let scope = |dc: &str, host: &str| {
             vec![
-                ("dc".to_string(), dc.to_string()),
-                ("host".to_string(), host.to_string()),
+                ScopeBinding::repeat("dc", dc, true),
+                ScopeBinding::repeat("host", host, true),
             ]
         };
         assert_eq!(
             scopes,
             [scope("eu", "a"), scope("eu", "b"), scope("us", "a"), scope("us", "b")]
         );
+    }
+
+    #[test]
+    fn section_variables_shadow_dashboard_variables_inside_their_section() {
+        let layout = DashboardLayout::new(vec![
+            DashboardLayoutItem::Row(DashboardRow::new(
+                RowId::new(0),
+                "Env $env",
+                false,
+                false,
+                vec![DashboardLayoutItem::Panel(0)],
+            )),
+            DashboardLayoutItem::Panel(1),
+        ]);
+        let sections = HashMap::from([(
+            SectionId::Row(RowId::new(0)),
+            vec![SectionVariable {
+                name: "env".to_string(),
+                values: vec!["staging".to_string()],
+                regex: false,
+                all: false,
+                all_value: None,
+                query: None,
+            }],
+        )]);
+        let mut template = DashboardTemplate::new(
+            layout,
+            Repeats::default(),
+            &panels(&[("CPU $env", None), ("Global $env", None)]),
+        )
+        .with_sections(sections);
+
+        let materialized = template.materialize(&Vars::new(&[("env", &["prod"])]).get());
+
+        let DashboardLayoutItem::Row(row) = &materialized.layout.items[0] else {
+            panic!("expected a row");
+        };
+        assert_eq!(row.title, "Env staging");
+        let titles: Vec<_> = materialized.panels.iter().map(|p| p.title.as_str()).collect();
+        assert_eq!(titles, ["CPU staging", "Global prod"]);
+        let staging = &materialized.panels[0].scope;
+        assert_eq!(staging.len(), 1);
+        assert_eq!(staging[0].query_value(), "staging");
+        assert!(materialized.panels[1].scope.is_empty());
+        // Static sections have nothing to resolve.
+        assert!(materialized.sections.is_empty());
     }
 
     #[test]
@@ -920,13 +1161,12 @@ mod tests {
             ("dc".to_string(), "(eu|us)".to_string()),
             ("job".to_string(), "api".to_string()),
         ]);
-        let regex = HashSet::from(["dc".to_string()]);
-        let scope = vec![("dc".to_string(), "eu.west".to_string())];
+        let scope = vec![ScopeBinding::repeat("dc", "eu.west", true)];
 
-        let scoped = scoped_vars(&vars, Some(&scope), &regex);
+        let scoped = scoped_vars(&vars, Some(&scope));
 
         assert_eq!(scoped.get("dc").map(String::as_str), Some("eu\\\\.west"));
         assert_eq!(scoped.get("job").map(String::as_str), Some("api"));
-        assert!(matches!(scoped_vars(&vars, None, &regex), Cow::Borrowed(_)));
+        assert!(matches!(scoped_vars(&vars, None), Cow::Borrowed(_)));
     }
 }

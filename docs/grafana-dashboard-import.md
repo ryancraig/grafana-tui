@@ -20,10 +20,9 @@ configuration, fixed-grid positions, auto grids, and nested `RowsLayout`/`TabsLa
 containers to the same Grafatui behavior as Classic JSON.
 
 Rows and tabs may recursively contain `GridLayout`, `AutoGridLayout`, `RowsLayout`,
-or `TabsLayout`. Grid items, auto grid items, rows, and tabs may repeat, and rows,
-tabs, and auto grid items may render conditionally. Nested non-empty layout
-variables remain unsupported; unsupported V2 layouts and fields are fatal import
-errors.
+or `TabsLayout`. Grid items, auto grid items, rows, and tabs may repeat; rows,
+tabs, and auto grid items may render conditionally; and rows and tabs may define
+their own variables. Unsupported V2 layouts and fields are fatal import errors.
 
 Grafana's resource API writes empty lists and objects as `null` (for example
 `links`, `transformations`, `options`, and `variables`), and its exporter may
@@ -63,6 +62,23 @@ Grafana shows at a similar pixel width: a 120-column terminal shows two
 `standard` columns, and an 80-column terminal shows one. Grid rows are the same
 unit as a fixed-grid panel's `height` (30px plus an 8px margin in Grafana).
 `fillScreen`, `fitContent`, and minimum/maximum height settings are ignored.
+
+## Row and Tab Variables
+
+A V2 row or tab can define `variables` of its own. As in Grafana, they apply to
+the row or tab itself (its title, repeat, and conditions) and to everything
+inside it, and they shadow a dashboard variable with the same name there; the
+rest of the dashboard keeps the dashboard's value. Every variable kind Grafatui
+supports at the dashboard level is supported here, with the same selection,
+multi-value, and `All` rules.
+
+Query variables in a row or tab resolve against Prometheus with the variables
+around that row or tab. Inside a repeated row, each copy resolves its own, so a
+`label_values(up{dc="$dc"}, host)` variable in a row repeated over `dc` lists
+each data center's hosts.
+
+`--var` and the config file's `vars` override dashboard variables only; a row or
+tab variable with the same name still wins inside its row or tab.
 
 ## Conditional Rendering
 

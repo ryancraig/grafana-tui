@@ -124,6 +124,16 @@ or less.
 cargo run -- --grafana-json examples/dashboards/grafana_v2_conditional.json --prometheus-url http://localhost:19090 --range 1h
 ```
 
+### `grafana_v2_sections.json`
+A Grafana V2 resource authored in Grafana 13 with row variables. The
+`Tail latency` row defines its own `quantile` (0.99), shadowing the dashboard's
+0.9 inside that row only, and the `Busiest handlers` row defines a `handler`
+query variable whose `/api/v1/` values a repeated panel iterates.
+
+```bash
+cargo run -- --grafana-json examples/dashboards/grafana_v2_sections.json --prometheus-url http://localhost:19090
+```
+
 ### `grafana_v2_tabs.json`
 An exact Grafana V2 `TabsLayout` resource with panels, a nested row, and an
 empty tab. Focus the tab bar and use Left/Right to switch tabs; Enter/Space

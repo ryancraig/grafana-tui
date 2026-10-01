@@ -44,6 +44,7 @@ pub(super) struct Tab {
     pub(super) title: String,
     pub(super) repeat: Option<Repeat>,
     pub(super) condition: Option<ConditionGroup>,
+    pub(super) variables: Vec<Variable>,
     pub(super) source_path: String,
     pub(super) children: Vec<LayoutNode>,
 }
@@ -53,6 +54,7 @@ pub(super) struct Row {
     pub(super) title: String,
     pub(super) repeat: Option<Repeat>,
     pub(super) condition: Option<ConditionGroup>,
+    pub(super) variables: Vec<Variable>,
     pub(super) collapsed: bool,
     pub(super) hidden_header: bool,
     pub(super) source_path: String,

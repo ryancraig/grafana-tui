@@ -182,7 +182,9 @@ async fn main() -> Result<()> {
             })
             .collect();
         template = Some(
-            app::DashboardTemplate::new(d.layout, d.repeats, &ps).with_conditions(d.conditions),
+            app::DashboardTemplate::new(d.layout, d.repeats, &ps)
+                .with_conditions(d.conditions)
+                .with_sections(d.sections),
         );
         (format!("{} (imported)", d.title), ps, d.skipped_panels)
     } else {

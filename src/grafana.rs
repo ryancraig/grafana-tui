@@ -46,6 +46,8 @@ pub(crate) struct DashboardImport {
     pub(crate) variable_names: HashSet<String>,
     /// Conditional rendering of rows, tabs, and auto grid items in `layout`.
     pub(crate) conditions: crate::conditions::Conditions,
+    /// Variables that rows and tabs in `layout` define for their contents.
+    pub(crate) sections: HashMap<crate::dashboard::SectionId, Vec<SectionVariable>>,
     /// Repeat settings for panels, rows, and tabs in `layout`.
     pub(crate) repeats: crate::dashboard::Repeats,
     /// Dynamic query variables extracted from `templating.list`.
@@ -96,6 +98,23 @@ pub(crate) struct TemplateQueryVar {
     pub(crate) all_value: Option<String>,
     /// Whether values are regex-escaped, as for multi-value or include-all variables.
     pub(crate) regex_values: bool,
+}
+
+/// A variable that a V2 row or tab defines for itself and its contents,
+/// shadowing a dashboard variable of the same name.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SectionVariable {
+    pub(crate) name: String,
+    /// Raw selected values; `All` selects every known option.
+    pub(crate) values: Vec<String>,
+    /// Whether values are regex-escaped, as for multi-value or include-all variables.
+    pub(crate) regex: bool,
+    /// Whether `All` is selected.
+    pub(crate) all: bool,
+    /// Replaces the values in queries while `All` is selected, if set.
+    pub(crate) all_value: Option<String>,
+    /// Prometheus query that resolves the values, for query variables.
+    pub(crate) query: Option<TemplateQueryVar>,
 }
 
 /// A single panel extracted from Grafana.
@@ -224,6 +243,11 @@ pub(crate) fn variable_diagnostics(
 ) -> Vec<ImportDiagnostic> {
     let mut known_vars: HashSet<String> = vars.keys().cloned().collect();
     known_vars.extend(dashboard.query_vars.iter().map(|var| var.name.clone()));
+    // Section variables only apply inside their row or tab, but panels are not
+    // traced back to sections here, so any section's names count as known.
+    let section_vars = dashboard.sections.values().flatten();
+    known_vars.extend(section_vars.clone().map(|var| var.name.clone()));
+    let section_queries = section_vars.filter_map(|var| var.query.as_ref());
 
     let mut diagnostics = Vec::new();
     let mut seen = HashSet::new();
@@ -232,7 +256,7 @@ pub(crate) fn variable_diagnostics(
             collect_variable_diagnostics(expr, path, &known_vars, &mut diagnostics, &mut seen);
         }
     }
-    for query_var in &dashboard.query_vars {
+    for query_var in dashboard.query_vars.iter().chain(section_queries) {
         collect_variable_diagnostics(
             &query_var.query,
             &query_var.query_path,
@@ -425,6 +449,7 @@ mod tests {
             layout: vec![model::LayoutNode::Row(model::Row {
                 repeat: None,
                 condition: None,
+                variables: Vec::new(),
                 title: "Group".into(),
                 collapsed: false,
                 hidden_header: false,
@@ -833,8 +858,38 @@ mod tests {
         );
     }
 
+    /// `v2_grafana13_sections.json` was authored through Grafana 13.2.3's V2 API:
+    /// a row shadowing the dashboard's `quantile`, and a row whose `handler`
+    /// query variable drives a repeat.
     #[test]
-    fn v2_tabs_reject_scoped_variables_at_native_paths() {
+    fn v2_grafana13_section_variables_fixture_imports_per_row() {
+        use crate::dashboard::{RowId, SectionId};
+
+        let dashboard = parse_grafana_dashboard(include_str!(
+            "../tests/fixtures/grafana/v2_grafana13_sections.json"
+        ))
+        .unwrap();
+
+        assert!(dashboard.diagnostics.is_empty(), "{:?}", dashboard.diagnostics);
+        assert_eq!(dashboard.vars.get("quantile").map(String::as_str), Some("0.9"));
+        let section = |row| &dashboard.sections[&SectionId::Row(RowId::new(row))];
+        assert!(!dashboard.sections.contains_key(&SectionId::Row(RowId::new(0))));
+        assert_eq!(section(1)[0].name, "quantile");
+        assert_eq!(section(1)[0].values, ["0.99"]);
+        let handler = &section(2)[0];
+        assert!(handler.all && handler.regex);
+        assert_eq!(
+            handler.query.as_ref().map(|query| query.query.as_str()),
+            Some("label_values(prometheus_http_requests_total, handler)")
+        );
+        assert_eq!(
+            dashboard.repeats.panels.get(&2).map(|repeat| repeat.variable.as_str()),
+            Some("handler")
+        );
+    }
+
+    #[test]
+    fn v2_tabs_reject_malformed_section_variables_at_native_paths() {
         for (field, value) in [("variables", serde_json::json!([{"kind": "TextVariable"}]))] {
             let mut spec = serde_json::json!({
                 "title": "Tab",
@@ -849,7 +904,7 @@ mod tests {
                 .unwrap_err()
                 .to_string();
             assert!(
-                error.contains(&format!("spec.layout.spec.tabs[0].spec.{field}")),
+                error.contains(&format!("spec.layout.spec.tabs[0].spec.{field}[0].spec")),
                 "unexpected error for {field}: {error}"
             );
         }
@@ -943,22 +998,60 @@ mod tests {
     }
 
     #[test]
-    fn v2_rows_reject_scoped_variables_at_native_paths() {
-        for (field, value) in [
-            (
-                "variables",
-                serde_json::json!([{"kind": "TextVariable", "spec": {"name": "x"}}]),
-            ),
-        ] {
-            let error =
-                parse_grafana_dashboard(&v2_row_resource_with_field(field, value).to_string())
-                    .unwrap_err()
-                    .to_string();
-            assert!(
-                error.contains(&format!("spec.layout.spec.rows[0].spec.{field}")),
-                "unexpected error for {field}: {error}"
-            );
-        }
+    fn v2_row_variables_import_as_section_variables() {
+        let mut json = v2_row_resource_with_field(
+            "variables",
+            serde_json::json!([
+                {"kind": "CustomVariable", "spec": {
+                    "name": "host",
+                    "query": "a,b",
+                    "multi": true,
+                    "includeAll": true,
+                    "allValue": ".+",
+                    "current": {"text": ["All"], "value": ["$__all"]}
+                }},
+                {"kind": "QueryVariable", "spec": {
+                    "name": "pod",
+                    "current": {"text": "p1", "value": "p1"},
+                    "query": {"kind": "DataQuery", "group": "prometheus", "spec": {"query": "label_values(up{host=~\"$host\"}, pod)"}}
+                }},
+                {"kind": "AdhocVariable", "spec": {"name": "filters"}}
+            ]),
+        );
+        json["spec"]["layout"]["spec"]["rows"][0]["spec"]["repeat"] =
+            serde_json::json!({"mode": "variable", "value": "host"});
+
+        let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
+
+        let section = &dashboard.sections[&crate::dashboard::SectionId::Row(
+            crate::dashboard::RowId::new(0),
+        )];
+        assert_eq!(section.len(), 2);
+        assert_eq!(section[0].name, "host");
+        assert_eq!(section[0].values, ["a", "b"]);
+        assert!(section[0].all && section[0].regex);
+        assert_eq!(section[0].all_value.as_deref(), Some(".+"));
+        assert_eq!(section[1].name, "pod");
+        assert_eq!(section[1].values, ["p1"]);
+        let query = section[1].query.as_ref().unwrap();
+        assert_eq!(query.query, "label_values(up{host=~\"$host\"}, pod)");
+        assert_eq!(
+            query.query_path,
+            "spec.layout.spec.rows[0].spec.variables[1].spec.query.spec.query"
+        );
+        // Section variables stay out of the dashboard's own variables.
+        assert!(dashboard.vars.is_empty() && dashboard.query_vars.is_empty());
+        // The row may repeat over its own variable.
+        assert_eq!(
+            dashboard.repeats.rows.get(&crate::dashboard::RowId::new(0)),
+            Some(&crate::dashboard::Repeat::new("host"))
+        );
+        assert_eq!(dashboard.diagnostics.len(), 1);
+        assert_eq!(dashboard.diagnostics[0].code, "unsupported_variable");
+        assert_eq!(
+            dashboard.diagnostics[0].path,
+            "spec.layout.spec.rows[0].spec.variables[2]"
+        );
     }
 
     #[test]
