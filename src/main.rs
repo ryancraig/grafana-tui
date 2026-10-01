@@ -242,6 +242,7 @@ async fn main() -> Result<()> {
     state.autogrid_enabled = autogrid_enabled;
     state.autogrid_color = autogrid_color;
     state.transparent_background = transparent_background;
+    state.themes = themes;
     state.vars = variables.vars;
     state.var_values = variables.var_values;
     state.regex_vars = variables.regex_vars;

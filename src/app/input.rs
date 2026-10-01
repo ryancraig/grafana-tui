@@ -58,6 +58,21 @@ pub(super) async fn handle_key(
         return Ok(handle_annotation_modal_key(key, terminal_size, app));
     }
 
+    if app.theme_picker.is_some() {
+        return Ok(handle_theme_picker_key(key, terminal_size, app));
+    }
+
+    // Shift is part of the key, so only Ctrl and Alt rule out the binding.
+    if key.code == KeyCode::Char('T')
+        && !key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        && app.mode != AppMode::Search
+    {
+        app.open_theme_picker();
+        return Ok(InputAction::Redraw);
+    }
+
     if key.code == KeyCode::Char('t') && key.modifiers.is_empty() && app.mode != AppMode::Search {
         app.open_tag_filter_modal();
         return Ok(InputAction::Redraw);
@@ -127,12 +142,28 @@ fn handle_annotation_modal_key(
     InputAction::Redraw
 }
 
+fn handle_theme_picker_key(key: KeyEvent, terminal_size: Size, app: &mut AppState) -> InputAction {
+    let page = isize::try_from(ui::theme_picker_page_size(terminal_size, app)).unwrap_or(1);
+    match key.code {
+        KeyCode::Enter => app.close_theme_picker(true),
+        KeyCode::Esc | KeyCode::Char('T') | KeyCode::Char('q') => app.close_theme_picker(false),
+        KeyCode::Up | KeyCode::Char('k') => app.move_theme_picker(-1),
+        KeyCode::Down | KeyCode::Char('j') => app.move_theme_picker(1),
+        KeyCode::PageUp => app.move_theme_picker(-page),
+        KeyCode::PageDown => app.move_theme_picker(page),
+        KeyCode::Home => app.move_theme_picker(isize::MIN),
+        KeyCode::End => app.move_theme_picker(isize::MAX),
+        _ => {}
+    }
+    InputAction::Redraw
+}
+
 pub(super) async fn handle_mouse(
     mouse: MouseEvent,
     terminal_size: Size,
     app: &mut AppState,
 ) -> Result<InputAction> {
-    if app.annotation_modal.is_some() {
+    if app.annotation_modal.is_some() || app.theme_picker.is_some() {
         return Ok(InputAction::Redraw);
     }
 
@@ -974,6 +1005,115 @@ mod tests {
         let mut event = crate::annotations::test_event_at(50.0, text);
         event.tags = vec![tag.to_string()];
         event
+    }
+
+    fn shift_t() -> KeyEvent {
+        KeyEvent::new(KeyCode::Char('T'), KeyModifiers::SHIFT)
+    }
+
+    #[tokio::test]
+    async fn theme_picker_previews_live_and_reverts_on_cancel() {
+        let mut app = test_app();
+        let original = app.theme.clone();
+
+        handle_key(shift_t(), size(), &mut app).await.unwrap();
+        let picker = app.theme_picker.as_ref().expect("T opens the picker");
+        assert_eq!(app.themes[picker.selected].name, original.name);
+
+        handle_key(key(KeyCode::Char('j')), size(), &mut app)
+            .await
+            .unwrap();
+        assert_eq!(app.theme.name, "tokyo-night-storm");
+        handle_key(key(KeyCode::End), size(), &mut app)
+            .await
+            .unwrap();
+        assert_eq!(app.theme.name, "terminal");
+        handle_key(key(KeyCode::Down), size(), &mut app)
+            .await
+            .unwrap();
+        assert_eq!(app.theme.name, "terminal");
+
+        // q reverts instead of quitting while the picker is open.
+        let action = handle_key(key(KeyCode::Char('q')), size(), &mut app)
+            .await
+            .unwrap();
+        assert_eq!(action, InputAction::Redraw);
+        assert!(app.theme_picker.is_none());
+        assert_eq!(app.theme, original);
+    }
+
+    #[tokio::test]
+    async fn theme_picker_enter_keeps_the_preview() {
+        let mut app = test_app();
+
+        handle_key(shift_t(), size(), &mut app).await.unwrap();
+        for _ in 0..4 {
+            handle_key(key(KeyCode::Down), size(), &mut app)
+                .await
+                .unwrap();
+        }
+        handle_key(key(KeyCode::Enter), size(), &mut app)
+            .await
+            .unwrap();
+
+        assert!(app.theme_picker.is_none());
+        assert_eq!(app.theme.name, "catppuccin-mocha");
+
+        // Reopening starts from the kept theme, and Esc keeps it.
+        handle_key(shift_t(), size(), &mut app).await.unwrap();
+        handle_key(key(KeyCode::Home), size(), &mut app)
+            .await
+            .unwrap();
+        assert_eq!(app.theme.name, "tokyo-night");
+        handle_key(key(KeyCode::Esc), size(), &mut app)
+            .await
+            .unwrap();
+        assert_eq!(app.theme.name, "catppuccin-mocha");
+    }
+
+    #[tokio::test]
+    async fn theme_picker_opens_from_inspect_but_not_search_or_ctrl() {
+        let mut app = test_app();
+        app.mode = AppMode::Inspect;
+        handle_key(key(KeyCode::Char('T')), size(), &mut app)
+            .await
+            .unwrap();
+        assert!(app.theme_picker.is_some());
+
+        let mut app = test_app();
+        app.mode = AppMode::Search;
+        handle_key(shift_t(), size(), &mut app).await.unwrap();
+        assert!(app.theme_picker.is_none());
+        assert_eq!(app.search_query, "T");
+
+        let mut app = test_app();
+        handle_key(ctrl_key(KeyCode::Char('T')), size(), &mut app)
+            .await
+            .unwrap();
+        assert!(app.theme_picker.is_none());
+    }
+
+    #[tokio::test]
+    async fn theme_picker_ignores_mouse_input() {
+        let mut app = test_app();
+        app.open_theme_picker();
+        let selected = app.selected_item;
+
+        handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 1,
+                row: 1,
+                modifiers: KeyModifiers::NONE,
+            },
+            size(),
+            &mut app,
+        )
+        .await
+        .unwrap();
+
+        assert!(app.theme_picker.is_some());
+        assert_eq!(app.selected_item, selected);
     }
 
     #[tokio::test]

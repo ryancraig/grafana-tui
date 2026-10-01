@@ -191,7 +191,7 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
         },
     ));
     summary.push(Span::raw(format!(
-        " | keys: {navigation_hint}, r refresh, e export, Ctrl+E record, +/- range, q quit, ? debug:{}",
+        " | keys: {navigation_hint}, r refresh, e export, Ctrl+E record, +/- range, T theme, q quit, ? debug:{}",
         if app.debug_bar { "on" } else { "off" }
     )));
 
@@ -278,6 +278,7 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
     }
 
     super::render_annotation_modal(frame, app);
+    super::render_theme_picker(frame, app);
 }
 
 fn normal_panel_count(app: &AppState) -> String {

@@ -20,6 +20,7 @@ Grafatui is designed for keyboard-first dashboard inspection.
 | `g` | Toggle autogrid guide lines |
 | `a` | Toggle external annotation markers |
 | `t` | Open the global annotation tag filter |
+| `T` | Open the theme picker |
 | `1` through `9` | Toggle series visibility |
 | `f` | Toggle fullscreen mode for the selected panel |
 | `v` | Toggle value inspection mode |
@@ -48,3 +49,17 @@ The global tag filter opens with `t`. Use `Up`/`Down` or `k`/`j` to move,
 it, or `Esc` to discard it. In an annotation cluster, use `Up`/`Down` or
 `k`/`j` to select an event, `PgUp`/`PgDn` to page, and `Enter` or `Esc` to
 close it. Mouse input is ignored while either annotation modal is open.
+
+## Theme Picker
+
+`T` opens the theme picker in any mode except search. Themes are grouped by
+family, and user-defined themes appear under Custom. Each row shows the theme's
+background and series colors.
+
+Moving the selection with `Up`/`Down`, `k`/`j`, `PgUp`/`PgDn`, `Home`, or
+`End` previews that theme immediately. `Enter` keeps it; `Esc`, `T`, or `q`
+restores the theme the picker opened with, which is marked `•`. Mouse input is
+ignored while the picker is open.
+
+The choice lasts for the current session. To keep it, set `theme` in the
+[configuration file](configuration.md#themes).

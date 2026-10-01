@@ -11,37 +11,40 @@ enum Spec {
 
 struct Builtin {
     name: &'static str,
+    family: &'static str,
     spec: Spec,
 }
 
-const fn base(name: &'static str, base: Base) -> Builtin {
+const fn base(name: &'static str, family: &'static str, base: Base) -> Builtin {
     Builtin {
         name,
+        family,
         spec: Spec::Base(base),
     }
 }
 
 const BUILTINS: &[Builtin] = &[
-    base("tokyo-night", TOKYO_NIGHT),
-    base("tokyo-night-storm", TOKYO_NIGHT_STORM),
-    base("tokyo-night-moon", TOKYO_NIGHT_MOON),
-    base("tokyo-night-day", TOKYO_NIGHT_DAY),
-    base("catppuccin-mocha", CATPPUCCIN_MOCHA),
-    base("catppuccin-macchiato", CATPPUCCIN_MACCHIATO),
-    base("catppuccin-frappe", CATPPUCCIN_FRAPPE),
-    base("catppuccin-latte", CATPPUCCIN_LATTE),
-    base("gruvbox-dark", GRUVBOX_DARK),
-    base("gruvbox-dark-hard", GRUVBOX_DARK_HARD),
-    base("gruvbox-dark-soft", GRUVBOX_DARK_SOFT),
-    base("gruvbox-light", GRUVBOX_LIGHT),
-    base("gruvbox-light-hard", GRUVBOX_LIGHT_HARD),
-    base("gruvbox-light-soft", GRUVBOX_LIGHT_SOFT),
-    base("dracula", DRACULA),
-    base("monokai", MONOKAI),
-    base("solarized-dark", SOLARIZED_DARK),
-    base("solarized-light", SOLARIZED_LIGHT),
+    base("tokyo-night", "Tokyo Night", TOKYO_NIGHT),
+    base("tokyo-night-storm", "Tokyo Night", TOKYO_NIGHT_STORM),
+    base("tokyo-night-moon", "Tokyo Night", TOKYO_NIGHT_MOON),
+    base("tokyo-night-day", "Tokyo Night", TOKYO_NIGHT_DAY),
+    base("catppuccin-mocha", "Catppuccin", CATPPUCCIN_MOCHA),
+    base("catppuccin-macchiato", "Catppuccin", CATPPUCCIN_MACCHIATO),
+    base("catppuccin-frappe", "Catppuccin", CATPPUCCIN_FRAPPE),
+    base("catppuccin-latte", "Catppuccin", CATPPUCCIN_LATTE),
+    base("gruvbox-dark", "Gruvbox", GRUVBOX_DARK),
+    base("gruvbox-dark-hard", "Gruvbox", GRUVBOX_DARK_HARD),
+    base("gruvbox-dark-soft", "Gruvbox", GRUVBOX_DARK_SOFT),
+    base("gruvbox-light", "Gruvbox", GRUVBOX_LIGHT),
+    base("gruvbox-light-hard", "Gruvbox", GRUVBOX_LIGHT_HARD),
+    base("gruvbox-light-soft", "Gruvbox", GRUVBOX_LIGHT_SOFT),
+    base("dracula", "Other", DRACULA),
+    base("monokai", "Other", MONOKAI),
+    base("solarized-dark", "Other", SOLARIZED_DARK),
+    base("solarized-light", "Other", SOLARIZED_LIGHT),
     Builtin {
         name: "terminal",
+        family: "Other",
         spec: Spec::Terminal,
     },
 ];
@@ -58,6 +61,14 @@ pub(crate) const ALIASES: &[(&str, &str)] = &[
 /// Canonical built-in theme names, in display order.
 pub(crate) fn builtin_names() -> impl Iterator<Item = &'static str> {
     BUILTINS.iter().map(|builtin| builtin.name)
+}
+
+/// Display group of a built-in theme, such as "Catppuccin".
+pub(crate) fn builtin_family(name: &str) -> Option<&'static str> {
+    BUILTINS
+        .iter()
+        .find(|builtin| builtin.name.eq_ignore_ascii_case(name))
+        .map(|builtin| builtin.family)
 }
 
 /// The built-in theme an alias points at, ignoring case.

@@ -20,6 +20,7 @@ mod format;
 mod layout;
 mod panels;
 mod tabs;
+mod theme_picker;
 
 pub(crate) use annotations::{annotation_cluster_page_size, render_annotation_modal};
 pub(crate) use draw::draw_ui;
@@ -31,3 +32,4 @@ pub(crate) use layout::{
 };
 pub(crate) use panels::calculate_y_bounds;
 pub(crate) use tabs::{render_tab_bar, tab_at, tab_bar_geometry, tab_title};
+pub(crate) use theme_picker::{render_theme_picker, theme_picker_page_size};

@@ -20,7 +20,7 @@ mod custom;
 use anyhow::{Result, bail};
 use ratatui::style::Color;
 
-pub(crate) use builtin::{DEFAULT_THEME, builtin, builtin_names};
+pub(crate) use builtin::{DEFAULT_THEME, builtin, builtin_family, builtin_names};
 pub(crate) use custom::{ThemeSpec, custom_themes};
 
 /// Semantic UI colors. Renderers pick a role, never a literal color, so every
@@ -329,6 +329,15 @@ mod tests {
         assert_eq!(resolve("gruvbox", &themes).unwrap(), shadow);
         assert_eq!(resolve("mine", &themes).unwrap(), extra);
         assert!(resolve("nope", &themes).unwrap_err().to_string().contains("Mine"));
+    }
+
+    #[test]
+    fn every_builtin_has_a_family() {
+        for name in builtin_names() {
+            assert!(builtin_family(name).is_some(), "{name}");
+        }
+        assert_eq!(builtin_family("Catppuccin-Latte"), Some("Catppuccin"));
+        assert_eq!(builtin_family("mine"), None);
     }
 
     #[test]
