@@ -1340,6 +1340,32 @@ mod tests {
     }
 
     #[test]
+    fn v2_query_variable_reads_legacy_string_queries_from_converted_dashboards() {
+        let mut json = valid_v2_resource();
+        json["spec"]["variables"] = serde_json::json!([{
+            "kind": "QueryVariable",
+            "spec": {
+                "name": "instance",
+                "current": {"text": ["All"], "value": ["$__all"]},
+                "query": {"kind": "DataQuery", "group": "prometheus", "version": "v0", "spec": {
+                    "__legacyStringValue": "label_values(up, instance)"
+                }},
+                "multi": true,
+                "includeAll": true
+            }
+        }]);
+
+        let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
+
+        assert_eq!(dashboard.query_vars.len(), 1);
+        assert_eq!(dashboard.query_vars[0].query, "label_values(up, instance)");
+        assert_eq!(
+            dashboard.query_vars[0].query_path,
+            "spec.variables[0].spec.query.spec.__legacyStringValue"
+        );
+    }
+
+    #[test]
     fn rejects_malformed_v2_query_variable_wrappers_at_native_paths() {
         for (case, expected_path) in [
             ("missing_query", "spec.variables[0].spec.query"),
