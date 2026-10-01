@@ -169,7 +169,14 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
 
     let detail = build_footer_detail(app);
 
-    let footer = Paragraph::new(format!("{}\n{}", summary, detail)).wrap(Wrap { trim: true });
+    // Statuses such as export results come first: the summary alone usually
+    // fills the two footer lines, which would hide them.
+    let text = if detail.is_empty() {
+        summary
+    } else {
+        format!("{detail}\n{summary}")
+    };
+    let footer = Paragraph::new(text).wrap(Wrap { trim: true });
     frame.render_widget(footer, chunks[2]);
 
     // Search Popup
@@ -961,6 +968,17 @@ mod tests {
                 app.theme.border
             );
         }
+    }
+
+    #[test]
+    fn export_status_stays_visible_in_a_narrow_footer() {
+        let mut app = v2_compatibility_app();
+        app.export_status = Some("Export failed: disk full".to_string());
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+
+        assert!(terminal_text(&terminal).contains("Export failed: disk full"));
     }
 
     #[test]
