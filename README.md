@@ -94,8 +94,8 @@ grafatui man
 
 Grafana 13 users can import an exact `dashboard.grafana.app/v2` JSON or YAML
 resource with recursive `GridLayout`, `AutoGridLayout`, `RowsLayout`, and
-`TabsLayout` containers, including repeated panels, rows, and tabs. Conditional
-rendering, nested non-empty layout variables, and library panels remain
+`TabsLayout` containers, including repeated panels, rows, and tabs, and conditional
+rendering. Nested non-empty layout variables and library panels remain
 unsupported; export **Model: Classic** under **Export as
 code → Advanced options** for those dashboards. See the
 [dashboard import guide](https://fedexist.github.io/grafatui/grafana-dashboard-import.html)

@@ -20,9 +20,10 @@ configuration, fixed-grid positions, auto grids, and nested `RowsLayout`/`TabsLa
 containers to the same Grafatui behavior as Classic JSON.
 
 Rows and tabs may recursively contain `GridLayout`, `AutoGridLayout`, `RowsLayout`,
-or `TabsLayout`. Grid items, auto grid items, rows, and tabs may repeat. Conditional
-rendering and nested non-empty layout variables remain unsupported; unsupported
-V2 layouts and fields are fatal import errors.
+or `TabsLayout`. Grid items, auto grid items, rows, and tabs may repeat, and rows,
+tabs, and auto grid items may render conditionally. Nested non-empty layout
+variables remain unsupported; unsupported V2 layouts and fields are fatal import
+errors.
 
 Grafana's resource API writes empty lists and objects as `null` (for example
 `links`, `transformations`, `options`, and `variables`), and its exporter may
@@ -62,6 +63,32 @@ Grafana shows at a similar pixel width: a 120-column terminal shows two
 `standard` columns, and an 80-column terminal shows one. Grid rows are the same
 unit as a fixed-grid panel's `height` (30px plus an 8px margin in Grafana).
 `fillScreen`, `fitContent`, and minimum/maximum height settings are ignored.
+
+## Conditional Rendering
+
+V2 rows, tabs, and auto grid items can carry a `conditionalRendering` group that
+shows or hides them. Grafatui evaluates these groups as Grafana 13 does:
+
+| Condition | Holds when |
+|---|---|
+| Variable `equals` / `notEquals` | Any selected value equals the value (or not). `All` also matches while `All` is selected |
+| Variable `matches` / `notMatches` | Any selected value matches the regular expression (or not); an invalid expression shows the item |
+| Data (auto grid items only) | The panel returned data (`value: true`) or no data (`value: false`) |
+| Time range size | The dashboard time range is at most the value, such as `1h` or `7d` |
+
+A group's `condition` combines its conditions with `and` or `or`, and its
+`visibility` shows (`show`) or hides (`hide`) the item when they hold.
+Conditions that cannot be decided yet are left out: a variable the dashboard
+does not define, an unparseable time range size, or a data condition before its
+panel's first query. A group with nothing left to decide shows its item.
+
+Items re-evaluate as query variables resolve, data refreshes, and the time range
+changes with zoom and pan. Hidden rows, tabs, and auto grid items leave the
+layout entirely; the auto grid reflows, a tab group whose active tab is hidden
+switches to its first remaining tab, and collapsed rows and selected tabs are
+remembered while hidden. Panels hidden by a data condition keep being queried
+so they can reappear. Inside a repeated row or tab, a variable condition sees
+that copy's own value.
 
 ## Export From Grafana
 

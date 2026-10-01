@@ -113,6 +113,17 @@ pushing the panel below it down; a row repeats over every `job` that the
 cargo run -- --grafana-json examples/dashboards/grafana_v2_repeats.yaml --prometheus-url http://localhost:19090
 ```
 
+### `grafana_v2_conditional.json`
+A Grafana V2 resource authored in Grafana 13 with conditional rendering. The
+`Production` row shows because `env` is `prod`, while the `Staging only` row is
+hidden; the server-error panel appears only when Prometheus returns 5xx
+requests; and the `Zoomed in` tab is shown only while the time range is an hour
+or less.
+
+```bash
+cargo run -- --grafana-json examples/dashboards/grafana_v2_conditional.json --prometheus-url http://localhost:19090 --range 1h
+```
+
 ### `grafana_v2_tabs.json`
 An exact Grafana V2 `TabsLayout` resource with panels, a nested row, and an
 empty tab. Focus the tab bar and use Left/Right to switch tabs; Enter/Space

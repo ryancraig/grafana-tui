@@ -18,10 +18,11 @@ pub(super) fn finish(dashboard: model::Dashboard) -> Result<DashboardImport> {
         diagnostics,
         ..DashboardImport::default()
     };
-    let variable_names = variables
+    let variable_names: std::collections::HashSet<String> = variables
         .iter()
         .map(|variable| variable.name.clone())
         .collect();
+    out.variable_names.clone_from(&variable_names);
     import_variables(&mut out, variables);
     let mut ids = LayoutIds {
         variable_names,
@@ -35,6 +36,9 @@ pub(super) fn finish(dashboard: model::Dashboard) -> Result<DashboardImport> {
 fn import_variables(out: &mut DashboardImport, variables: Vec<model::Variable>) {
     for variable in variables {
         let select_all = current_is_all(variable.current.as_ref());
+        if select_all {
+            out.all_vars.insert(variable.name.clone());
+        }
         let regex_values = variable.multi || variable.include_all;
         if regex_values {
             out.regex_vars.insert(variable.name.clone());
@@ -277,9 +281,13 @@ fn import_layout_nodes(
         match node {
             model::LayoutNode::Panel(mut panel) => {
                 let repeat = ids.checked_repeat(panel.repeat.take(), &panel.source_path, out);
+                let condition = panel.condition.take();
                 if let Some(index) = import_panel(panel, out)? {
                     if let Some(repeat) = repeat {
                         out.repeats.panels.insert(index, repeat);
+                    }
+                    if let Some(condition) = condition {
+                        out.conditions.panels.insert(index, condition);
                     }
                     items.push(crate::dashboard::DashboardLayoutItem::Panel(index));
                 }
@@ -289,6 +297,9 @@ fn import_layout_nodes(
                 ids.next_row += 1;
                 if let Some(repeat) = ids.checked_repeat(row.repeat, &row.source_path, out) {
                     out.repeats.rows.insert(id, repeat);
+                }
+                if let Some(condition) = row.condition {
+                    out.conditions.rows.insert(id, condition);
                 }
                 let children = import_layout_nodes(row.children, out, ids)?;
                 items.push(crate::dashboard::DashboardLayoutItem::Row(
@@ -309,6 +320,9 @@ fn import_layout_nodes(
                     if let Some(repeat) = ids.checked_repeat(tab.repeat, &tab.source_path, out) {
                         out.repeats.tabs.insert((id, index), repeat);
                     }
+                    if let Some(condition) = tab.condition {
+                        out.conditions.tabs.insert((id, index), condition);
+                    }
                     tabs.push(crate::dashboard::DashboardTab {
                         title: tab.title,
                         children: import_layout_nodes(tab.children, out, ids)?,
@@ -322,9 +336,13 @@ fn import_layout_nodes(
                 let mut panels = Vec::with_capacity(grid.panels.len());
                 for mut panel in grid.panels {
                     let repeat = ids.checked_repeat(panel.repeat.take(), &panel.source_path, out);
+                    let condition = panel.condition.take();
                     if let Some(index) = import_panel(panel, out)? {
                         if let Some(repeat) = repeat {
                             out.repeats.panels.insert(index, repeat);
+                        }
+                        if let Some(condition) = condition {
+                            out.conditions.panels.insert(index, condition);
                         }
                         panels.push(index);
                     }
