@@ -53,7 +53,7 @@ cargo run -- --grafana-json examples/dashboards/prometheus_demo.json --prometheu
 - Grafana timeseries draw styles for lines, points, bars, area fill, hidden axes, and per-panel grid visibility.
 - Keyboard-first navigation, row/tab/panel search, interactive rows and tabs, fullscreen mode, mouse selection, and value inspection.
 - SVG/PNG export and changed-frame recording bundles.
-- TOML configuration and built-in themes.
+- TOML configuration and 19 built-in themes, including Tokyo Night, Catppuccin, and Gruvbox flavors.
 - Read-only external file or command-backed JSONL point annotations with panel targeting, tag filtering, and navigable cluster details.
 
 ## Documentation
@@ -78,8 +78,8 @@ grafatui --prometheus-url http://localhost:9090 --grafana-json ./dashboard.json
 # Override Grafana template variables
 grafatui --grafana-json ./dash.json --var job=node --var instance=server-01
 
-# Use a theme
-grafatui --theme tokyo-night
+# Use a theme (run --list-themes for every name)
+grafatui --theme catppuccin-latte
 
 # Overlay read-only JSONL point events
 grafatui --grafana-json ./dashboard.json --annotations-file ./events.jsonl

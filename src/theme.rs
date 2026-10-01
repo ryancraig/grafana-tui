@@ -16,11 +16,10 @@
 
 mod builtin;
 
+use anyhow::{Result, bail};
 use ratatui::style::Color;
 
-pub(crate) use builtin::builtin;
-#[cfg(test)]
-use builtin::builtin_names;
+pub(crate) use builtin::{DEFAULT_THEME, builtin, builtin_names};
 
 /// Semantic UI colors. Renderers pick a role, never a literal color, so every
 /// theme restyles the whole UI and the SVG export.
@@ -61,13 +60,20 @@ pub(crate) struct Theme {
 
 impl Default for Theme {
     fn default() -> Self {
-        terminal()
+        builtin(DEFAULT_THEME).expect("the default theme is built in")
     }
 }
 
 impl Theme {
-    pub(crate) fn from_str(name: &str) -> Self {
-        builtin(name).unwrap_or_default()
+    /// Resolves a theme name or alias.
+    pub(crate) fn resolve(name: &str) -> Result<Self> {
+        match builtin(name) {
+            Some(theme) => Ok(theme),
+            None => bail!(
+                "unknown theme `{name}`; available themes: {}",
+                builtin_names().collect::<Vec<_>>().join(", ")
+            ),
+        }
     }
 
     /// Replaces a threshold step color the terminal cannot show.
@@ -246,9 +252,50 @@ mod tests {
     }
 
     #[test]
-    fn unknown_names_fall_back_to_the_terminal_theme() {
-        assert_eq!(Theme::from_str("nope").name, "terminal");
-        assert_eq!(Theme::from_str("default").name, "terminal");
+    fn unknown_names_are_rejected_with_the_available_names() {
+        let error = Theme::resolve("nope").unwrap_err().to_string();
+        assert!(error.contains("unknown theme `nope`"), "{error}");
+        assert!(error.contains("catppuccin-latte"), "{error}");
+        assert!(error.contains("gruvbox-light-soft"), "{error}");
+    }
+
+    #[test]
+    fn aliases_resolve_to_canonical_flavors() {
+        for (alias, canonical) in [
+            ("default", "tokyo-night"),
+            ("tokyo-night-night", "tokyo-night"),
+            ("catppuccin", "catppuccin-mocha"),
+            ("Catppuccin", "catppuccin-mocha"),
+            ("gruvbox", "gruvbox-dark"),
+            ("gruvbox-dark-medium", "gruvbox-dark"),
+            ("gruvbox-light-medium", "gruvbox-light"),
+        ] {
+            assert_eq!(Theme::resolve(alias).unwrap().name, canonical, "{alias}");
+        }
+        assert_eq!(Theme::default().name, DEFAULT_THEME);
+    }
+
+    #[test]
+    fn aliases_point_at_builtins_without_shadowing_them() {
+        for (alias, target) in builtin::ALIASES {
+            assert!(builtin_names().any(|name| name == *target), "{alias} -> {target}");
+            assert!(builtin_names().all(|name| name != *alias), "{alias} shadows a builtin");
+        }
+    }
+
+    #[test]
+    fn light_flavors_paint_light_backgrounds() {
+        let luma = |color| match color {
+            Color::Rgb(r, g, b) => 0.299 * f64::from(r) + 0.587 * f64::from(g) + 0.114 * f64::from(b),
+            other => panic!("expected rgb, got {other:?}"),
+        };
+        for name in builtin_names().filter(|name| *name != "terminal") {
+            let theme = builtin(name).unwrap();
+            let light = ["day", "latte", "light"].iter().any(|flavor| name.contains(flavor));
+            assert_eq!(luma(theme.background) > 128.0, light, "{name}");
+            // Text must contrast with the background it sits on.
+            assert!((luma(theme.text) - luma(theme.background)).abs() > 80.0, "{name}");
+        }
     }
 
     #[test]
