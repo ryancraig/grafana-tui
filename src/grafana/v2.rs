@@ -82,8 +82,104 @@ fn parse_layout(
         "GridLayout" => parse_grid_layout(layout, elements, path, diagnostics),
         "RowsLayout" => parse_rows_layout(layout, elements, path, diagnostics),
         "TabsLayout" => parse_tabs_layout(layout, elements, path, diagnostics),
+        "AutoGridLayout" => parse_auto_grid_layout(layout, elements, path, diagnostics),
         kind => anyhow::bail!("unsupported Grafana V2 layout `{kind}` at {path}.kind"),
     }
+}
+
+/// Grafana's `AutoGridLayoutManager` defaults and named sizes, in CSS pixels.
+const AUTO_GRID_DEFAULT_MAX_COLUMNS: u16 = 3;
+const AUTO_GRID_MAX_COLUMNS: u16 = 24;
+const AUTO_GRID_COLUMN_WIDTHS_PX: [(&str, f64); 3] =
+    [("narrow", 192.0), ("standard", 448.0), ("wide", 768.0)];
+const AUTO_GRID_ROW_HEIGHTS_PX: [(&str, f64); 3] =
+    [("short", 168.0), ("standard", 320.0), ("tall", 512.0)];
+
+fn parse_auto_grid_layout(
+    layout: &JsonObject,
+    elements: &JsonObject,
+    path: &str,
+    diagnostics: &mut Vec<super::ImportDiagnostic>,
+) -> Result<Vec<model::LayoutNode>> {
+    let spec_path = format!("{path}.spec");
+    let spec = require_object_from(layout, "spec", &spec_path)?;
+    let max_columns = match optional_number_from(spec, "maxColumnCount", &spec_path)? {
+        // Grafana's editor only offers whole column counts; round anything else.
+        Some(count) => count.round().clamp(1.0, f64::from(AUTO_GRID_MAX_COLUMNS)) as u16,
+        None => AUTO_GRID_DEFAULT_MAX_COLUMNS,
+    };
+    let column_width_px = auto_grid_size_px(
+        spec,
+        &spec_path,
+        ("columnWidthMode", "columnWidth"),
+        &AUTO_GRID_COLUMN_WIDTHS_PX,
+    )?;
+    let row_height_px = auto_grid_size_px(
+        spec,
+        &spec_path,
+        ("rowHeightMode", "rowHeight"),
+        &AUTO_GRID_ROW_HEIGHTS_PX,
+    )?;
+    // `fillScreen` lets rows grow to the browser viewport; ignored like row `fillScreen`.
+    optional_bool_from(spec, "fillScreen", &spec_path)?;
+
+    let items_path = format!("{spec_path}.items");
+    let mut panels = Vec::new();
+    for (index, item) in optional_array_from(spec, "items", &items_path)?.iter().enumerate() {
+        let item_path = format!("{items_path}[{index}]");
+        let item = item.as_object().ok_or_else(|| {
+            anyhow!("invalid Grafana V2 auto grid item at {item_path}: expected an object")
+        })?;
+        require_expected_kind(item, &item_path, "AutoGridLayoutItem")?;
+        let item_spec_path = format!("{item_path}.spec");
+        let item_spec = require_object_from(item, "spec", &item_spec_path)?;
+        for (field, description) in [
+            ("repeat", "repeated auto grid item"),
+            ("conditionalRendering", "conditional auto grid item rendering"),
+        ] {
+            ensure!(
+                !item_spec.contains_key(field),
+                "unsupported Grafana V2 {description} at {item_spec_path}.{field}"
+            );
+        }
+        let (element_name, element) =
+            resolve_element_reference(item_spec, elements, &item_spec_path)?;
+        let element_path = format!("spec.elements[{element_name:?}]");
+        // Auto grid items are positioned when projected, so the panel has no grid.
+        if let Some(panel) = parse_panel(element, &element_path, None, diagnostics)? {
+            panels.push(panel);
+        }
+    }
+
+    Ok(vec![model::LayoutNode::AutoGrid(model::AutoGrid {
+        max_columns,
+        column_width_px,
+        row_height_px,
+        panels,
+    })])
+}
+
+/// Resolves an auto grid size from its `*Mode` name, or the custom pixel value.
+///
+/// Grafana falls back to `standard` for absent or unknown modes, and for `custom`
+/// without a pixel value.
+fn auto_grid_size_px(
+    spec: &JsonObject,
+    spec_path: &str,
+    (mode_key, custom_key): (&str, &str),
+    named: &[(&str, f64); 3],
+) -> Result<f64> {
+    let standard = named[1].1;
+    let mode = optional_string_from(spec, mode_key, spec_path)?;
+    let custom = optional_number_from(spec, custom_key, spec_path)?;
+    Ok(match mode.as_deref() {
+        Some("custom") => custom.filter(|px| *px > 0.0).unwrap_or(standard),
+        Some(mode) => named
+            .iter()
+            .find(|(name, _)| *name == mode)
+            .map_or(standard, |(_, px)| *px),
+        None => standard,
+    })
 }
 
 fn parse_tabs_layout(
@@ -149,13 +245,10 @@ fn parse_grid_layout(
         let item_path = format!("{items_path}[{index}]");
         let grid = parse_grid_item(item, &item_path)?;
         let element_path = format!("spec.elements[{:?}]", grid.element_name);
-        let element = elements.get(&grid.element_name).ok_or_else(|| {
-            anyhow!(
-                "unresolved Grafana V2 element reference `{}` at {item_path}.spec.element.name",
-                grid.element_name
-            )
-        })?;
-        if let Some(panel) = parse_panel(element, &element_path, grid.position, diagnostics)? {
+        let element = resolve_element(elements, &grid.element_name, &item_path)?;
+        if let Some(panel) =
+            parse_panel(element, &element_path, Some(grid.position), diagnostics)?
+        {
             nodes.push(model::LayoutNode::Panel(panel));
         }
     }
@@ -411,6 +504,14 @@ fn optional_string_from(object: &JsonObject, key: &str, path: &str) -> Result<Op
     }
 }
 
+fn optional_number_from(object: &JsonObject, key: &str, path: &str) -> Result<Option<f64>> {
+    match object.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Number(value)) => Ok(value.as_f64()),
+        Some(_) => anyhow::bail!("invalid Grafana V2 resource at {path}.{key}: expected a number"),
+    }
+}
+
 fn require_string_from<'a>(object: &'a JsonObject, key: &str, path: &str) -> Result<&'a str> {
     object
         .get(key)
@@ -455,6 +556,16 @@ fn parse_grid_item(value: &Value, path: &str) -> Result<ResolvedGridItem> {
     let y = require_i32_from(spec, "y", &format!("{spec_path}.y"))?;
     let w = require_i32_from(spec, "width", &format!("{spec_path}.width"))?;
     let h = require_i32_from(spec, "height", &format!("{spec_path}.height"))?;
+    let element_name = parse_element_reference(spec, &spec_path)?;
+
+    Ok(ResolvedGridItem {
+        element_name,
+        position: model::GridPos { x, y, w, h },
+    })
+}
+
+/// Reads the `element` reference of a grid or auto grid item spec.
+fn parse_element_reference(spec: &JsonObject, spec_path: &str) -> Result<String> {
     let element_path = format!("{spec_path}.element");
     let element = require_object_from(spec, "element", &element_path)?;
     let element_kind_path = format!("{element_path}.kind");
@@ -464,18 +575,34 @@ fn parse_grid_item(value: &Value, path: &str) -> Result<ResolvedGridItem> {
         "invalid Grafana V2 grid element kind `{element_kind}` at {element_kind_path}: expected `ElementReference`"
     );
     let element_name_path = format!("{element_path}.name");
-    let element_name = require_string_from(element, "name", &element_name_path)?.to_string();
+    Ok(require_string_from(element, "name", &element_name_path)?.to_string())
+}
 
-    Ok(ResolvedGridItem {
-        element_name,
-        position: model::GridPos { x, y, w, h },
+fn resolve_element<'a>(
+    elements: &'a JsonObject,
+    name: &str,
+    item_path: &str,
+) -> Result<&'a Value> {
+    elements.get(name).ok_or_else(|| {
+        anyhow!("unresolved Grafana V2 element reference `{name}` at {item_path}.spec.element.name")
     })
+}
+
+fn resolve_element_reference<'a>(
+    item_spec: &JsonObject,
+    elements: &'a JsonObject,
+    item_spec_path: &str,
+) -> Result<(String, &'a Value)> {
+    let name = parse_element_reference(item_spec, item_spec_path)?;
+    let item_path = item_spec_path.strip_suffix(".spec").unwrap_or(item_spec_path);
+    let element = resolve_element(elements, &name, item_path)?;
+    Ok((name, element))
 }
 
 fn parse_panel(
     value: &Value,
     path: &str,
-    grid: model::GridPos,
+    grid: Option<model::GridPos>,
     diagnostics: &mut Vec<super::ImportDiagnostic>,
 ) -> Result<Option<model::Panel>> {
     let element = value
@@ -592,7 +719,7 @@ fn parse_panel(
         source_path: path.to_string(),
         targets,
         count_as_skipped_if_empty: has_visible_target && !has_supported_visible_target,
-        grid: Some(grid),
+        grid,
         field_defaults: Some(field_defaults),
         reduce_options_path: viz_spec
             .options

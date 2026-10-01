@@ -2124,6 +2124,25 @@ mod tests {
     }
 
     #[test]
+    fn svg_renders_auto_grid_panels() {
+        let mut app = nested_row_export_app();
+        app.layout = DashboardLayout::new(vec![DashboardLayoutItem::AutoGrid(
+            crate::dashboard::DashboardAutoGrid {
+                panels: vec![0, 1],
+                max_columns: 3,
+                min_column_width: 10,
+                row_height: 2,
+            },
+        )]);
+
+        let svg = render_svg(&app, Rect::new(0, 0, 100, 40));
+
+        assert!(svg.contains("Visible child"));
+        assert!(svg.contains("Collapsed child"));
+        assert!(svg.contains("panels=2"));
+    }
+
+    #[test]
     fn toggling_a_header_only_row_changes_the_recorded_frame() {
         let mut app = test_app(ExportOptions {
             dir: test_export_dir("header-only-row-recording"),

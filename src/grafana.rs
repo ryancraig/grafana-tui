@@ -588,13 +588,195 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_v2_layouts() {
-        let json =
-            minimal_v2_with_layout(serde_json::json!({"kind": "AutoGridLayout", "spec": {}}));
+        let json = minimal_v2_with_layout(serde_json::json!({"kind": "FutureLayout", "spec": {}}));
         let error = parse_grafana_dashboard(&json.to_string())
             .unwrap_err()
             .to_string();
-        assert!(error.contains("AutoGridLayout"));
+        assert!(error.contains("FutureLayout"));
         assert!(error.contains("spec.layout.kind"));
+    }
+
+    fn auto_grid_item(name: &str) -> serde_json::Value {
+        serde_json::json!({
+            "kind": "AutoGridLayoutItem",
+            "spec": {"element": {"kind": "ElementReference", "name": name}}
+        })
+    }
+
+    /// Parses a dashboard whose root layout is an auto grid over `valid_v2_resource`'s
+    /// panel, with `spec` merged into the auto grid spec.
+    fn v2_auto_grid(spec: serde_json::Value) -> Result<DashboardImport> {
+        let mut json = valid_v2_resource();
+        make_v2_panel_importable(&mut json);
+        let mut grid_spec = serde_json::json!({"items": [auto_grid_item("panel-1")]});
+        grid_spec
+            .as_object_mut()
+            .unwrap()
+            .extend(spec.as_object().unwrap().clone());
+        json["spec"]["layout"] = serde_json::json!({"kind": "AutoGridLayout", "spec": grid_spec});
+        parse_grafana_dashboard(&json.to_string())
+    }
+
+    fn only_auto_grid(dashboard: &DashboardImport) -> &crate::dashboard::DashboardAutoGrid {
+        match dashboard.layout.items.as_slice() {
+            [crate::dashboard::DashboardLayoutItem::AutoGrid(grid)] => grid,
+            items => panic!("expected a single auto grid, got {items:?}"),
+        }
+    }
+
+    /// `v2_grafana13_autogrid.json` was authored through Grafana 13.2.3's V2 API: two
+    /// rows, each holding an auto grid, one with named and one with custom sizes.
+    #[test]
+    fn v2_grafana13_auto_grids_import_sizes_in_terminal_units() {
+        let dashboard = parse_grafana_dashboard(include_str!(
+            "../tests/fixtures/grafana/v2_grafana13_autogrid.json"
+        ))
+        .unwrap();
+
+        let grids: Vec<_> = dashboard
+            .layout
+            .items
+            .iter()
+            .map(|item| match item {
+                crate::dashboard::DashboardLayoutItem::Row(row) => match row.children.as_slice() {
+                    [crate::dashboard::DashboardLayoutItem::AutoGrid(grid)] => {
+                        (row.title.as_str(), grid.clone())
+                    }
+                    children => panic!("expected an auto grid, got {children:?}"),
+                },
+                item => panic!("expected a row, got {item:?}"),
+            })
+            .collect();
+        assert_eq!(
+            grids,
+            [
+                (
+                    "Overview",
+                    crate::dashboard::DashboardAutoGrid {
+                        panels: vec![0, 1, 2, 3],
+                        max_columns: 3,
+                        // standard: 448px at 8px per cell
+                        min_column_width: 56,
+                        // short: 168px is closest to 5 grid units (5 * 30 + 4 * 8 = 182px)
+                        row_height: 5,
+                    }
+                ),
+                (
+                    "Runtime",
+                    crate::dashboard::DashboardAutoGrid {
+                        panels: vec![4, 5],
+                        max_columns: 4,
+                        min_column_width: 30,
+                        row_height: 11,
+                    }
+                ),
+            ]
+        );
+        assert!(dashboard.queries.iter().all(|query| query.grid.is_none()));
+        assert!(dashboard.diagnostics.is_empty());
+    }
+
+    #[test]
+    fn v2_auto_grid_defaults_match_grafana() {
+        let dashboard = v2_auto_grid(serde_json::json!({})).unwrap();
+        let grid = only_auto_grid(&dashboard);
+
+        assert_eq!(grid.panels, [0]);
+        assert_eq!(grid.max_columns, 3);
+        assert_eq!(grid.min_column_width, 56);
+        assert_eq!(grid.row_height, 9);
+    }
+
+    #[test]
+    fn v2_auto_grid_named_and_custom_sizes() {
+        for (spec, min_column_width, row_height) in [
+            (serde_json::json!({"columnWidthMode": "narrow", "rowHeightMode": "tall"}), 24, 14),
+            (serde_json::json!({"columnWidthMode": "wide", "rowHeightMode": "short"}), 96, 5),
+            (
+                serde_json::json!({
+                    "columnWidthMode": "custom",
+                    "columnWidth": 100,
+                    "rowHeightMode": "custom",
+                    "rowHeight": 30
+                }),
+                13,
+                1,
+            ),
+            // Grafana treats `custom` without a size, and unknown modes, as `standard`.
+            (serde_json::json!({"columnWidthMode": "custom", "rowHeightMode": "huge"}), 56, 9),
+            (serde_json::json!({"columnWidthMode": null, "rowHeightMode": null}), 56, 9),
+        ] {
+            let dashboard = v2_auto_grid(spec.clone()).unwrap();
+            let grid = only_auto_grid(&dashboard);
+            assert_eq!(
+                (grid.min_column_width, grid.row_height),
+                (min_column_width, row_height),
+                "{spec}"
+            );
+        }
+    }
+
+    #[test]
+    fn v2_auto_grid_max_column_count_is_clamped() {
+        for (count, expected) in [(0, 1), (2, 2), (99, 24)] {
+            let dashboard = v2_auto_grid(serde_json::json!({"maxColumnCount": count})).unwrap();
+            assert_eq!(only_auto_grid(&dashboard).max_columns, expected, "{count}");
+        }
+    }
+
+    #[test]
+    fn v2_auto_grid_skips_unsupported_panels_and_empty_grids() {
+        let mut json = valid_v2_resource();
+        json["spec"]["elements"]["panel-1"]["spec"]["vizConfig"]["group"] = "text".into();
+        json["spec"]["layout"] = serde_json::json!({
+            "kind": "AutoGridLayout",
+            "spec": {"items": [auto_grid_item("panel-1")]}
+        });
+
+        let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
+
+        assert!(dashboard.layout.items.is_empty());
+        assert_eq!(dashboard.diagnostics.len(), 1);
+        assert_eq!(dashboard.diagnostics[0].code, "skipped_panel");
+    }
+
+    #[test]
+    fn v2_auto_grid_rejects_deferred_and_malformed_items_at_native_paths() {
+        for (spec, expected) in [
+            (
+                serde_json::json!({"items": [{"kind": "AutoGridLayoutItem", "spec": {
+                    "element": {"kind": "ElementReference", "name": "panel-1"},
+                    "repeat": {"mode": "variable", "value": "job"}
+                }}]}),
+                "spec.layout.spec.items[0].spec.repeat",
+            ),
+            (
+                serde_json::json!({"items": [{"kind": "AutoGridLayoutItem", "spec": {
+                    "element": {"kind": "ElementReference", "name": "panel-1"},
+                    "conditionalRendering": {"kind": "ConditionalRenderingGroup", "spec": {}}
+                }}]}),
+                "spec.layout.spec.items[0].spec.conditionalRendering",
+            ),
+            (
+                serde_json::json!({"items": [{"kind": "GridLayoutItem", "spec": {}}]}),
+                "spec.layout.spec.items[0].kind",
+            ),
+            (
+                serde_json::json!({"items": [auto_grid_item("missing")]}),
+                "spec.layout.spec.items[0].spec.element.name",
+            ),
+            (
+                serde_json::json!({"maxColumnCount": "3"}),
+                "spec.layout.spec.maxColumnCount",
+            ),
+            (
+                serde_json::json!({"columnWidth": "wide"}),
+                "spec.layout.spec.columnWidth",
+            ),
+        ] {
+            let error = v2_auto_grid(spec.clone()).unwrap_err().to_string();
+            assert!(error.contains(expected), "{spec}: {error}");
+        }
     }
 
     #[test]
@@ -921,12 +1103,12 @@ mod tests {
     fn v2_rows_reject_nested_unsupported_layouts_at_native_paths() {
         let json = v2_row_resource_with_field(
             "layout",
-            serde_json::json!({"kind": "AutoGridLayout", "spec": {}}),
+            serde_json::json!({"kind": "FutureLayout", "spec": {}}),
         );
         let error = parse_grafana_dashboard(&json.to_string())
             .unwrap_err()
             .to_string();
-        assert!(error.contains("AutoGridLayout"));
+        assert!(error.contains("FutureLayout"));
         assert!(
             error.contains("spec.layout.spec.rows[0].spec.layout.kind"),
             "unexpected error: {error}"

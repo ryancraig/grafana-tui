@@ -18,6 +18,18 @@ pub(super) enum LayoutNode {
     Panel(Panel),
     Row(Row),
     Tabs(Tabs),
+    AutoGrid(AutoGrid),
+}
+
+/// A V2 `AutoGridLayout`: panels flowed into equal-width columns.
+#[derive(Debug)]
+pub(super) struct AutoGrid {
+    pub(super) max_columns: u16,
+    /// Minimum column width in Grafana CSS pixels.
+    pub(super) column_width_px: f64,
+    /// Row height in Grafana CSS pixels.
+    pub(super) row_height_px: f64,
+    pub(super) panels: Vec<Panel>,
 }
 
 #[derive(Debug)]

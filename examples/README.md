@@ -94,6 +94,15 @@ row. Run it against the bundled demo stack:
 cargo run -- --grafana-json examples/dashboards/grafana_v2_rows.json --prometheus-url http://localhost:19090
 ```
 
+### `grafana_v2_autogrid.json`
+An exact Grafana V2 `AutoGridLayout` resource with five Prometheus panels in up
+to three columns. Columns reflow as the terminal is resized: two at 120 columns,
+one at 80.
+
+```bash
+cargo run -- --grafana-json examples/dashboards/grafana_v2_autogrid.json --prometheus-url http://localhost:19090
+```
+
 ### `grafana_v2_tabs.json`
 An exact Grafana V2 `TabsLayout` resource with panels, a nested row, and an
 empty tab. Focus the tab bar and use Left/Right to switch tabs; Enter/Space
