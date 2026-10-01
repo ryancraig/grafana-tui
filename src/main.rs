@@ -245,16 +245,9 @@ async fn main() -> Result<()> {
     }
     state.refresh().await?;
 
-    // Terminal setup
-    crossterm::terminal::enable_raw_mode()?;
-    let mut stdout = std::io::stdout();
-    execute!(
-        stdout,
-        EnterAlternateScreen,
-        crossterm::event::EnableMouseCapture
-    )?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    install_terminal_panic_hook();
+    let guard = TerminalGuard::enter()?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(std::io::stdout()))?;
 
     let res = tokio::select! {
         res = app::run_app(
@@ -264,17 +257,58 @@ async fn main() -> Result<()> {
         ) => res,
         _ = tokio::signal::ctrl_c() => Ok(()),
     };
+    // Save a recording however the session ended; this is a no-op when the
+    // event loop already saved it on quit.
+    let finalized = app::finalize_recording_before_quit(&mut state);
 
-    // Restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
+    drop(guard);
+    res.and(finalized)
+}
+
+/// Raw mode, the alternate screen, and mouse capture, undone when dropped,
+/// including on early returns and while unwinding from a panic.
+struct TerminalGuard;
+
+impl TerminalGuard {
+    fn enter() -> Result<Self> {
+        crossterm::terminal::enable_raw_mode()?;
+        // From here on, dropping the guard restores the terminal.
+        let guard = Self;
+        execute!(
+            std::io::stdout(),
+            EnterAlternateScreen,
+            crossterm::event::EnableMouseCapture
+        )?;
+        Ok(guard)
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        restore_terminal();
+    }
+}
+
+/// Restores the terminal, continuing past individual failures so one failing
+/// step cannot leave the others undone.
+fn restore_terminal() {
+    let _ = disable_raw_mode();
+    let _ = execute!(
+        std::io::stdout(),
         LeaveAlternateScreen,
-        crossterm::event::DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+        crossterm::event::DisableMouseCapture,
+        crossterm::cursor::Show
+    );
+}
 
-    res
+/// Restores the terminal before the default panic message is printed, so the
+/// message lands on the normal screen instead of the alternate one.
+fn install_terminal_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        restore_terminal();
+        previous(info);
+    }));
 }
 
 fn load_startup_config(path: Option<std::path::PathBuf>) -> Result<Config> {

@@ -24,7 +24,7 @@ mod variables;
 pub(crate) use data::{default_queries, parse_duration};
 pub(crate) use template::{DashboardTemplate, ScopeBinding, find_binding};
 pub(crate) use variables::{format_prometheus_values, parse_custom_variable_values};
-pub(crate) use event_loop::run_app;
+pub(crate) use event_loop::{finalize_recording_before_quit, run_app};
 #[allow(unused_imports)]
 pub(crate) use state::{
     AppMode, AppState, GraphAxisPlacement, GraphDrawStyle, GraphOptions, GraphPointMode,
