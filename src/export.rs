@@ -415,7 +415,7 @@ fn render_row_header(
     };
     let color = color_hex(
         if selected {
-            app.theme.border_selected
+            app.theme.border_focused
         } else {
             app.theme.border
         },
@@ -485,7 +485,7 @@ fn render_panel(
 ) {
     let theme = &app.theme;
     let border = if selected {
-        color_hex(theme.border_selected, "#f0d000")
+        color_hex(theme.border_focused, "#f0d000")
     } else {
         color_hex(theme.border, "#555555")
     };
@@ -521,7 +521,7 @@ fn render_panel(
             inner.left,
             inner.top + 18.0,
             err,
-            &color_hex(Color::Red, "#ff5555"),
+            &color_hex(app.theme.error, "#ff5555"),
             "start",
             FONT_SIZE,
         );
@@ -580,8 +580,9 @@ fn render_graph_panel(
     let x_bounds = [x_min, x_max];
     let y_bounds = ui::calculate_y_bounds(panel);
     let text = color_hex(app.theme.text, "#e6e6e6");
-    let axis = color_hex(Color::Gray, "#777777");
-    let grid = "#6d6d6d";
+    let axis = color_hex(app.theme.axis, "#777777");
+    let grid = &color_hex(app.grid_color(), "#6d6d6d");
+    let show_grid = app.autogrid_enabled && panel.autogrid.unwrap_or(true);
     let graph_options = panel.graph_options();
 
     write!(
@@ -605,16 +606,18 @@ fn render_graph_panel(
 
     for tick in value_ticks(y_bounds[0], y_bounds[1]) {
         let y = map_y(tick, y_bounds, plot);
-        draw_line(
-            out,
-            (plot.left, y),
-            (plot.right(), y),
-            LineStyle {
-                color: grid,
-                dash: Some("3 5"),
-                width: 0.7,
-            },
-        );
+        if show_grid {
+            draw_line(
+                out,
+                (plot.left, y),
+                (plot.right(), y),
+                LineStyle {
+                    color: grid,
+                    dash: Some("3 5"),
+                    width: 0.7,
+                },
+            );
+        }
         write_text(
             out,
             plot.left - 8.0,
@@ -628,16 +631,18 @@ fn render_graph_panel(
 
     for tick in time_ticks(x_min, x_max) {
         let x = map_x(tick, x_bounds, plot);
-        draw_line(
-            out,
-            (x, plot.top),
-            (x, plot.bottom()),
-            LineStyle {
-                color: grid,
-                dash: Some("3 5"),
-                width: 0.7,
-            },
-        );
+        if show_grid {
+            draw_line(
+                out,
+                (x, plot.top),
+                (x, plot.bottom()),
+                LineStyle {
+                    color: grid,
+                    dash: Some("3 5"),
+                    width: 0.7,
+                },
+            );
+        }
         write_text(
             out,
             x,
@@ -691,7 +696,7 @@ fn render_graph_panel(
             continue;
         }
         let y = map_y(value, y_bounds, plot);
-        let color = color_hex(color, "#ffaa00");
+        let color = color_hex(app.theme.threshold_color(color), "#ffaa00");
         draw_line(
             out,
             (plot.left, y),
@@ -772,7 +777,7 @@ fn render_graph_panel(
             (x, plot.top),
             (x, plot.bottom()),
             LineStyle {
-                color: "#ffffff",
+                color: &color_hex(app.theme.cursor, "#ffffff"),
                 dash: Some("4 4"),
                 width: 1.0,
             },
@@ -788,7 +793,7 @@ fn render_graph_panel(
             plot.left,
             legend_top,
             plot.width,
-            &color_hex(app.theme.border_selected, "#f0d000"),
+            &color_hex(app.theme.annotation, "#f0d000"),
             out,
         );
     } else {
@@ -814,7 +819,7 @@ fn render_graph_annotations<'a>(
     let clusters = cluster_events_by(events, |timestamp| {
         Some(map_x(timestamp, x_bounds, plot).round() as u32)
     });
-    let color = color_hex(app.theme.border_selected, "#f0d000");
+    let color = color_hex(app.theme.annotation, "#f0d000");
 
     for cluster in &clusters {
         let x = f64::from(cluster.coordinate);
@@ -941,7 +946,7 @@ fn render_gauge_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out: &
     let ratio = value_ratio(value, min, max);
     let color = value_color(app, panel, value);
     let text = color_hex(app.theme.text, "#e6e6e6");
-    let track = color_hex(Color::DarkGray, "#444444");
+    let track = color_hex(app.theme.gauge_track, "#444444");
     let gauge = PlotRect {
         left: rect.left + 10.0,
         top: rect.top + rect.height / 2.0 - 13.0,
@@ -973,7 +978,7 @@ fn render_gauge_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out: &
             panel.display.format_number(value),
             ratio * 100.0
         ),
-        "#ffffff",
+        &color_hex(app.theme.text, "#ffffff"),
         "middle",
         FONT_SIZE,
     );
@@ -1021,7 +1026,7 @@ fn render_bar_gauge_panel(app: &AppState, panel: &PanelState, rect: PlotRect, ou
     let label_width = (rect.width * 0.32).clamp(80.0, 180.0);
     let bar_width = (rect.width - label_width - 76.0).max(1.0);
     let text = color_hex(app.theme.text, "#e6e6e6");
-    let track = color_hex(Color::DarkGray, "#444444");
+    let track = color_hex(app.theme.gauge_track, "#444444");
 
     for (row, (series, value)) in values.into_iter().take(max_rows).enumerate() {
         let y = rect.top + row as f64 * row_height + 15.0;
@@ -1199,9 +1204,12 @@ fn render_heatmap_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out:
             let value = series.points[point].1;
             let color = if value.is_finite() {
                 let normalized = ((value - min) / (max - min)).clamp(0.0, 1.0);
-                color_hex(ui::value_to_heatmap_color(normalized), "#666666")
+                color_hex(
+                    ui::value_to_heatmap_color(normalized, app.theme.heatmap),
+                    "#666666",
+                )
             } else {
-                color_hex(Color::DarkGray, "#444444")
+                color_hex(app.theme.heatmap_empty, "#444444")
             };
             write_rect(
                 out,
@@ -2421,11 +2429,40 @@ mod tests {
     }
 
     #[test]
+    fn export_uses_theme_roles_and_the_grid_override() {
+        let theme = crate::theme::builtin("solarized-light").unwrap();
+        let hex = |color| color_hex(color, "");
+
+        let mut graph = test_app_with_panel_type(PanelType::Graph);
+        graph.theme = theme.clone();
+        graph.cursor_x = Some(graph.view_end_ts as f64 - 50.0);
+        let svg = render_svg(&graph, Rect::new(0, 0, 120, 40));
+        assert!(svg.contains(&format!(r#"fill="{}""#, hex(theme.background))));
+        assert!(svg.contains(&format!(r#"stroke="{}""#, hex(theme.axis))));
+        assert!(svg.contains(&format!(r#"stroke="{}""#, hex(theme.grid))));
+        assert!(svg.contains(&format!(r#"stroke="{}""#, hex(theme.cursor))));
+        assert!(!svg.contains("#6d6d6d"));
+
+        graph.autogrid_color = Some(Color::Rgb(1, 2, 3));
+        let svg = render_svg(&graph, Rect::new(0, 0, 120, 40));
+        assert!(svg.contains(r##"stroke="#010203""##));
+
+        graph.autogrid_enabled = false;
+        let svg = render_svg(&graph, Rect::new(0, 0, 120, 40));
+        assert!(!svg.contains(r##"stroke="#010203""##));
+
+        let mut gauge = test_app_with_panel_type(PanelType::Gauge);
+        gauge.theme = theme.clone();
+        let svg = render_svg(&gauge, Rect::new(0, 0, 120, 40));
+        assert!(svg.contains(&format!(r#"fill="{}""#, hex(theme.gauge_track))));
+    }
+
+    #[test]
     fn graph_export_routes_inclusive_fractional_annotations_and_escapes_active_details() {
         let mut app = test_app_with_panel_type(PanelType::Graph);
         app.view_end_ts = 100;
         app.range = std::time::Duration::from_secs(100);
-        app.theme.border_selected = Color::Rgb(1, 2, 3);
+        app.theme.annotation = Color::Rgb(1, 2, 3);
         let active_time = chrono::DateTime::parse_from_rfc3339("1970-01-01T00:00:50.123456789Z")
             .unwrap()
             .with_timezone(&chrono::Utc);

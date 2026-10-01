@@ -54,7 +54,7 @@ pub(crate) fn render_panel(
 ) -> Option<Vec<crate::annotations::AnnotationEvent>> {
     let theme = &app.theme;
     let border_style = if is_selected {
-        Style::default().fg(theme.border_selected)
+        Style::default().fg(theme.border_focused)
     } else {
         Style::default().fg(theme.border)
     };
@@ -65,7 +65,7 @@ pub(crate) fn render_panel(
             .border_style(border_style)
             .title(Span::styled(
                 format!("{} — ERROR", p.title),
-                Style::default().fg(theme.title),
+                Style::default().fg(theme.error),
             ));
         let para = Paragraph::new(err.clone())
             .block(block)

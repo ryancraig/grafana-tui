@@ -86,9 +86,9 @@ pub(super) fn render_heatmap(frame: &mut Frame, area: Rect, p: &PanelState, app:
             // Map value to color intensity (from blue/cold to red/hot)
             let color = if value.is_finite() {
                 let normalized = ((value - global_min) / (global_max - global_min)).clamp(0.0, 1.0);
-                value_to_heatmap_color(normalized)
+                value_to_heatmap_color(normalized, theme.heatmap)
             } else {
-                Color::DarkGray
+                theme.heatmap_empty
             };
 
             spans.push(Span::styled("█", Style::default().fg(color)));

@@ -59,7 +59,15 @@ fn modal_block<'a>(title: &'a str, app: &AppState) -> Block<'a> {
     Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(app.theme.border_selected))
+        .border_style(Style::default().fg(app.theme.border_focused))
+        .style(Style::default().fg(app.theme.text).bg(app.theme.surface))
+}
+
+fn selection_style(app: &AppState) -> Style {
+    Style::default()
+        .fg(app.theme.selection_fg)
+        .bg(app.theme.selection_bg)
+        .add_modifier(Modifier::BOLD)
 }
 
 fn render_cluster_modal(frame: &mut Frame, area: Rect, state: &ClusterModalState, app: &AppState) {
@@ -95,11 +103,9 @@ fn render_cluster_modal(frame: &mut Frame, area: Rect, state: &ClusterModalState
     if !items.is_empty() {
         list_state.select(Some(state.selected().saturating_sub(visible.start)));
     }
-    let list = List::new(items).highlight_symbol("▶ ").highlight_style(
-        Style::default()
-            .fg(app.theme.title)
-            .add_modifier(Modifier::BOLD),
-    );
+    let list = List::new(items)
+        .highlight_symbol("▶ ")
+        .highlight_style(selection_style(app));
     frame.render_stateful_widget(list, list_area, &mut list_state);
 
     if let Some(event) = state.selected_event() {
@@ -118,7 +124,8 @@ fn render_cluster_modal(frame: &mut Frame, area: Rect, state: &ClusterModalState
     }
 
     frame.render_widget(
-        Paragraph::new("↑/↓ move  PgUp/PgDn page  Enter/Esc close"),
+        Paragraph::new("↑/↓ move  PgUp/PgDn page  Enter/Esc close")
+            .style(Style::default().fg(app.theme.text_muted)),
         hints_area,
     );
 }
@@ -159,14 +166,11 @@ fn render_tag_filter_modal(
     if !items.is_empty() {
         list_state.select(Some(state.selected().saturating_sub(visible.start)));
     }
-    let list = List::new(items).highlight_style(
-        Style::default()
-            .fg(app.theme.title)
-            .add_modifier(Modifier::BOLD),
-    );
+    let list = List::new(items).highlight_style(selection_style(app));
     frame.render_stateful_widget(list, list_area, &mut list_state);
     frame.render_widget(
-        Paragraph::new("Space toggle  c clear  Enter apply  Esc cancel"),
+        Paragraph::new("Space toggle  c clear  Enter apply  Esc cancel")
+            .style(Style::default().fg(app.theme.text_muted)),
         hints_area,
     );
 }
