@@ -18,7 +18,8 @@ Grafatui can be configured with CLI options, a TOML configuration file, or both.
 | `--range <DURATION>` | Time range window, such as `5m`, `1h`, or `24h` | `5m` |
 | `--step <DURATION>` | Query step resolution, such as `5s` or `30s` | `5s` |
 | `--var <KEY=VALUE>` | Override a dashboard variable (not a V2 row or tab variable); repeat a key to select several values | none |
-| `--theme <NAME>` | UI theme | `terminal` |
+| `--theme <NAME>` | UI theme | `tokyo-night` |
+| `--list-themes` | Print the available theme names and exit | |
 | `--transparent-background` | Keep the terminal's background instead of painting the theme's | `false` |
 | `--threshold-marker <MARKER>` | Marker for threshold lines | `dashed` |
 | `--autogrid-color <COLOR>` | Color for automatic graph grid lines and labels | theme grid color |
@@ -91,16 +92,18 @@ file or complete command configuration rather than merging individual fields.
 
 ## Themes
 
-Built-in themes include:
+The default theme is `tokyo-night`. Run `grafatui --list-themes` to print every
+available name; the theme currently selected is marked `(current)`.
 
-- `terminal` (alias `default`): the terminal's own ANSI colors and background
-- `tokyo-night`
-- `catppuccin`
-- `gruvbox`
-- `dracula`
-- `monokai`
-- `solarized-dark`
-- `solarized-light`
+| Family | Themes | Aliases |
+|---|---|---|
+| [Tokyo Night](https://github.com/folke/tokyonight.nvim) | `tokyo-night`, `tokyo-night-storm`, `tokyo-night-moon`, `tokyo-night-day` | `default`, `tokyo-night-night` |
+| [Catppuccin](https://catppuccin.com/palette) | `catppuccin-mocha`, `catppuccin-macchiato`, `catppuccin-frappe`, `catppuccin-latte` | `catppuccin` (mocha) |
+| [Gruvbox](https://github.com/morhetz/gruvbox) | `gruvbox-dark`, `gruvbox-dark-hard`, `gruvbox-dark-soft`, `gruvbox-light`, `gruvbox-light-hard`, `gruvbox-light-soft` | `gruvbox` (dark) |
+| Other | `dracula`, `monokai`, `solarized-dark`, `solarized-light`, `terminal` | |
+
+`terminal` uses the terminal's own ANSI colors and background. Theme names are
+case-insensitive, and an unknown name is an error that lists the valid ones.
 
 Every theme colors the whole interface: panel chrome, popups, axes, grid,
 cursor, gauges, heatmaps, status messages, and SVG/PNG exports.
@@ -113,5 +116,5 @@ Exports always use the theme's background.
 Use a theme from the CLI:
 
 ```bash
-grafatui --theme tokyo-night
+grafatui --theme catppuccin-latte
 ```

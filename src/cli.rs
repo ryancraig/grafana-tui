@@ -99,9 +99,13 @@ pub(crate) struct Args {
     #[arg(long, value_parser = parse_key_val::<String, String>, value_name = "KEY=VALUE")]
     pub(crate) var: Vec<(String, String)>,
 
-    /// Color theme (terminal, tokyo-night, catppuccin, gruvbox, dracula, monokai, solarized-dark, solarized-light)
+    /// Color theme (default: tokyo-night). Run --list-themes to see every name.
     #[arg(long, value_name = "NAME")]
     pub(crate) theme: Option<String>,
+
+    /// Print the available theme names and exit
+    #[arg(long)]
+    pub(crate) list_themes: bool,
 
     /// Keep the terminal's own background instead of painting the theme's.
     #[arg(long)]

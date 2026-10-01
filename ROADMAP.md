@@ -31,7 +31,7 @@ These features are shipped and available today:
 | Queries | **Multiple targets per panel** | Multiple PromQL expressions render as separate series |
 | Queries | **Instant target queries** | Honors `targets[].instant` and defaults summary table/gauge panels to Prometheus instant queries |
 | Queries | **Legend formatting** | `{{label}}` syntax from Grafana |
-| UI | **8 color themes** | terminal, dracula, monokai, solarized dark/light, gruvbox, tokyo-night, catppuccin |
+| UI | **19 color themes** | Tokyo Night, Catppuccin and Gruvbox flavors, dracula, monokai, solarized dark/light, terminal |
 | UI | **Time controls** | Zoom in/out, pan left/right, live mode toggle |
 | UI | **Panel navigation** | Arrow keys, vim-style `j`/`k`, PgUp/PgDn, fullscreen, inspect mode |
 | UI | **Panel search** | `/` to fuzzy-search panels by name |

@@ -80,6 +80,16 @@ async fn main() -> Result<()> {
         .or_else(|| config.grafana_json.clone())
         .map(|p| config::expand_path(&p));
 
+    let theme_name = args
+        .theme
+        .clone()
+        .or_else(|| config.theme.clone())
+        .unwrap_or_else(|| theme::DEFAULT_THEME.to_string());
+    if args.list_themes {
+        print!("{}", theme_list(&theme_name));
+        return Ok(());
+    }
+
     if args.validate {
         let path = dashboard_path.ok_or_else(|| {
             anyhow!("--validate requires --grafana-json or grafana_json in config")
@@ -195,12 +205,7 @@ async fn main() -> Result<()> {
         ("grafatui".to_string(), app::default_queries(args.query), 0)
     };
 
-    // Determine theme
-    let theme_name = args
-        .theme
-        .or(config.theme)
-        .unwrap_or_else(|| "default".to_string());
-    let theme = Theme::from_str(&theme_name);
+    let theme = Theme::resolve(&theme_name)?;
 
     // Determine threshold marker
     let marker_name = args
@@ -371,6 +376,20 @@ fn install_terminal_panic_hook() {
         restore_terminal();
         previous(info);
     }));
+}
+
+/// One theme name per line, marking the one `selected` resolves to.
+fn theme_list(selected: &str) -> String {
+    let current = theme::builtin(selected).map(|theme| theme.name);
+    theme::builtin_names()
+        .map(|name| {
+            if current.as_deref() == Some(name) {
+                format!("{name} (current)\n")
+            } else {
+                format!("{name}\n")
+            }
+        })
+        .collect()
 }
 
 fn load_startup_config(path: Option<std::path::PathBuf>) -> Result<Config> {
