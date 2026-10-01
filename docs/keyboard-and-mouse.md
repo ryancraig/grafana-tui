@@ -9,8 +9,8 @@ Grafatui is designed for keyboard-first dashboard inspection.
 | `q` | Quit |
 | `r` | Force refresh |
 | `+` / `-` | Zoom out / in |
-| `[` / `]` | Pan left / right in time |
-| `0` | Reset to live mode |
+| `Shift+Left` / `Shift+Right` | Pan left / right in time |
+| `0` | Reset to live mode in fullscreen; show every series in normal mode |
 | `Up` / `Down` or `k` / `j` | Select previous or next visible row or panel |
 | `Enter` / `Space` | Toggle the selected row |
 | `Left` / `Right` | Collapse / expand the selected row |
@@ -30,6 +30,10 @@ Grafatui is designed for keyboard-first dashboard inspection.
 | `/` | Search visible rows and panels |
 | `Left` / `Right` | Move cursor in inspect mode |
 | `?` | Toggle debug info |
+
+> **Known issue**: `[` and `]` are also bound to panning, but only when the
+> terminal reports Shift with them, which most terminals do not. Live mode can
+> only be restored from fullscreen.
 
 ## Mouse Support
 

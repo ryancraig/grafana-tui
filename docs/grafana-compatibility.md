@@ -58,28 +58,6 @@ after this section apply to V2 panels, queries, and variables too. See the
 | `LibraryPanel` elements | ❌ Not Implemented | Exports reference library panels by uid only; they are skipped with a diagnostic. Export with **Share dashboard with another instance** enabled to inline them |
 | `spec.annotations` | ❌ Not Implemented | As for Classic `annotations`; Grafatui's external annotation sources are separate |
 
----|---|---|
-| Exact `apiVersion: dashboard.grafana.app/v2` | ✅ Supported | Other resource versions are rejected |
-| Grafana 13 **Export as code** and API output | ✅ Supported | Absent or `null` lists and objects (`links`, `transformations`, `options`, `overrides`, `variables`, …) are treated as empty, as Grafana's API serializes them |
-| **Share dashboard with another instance** exports | ✅ Supported | Queries without a `datasource` use the configured Prometheus; cleared query variable selections resolve dynamically |
-| `spec.layout.kind: GridLayout` | ✅ Supported | `GridLayoutItem` coordinates map to Grafatui's fixed 24-column grid |
-| `spec.layout.kind: AutoGridLayout` | ✅ Supported | Panels flow row-major into equal-width columns that reflow with the terminal width; see [auto grid sizing](grafana-dashboard-import.md#auto-grid-layouts) |
-| `AutoGridLayout` `maxColumnCount`, `columnWidthMode`/`columnWidth`, `rowHeightMode`/`rowHeight` | ✅ Supported | Grafana's named and custom pixel sizes are converted to terminal cells and grid rows |
-| `AutoGridLayout` `fillScreen`, `fitContent`, min/max height modes | ⛔ Not Applicable | Accepted and ignored |
-| `spec.layout.kind: RowsLayout` | ✅ Supported | Nested `GridLayout`, `AutoGridLayout`, and `RowsLayout` children preserve row titles, nesting, collapsed state, and hidden-header transparency |
-| `spec.layout.kind: TabsLayout` | ✅ Supported | Nested grid, auto grid, row, and tab children preserve titles and show one active tab per group |
-| Inline `Panel` elements | ✅ Supported | Supported panel visualization groups map through the Classic-equivalent importer |
-| Prometheus `PanelQuery` queries | ✅ Supported | `prometheus`, `grafana-amazonprometheus-datasource`, and `grafana-azureprometheus-datasource` query groups are imported; other datasources emit import diagnostics and are skipped |
-| `RowsLayoutRow.spec.fillScreen` | ⛔ Not Applicable | Accepted and ignored; terminal rows size to their content |
-| Top-level `spec.variables` | 🔶 Partial | Supported variable kinds map to Grafatui variables; unsupported kinds emit diagnostics |
-| `spec.timeSettings.autoRefresh` | ✅ Supported | Used as the dashboard refresh interval |
-| `vizConfig.spec.fieldConfig` | 🔶 Partial | The supported Classic-equivalent field configuration subset applies |
-| `repeat` on grid items, auto grid items, rows, and tabs | ✅ Supported | Expanded once per selected value of the variable, with each copy's title and queries using its value; see [repeats](grafana-dashboard-import.md#repeats) |
-| `GridLayoutItem` `repeat.direction` and `repeat.maxPerRow` | ✅ Supported | Horizontal copies share the full grid width, up to `maxPerRow` (default 4) per row; vertical copies stack; panels below move down |
-| `conditionalRendering` on rows, tabs, and auto grid items | ✅ Supported | Variable, data, and time range conditions show or hide items as variables, data, and the range change; see [conditional rendering](grafana-dashboard-import.md#conditional-rendering) |
-| Row and tab `variables` | ✅ Supported | Apply to the row or tab and everything inside it, shadowing dashboard variables; query variables resolve per row or tab copy; see [row and tab variables](grafana-dashboard-import.md#row-and-tab-variables) |
-| `LibraryPanel` elements | ❌ Not Implemented | Exports reference library panels by uid only; they are skipped with a diagnostic. Export with **Share dashboard with another instance** enabled to inline them |
-
 Grafana's V2 schema also includes settings for its browser editor and other
 datasources; those not listed here are ignored. Use a Classic export for
 dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
@@ -167,6 +145,8 @@ dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
 | `gridPos.h` | ✅ Supported | |
 | `id` | ❌ Not Implemented | Not used |
 | `description` | ❌ Not Implemented | Not displayed |
+| `timeFrom` / `timeShift` / `hideTimeOverride` | ❌ Not Implemented | Ignored without a diagnostic; panels use the dashboard range |
+| `interval` / `maxDataPoints` | ❌ Not Implemented | Ignored without a diagnostic; queries use the global `--step` |
 | `transparent` | ⛔ Not Applicable | TUI panels always have borders |
 | `links` | ⛔ Not Applicable | No browser navigation |
 | `repeat` | ✅ Supported | Panels and rows repeat once per selected variable value; copies saved by older Grafana versions (`repeatPanelId`) are dropped |
@@ -183,10 +163,10 @@ dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
 |---|---|---|
 | `targets` (array) | ✅ Supported | Multiple targets per panel supported |
 | `targets[].expr` | ✅ Supported | PromQL expression |
-| `targets[].legendFormat` | ✅ Supported | `{{label}}` syntax for legend formatting |
+| `targets[].legendFormat` | 🔶 Partial | Exact `{{label}}` placeholders are substituted; `__auto` renders literally, and `{{ label }}` with inner spaces is not substituted |
 | `targets[].refId` | ❌ Not Implemented | Not used |
-| `targets[].datasource` | ❌ Not Implemented | Only Prometheus datasource is supported |
-| `targets[].interval` | ❌ Not Implemented | Uses global `--step` instead |
+| `targets[].datasource` | ❌ Not Implemented | Classic targets' `datasource` is not read, so any target with an `expr` (including Loki) is sent to the configured Prometheus without a diagnostic. V2 queries are filtered by datasource group |
+| `targets[].interval` | ❌ Not Implemented | Every range query uses the fixed global `--step` (default 5s); long ranges can exceed Prometheus's 11,000-point limit |
 | `targets[].intervalFactor` | ❌ Not Implemented | |
 | `targets[].instant` | ✅ Supported | Uses Prometheus instant `query` when true; Gauge, BarGauge, and Table default to instant |
 | `targets[].format` | ❌ Not Implemented | Always treated as time_series |
@@ -198,10 +178,10 @@ dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
 
 | Variable | Status | Notes |
 |---|---|---|
-| `$__rate_interval` | ✅ Supported | Computed as `max(step × 4, 60s)` |
-| `$__rate_interval_ms` | ✅ Supported | Millisecond form of `$__rate_interval` |
-| `$__interval` | ✅ Supported | Computed from the current range and panel resolution, bounded by `--step` |
-| `$__interval_ms` | ✅ Supported | Millisecond form of `$__interval` |
+| `$__rate_interval` | 🔶 Partial | Computed as `max(step × 4, 60s)`; Grafana uses `max($__interval + scrape interval, 4 × scrape interval)` |
+| `$__rate_interval_ms` | 🔶 Partial | Millisecond form of `$__rate_interval` |
+| `$__interval` | 🔶 Partial | Computed as `max(range / 200, --step)`, but range queries are still sent with the fixed `--step`, so the value can differ from the actual query resolution |
+| `$__interval_ms` | 🔶 Partial | Millisecond form of `$__interval` |
 | `$__range` | ✅ Supported | Current dashboard time range |
 | `$__range_s` | ✅ Supported | Current dashboard time range in seconds |
 | `$__range_ms` | ✅ Supported | Current dashboard time range in milliseconds |
@@ -225,7 +205,7 @@ dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
 | `templating.list[].sort` | ❌ Not Implemented | |
 | `templating.list[].multi` | ✅ Supported | Several selected values are regex-escaped and joined as `(a\|b)`, as Grafana's Prometheus datasource does |
 | `templating.list[].includeAll` | ✅ Supported | `All` selects every option; it interpolates as `allValue` when set, otherwise as all values joined |
-| `templating.list[].refresh` | 🔶 Partial | Dynamic variables refresh before panel queries |
+| `templating.list[].refresh` | 🔶 Partial | The setting is not read; query variables are re-queried before every data refresh |
 | `templating.list[].options` | 🔶 Partial | Supply the values `All` selects and the default selection; there is no picker UI |
 | `templating.list[].hide` | ❌ Not Implemented | |
 | CLI `--var KEY=VALUE` override | ✅ Supported | Overrides dashboard defaults from command line; repeat `--var` for the same key to select several values |
@@ -257,7 +237,7 @@ major gaps.
 |---|---|---|
 | `fieldConfig` | 🔶 Partial | Parsed for supported defaults/custom fields below |
 | `fieldConfig.defaults` | 🔶 Partial | Parsed for min/max, thresholds, and selected custom fields |
-| `fieldConfig.defaults.unit` | 🔶 Partial | Common units such as bytes, bits, seconds, milliseconds, percent, percentunit, ops, request rate, and byte rate are formatted; unknown units fall back to Grafatui's compact SI formatter |
+| `fieldConfig.defaults.unit` | 🔶 Partial | Common units such as bytes, bits, seconds, milliseconds, percent, percentunit, ops, request rate, and byte rate are formatted; unknown units fall back to Grafatui's compact SI formatter. Known differences: `bytes` scales by 1000 where Grafana uses 1024, and unit names are matched case-insensitively, so `bps` (bits/s) displays as bytes/s |
 | `fieldConfig.defaults.min` | ✅ Supported | Used for Graph y-axis lower bounds, percentage thresholds, and Gauge limits |
 | `fieldConfig.defaults.max` | ✅ Supported | Used for Graph y-axis upper bounds, gauge scaling, and threshold boundaries |
 | `fieldConfig.defaults.decimals` | ✅ Supported | Controls numeric precision in panel values, graph axes, legends, and exports |
@@ -273,7 +253,7 @@ major gaps.
 | `fieldConfig.defaults.custom.axisGridShow` | ✅ Supported | Controls per-panel autogrid guide lines for graph/time-series panels |
 | `fieldConfig.defaults.custom.thresholdsStyle` | 🔶 Partial | `mode` is parsed for threshold rendering; glyph style is also controlled by Grafatui's marker setting |
 | `fieldConfig.defaults.custom.scaleDistribution` | ❌ Not Implemented | Always linear |
-| `fieldConfig.overrides` | ❌ Not Implemented | |
+| `fieldConfig.overrides` | ❌ Not Implemented | Ignored without a diagnostic |
 
 ### Thresholds
 
@@ -303,7 +283,7 @@ tooltips.
 | `options.tooltip` | ❌ Not Implemented | Inspect mode serves as tooltip substitute |
 | `options.tooltip.mode` | ❌ Not Implemented | |
 | `options.orientation` | ❌ Not Implemented | |
-| `options.reduceOptions` | ❌ Not Implemented | Stat/Gauge always use last value; import diagnostics warn when reduce options are ignored |
+| `options.reduceOptions` | ❌ Not Implemented | Stat/Gauge always use last value; import diagnostics warn when reduce options are present, including Grafana's default `lastNotNull` |
 | `options.reduceOptions.calcs` | ❌ Not Implemented | |
 | `options.reduceOptions.fields` | ❌ Not Implemented | |
 | `options.textMode` | ❌ Not Implemented | |
@@ -332,7 +312,7 @@ compatibility with Grafana annotation queries, APIs, `annotations`, or
 | JSON Field | Status | Notes |
 |---|---|---|
 | `options.dataLinks` | ⛔ Not Applicable | No browser navigation in TUI |
-| `transformations` | ❌ Not Implemented | |
+| `transformations` | ❌ Not Implemented | V2 panels emit a diagnostic; Classic panels drop transformations without one |
 | `transformations[].id` | ❌ Not Implemented | (e.g., `organize`, `merge`, `reduce`) |
 
 ---
@@ -366,21 +346,21 @@ compatibility with Grafana annotation queries, APIs, `annotations`, or
 
 | Category | Supported | Partial | Not Implemented | Not Applicable |
 |---|---|---|---|---|
-| Dashboard Properties | 1 | 0 | 10 | 4 |
+| Dashboard Properties | 2 | 0 | 9 | 4 |
 | Panel Types | 8 | 0 | 14 | 5 |
-| Panel Common Fields | 12 | 0 | 2 | 2 |
-| Targets / Queries | 3 | 0 | 8 | 1 |
-| PromQL Variables | 7 | 0 | 0 | 0 |
+| Panel Common Fields | 12 | 0 | 4 | 2 |
+| Targets / Queries | 4 | 1 | 6 | 1 |
+| PromQL Variables | 3 | 4 | 0 | 0 |
 | Templating | 8 | 7 | 3 | 0 |
 | Variable Substitution | 3 | 0 | 5 | 0 |
-| Field Config | 4 | 6 | 10 | 2 |
+| Field Config | 4 | 7 | 7 | 1 |
 | Thresholds | 5 | 0 | 0 | 0 |
 | Panel Options | 0 | 0 | 14 | 0 |
 | Annotations | 0 | 0 | 2 | 0 |
 | Data Links / Transforms | 0 | 0 | 2 | 1 |
 | Alert Rules | 0 | 0 | 3 | 0 |
 | Datasources | 3 | 0 | 5 | 0 |
-| **Total** | **54** | **13** | **78** | **15** |
+| **Total** | **52** | **19** | **74** | **14** |
 
 ---
 
