@@ -14,180 +14,181 @@
  * limitations under the License.
  */
 
+mod builtin;
+
 use ratatui::style::Color;
 
-#[derive(Debug, Clone)]
+pub(crate) use builtin::builtin;
+#[cfg(test)]
+use builtin::builtin_names;
+
+/// Semantic UI colors. Renderers pick a role, never a literal color, so every
+/// theme restyles the whole UI and the SVG export.
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Theme {
-    #[allow(dead_code)]
+    pub(crate) name: String,
+    /// Fill behind the whole frame.
     pub(crate) background: Color,
+    /// Fill behind popups and modals.
+    pub(crate) surface: Color,
     pub(crate) text: Color,
+    /// Hints and other secondary text.
+    pub(crate) text_muted: Color,
     pub(crate) title: Color,
     pub(crate) border: Color,
-    pub(crate) border_selected: Color,
-    #[allow(dead_code)]
-    pub(crate) legend_text: Color,
-    #[allow(dead_code)]
-    pub(crate) legend_dim: Color,
+    pub(crate) border_focused: Color,
+    pub(crate) selection_fg: Color,
+    pub(crate) selection_bg: Color,
+    pub(crate) error: Color,
+    pub(crate) warning: Color,
+    pub(crate) success: Color,
+    pub(crate) axis: Color,
+    /// Automatic grid lines and labels, unless `autogrid_color` overrides it.
+    pub(crate) grid: Color,
+    /// Inspect-mode cursor line.
+    pub(crate) cursor: Color,
+    pub(crate) gauge_track: Color,
+    /// Heatmap low, mid and high bands.
+    pub(crate) heatmap: [Color; 3],
+    /// Heatmap cells without a finite value.
+    pub(crate) heatmap_empty: Color,
+    pub(crate) annotation: Color,
+    /// Threshold steps whose dashboard color has no terminal equivalent.
+    pub(crate) threshold_default: Color,
+    /// Series colors. Never empty.
     pub(crate) palette: Vec<Color>,
 }
 
 impl Default for Theme {
     fn default() -> Self {
-        Self {
-            background: Color::Reset,
-            text: Color::Reset,
-            title: Color::Cyan,
-            border: Color::DarkGray,
-            border_selected: Color::Yellow,
-            legend_text: Color::White,
-            legend_dim: Color::DarkGray,
-            palette: vec![
-                Color::Green,
-                Color::Yellow,
-                Color::Blue,
-                Color::Magenta,
-                Color::Cyan,
-                Color::Red,
-                Color::LightGreen,
-                Color::LightYellow,
-                Color::LightBlue,
-                Color::LightMagenta,
-                Color::LightCyan,
-                Color::LightRed,
-            ],
-        }
+        terminal()
     }
 }
 
 impl Theme {
     pub(crate) fn from_str(name: &str) -> Self {
-        match name.to_lowercase().as_str() {
-            "dracula" => Self {
-                background: Color::Rgb(40, 42, 54),
-                text: Color::Rgb(248, 248, 242),
-                title: Color::Rgb(189, 147, 249),           // Purple
-                border: Color::Rgb(98, 114, 164),           // Comment
-                border_selected: Color::Rgb(255, 121, 198), // Pink
-                legend_text: Color::Rgb(248, 248, 242),
-                legend_dim: Color::Rgb(98, 114, 164),
-                palette: vec![
-                    Color::Rgb(139, 233, 253), // Cyan
-                    Color::Rgb(80, 250, 123),  // Green
-                    Color::Rgb(255, 184, 108), // Orange
-                    Color::Rgb(255, 121, 198), // Pink
-                    Color::Rgb(189, 147, 249), // Purple
-                    Color::Rgb(255, 85, 85),   // Red
-                ],
-            },
-            "monokai" => Self {
-                background: Color::Rgb(39, 40, 34),
-                text: Color::Rgb(248, 248, 242),
-                title: Color::Rgb(102, 217, 239), // Blue
-                border: Color::Rgb(117, 113, 94),
-                border_selected: Color::Rgb(253, 151, 31), // Orange
-                legend_text: Color::Rgb(248, 248, 242),
-                legend_dim: Color::Rgb(117, 113, 94),
-                palette: vec![
-                    Color::Rgb(166, 226, 46),  // Green
-                    Color::Rgb(102, 217, 239), // Blue
-                    Color::Rgb(249, 38, 114),  // Pink
-                    Color::Rgb(253, 151, 31),  // Orange
-                    Color::Rgb(174, 129, 255), // Purple
-                ],
-            },
-            "solarized-dark" => Self {
-                background: Color::Rgb(0, 43, 54),
-                text: Color::Rgb(131, 148, 150),
-                title: Color::Rgb(38, 139, 210), // Blue
-                border: Color::Rgb(88, 110, 117),
-                border_selected: Color::Rgb(181, 137, 0), // Yellow
-                legend_text: Color::Rgb(131, 148, 150),
-                legend_dim: Color::Rgb(88, 110, 117),
-                palette: vec![
-                    Color::Rgb(181, 137, 0),   // Yellow
-                    Color::Rgb(203, 75, 22),   // Orange
-                    Color::Rgb(220, 50, 47),   // Red
-                    Color::Rgb(211, 54, 130),  // Magenta
-                    Color::Rgb(108, 113, 196), // Violet
-                    Color::Rgb(38, 139, 210),  // Blue
-                    Color::Rgb(42, 161, 152),  // Cyan
-                    Color::Rgb(133, 153, 0),   // Green
-                ],
-            },
-            "solarized-light" => Self {
-                background: Color::Rgb(253, 246, 227),
-                text: Color::Rgb(101, 123, 131),
-                title: Color::Rgb(38, 139, 210), // Blue
-                border: Color::Rgb(147, 161, 161),
-                border_selected: Color::Rgb(181, 137, 0), // Yellow
-                legend_text: Color::Rgb(101, 123, 131),
-                legend_dim: Color::Rgb(147, 161, 161),
-                palette: vec![
-                    Color::Rgb(181, 137, 0),   // Yellow
-                    Color::Rgb(203, 75, 22),   // Orange
-                    Color::Rgb(220, 50, 47),   // Red
-                    Color::Rgb(211, 54, 130),  // Magenta
-                    Color::Rgb(108, 113, 196), // Violet
-                    Color::Rgb(38, 139, 210),  // Blue
-                    Color::Rgb(42, 161, 152),  // Cyan
-                    Color::Rgb(133, 153, 0),   // Green
-                ],
-            },
-            "gruvbox" => Self {
-                background: Color::Rgb(40, 40, 40),
-                text: Color::Rgb(235, 219, 178),
-                title: Color::Rgb(215, 153, 33), // Yellow
-                border: Color::Rgb(146, 131, 116),
-                border_selected: Color::Rgb(254, 128, 25), // Orange
-                legend_text: Color::Rgb(235, 219, 178),
-                legend_dim: Color::Rgb(146, 131, 116),
-                palette: vec![
-                    Color::Rgb(204, 36, 29),   // Red
-                    Color::Rgb(152, 151, 26),  // Green
-                    Color::Rgb(215, 153, 33),  // Yellow
-                    Color::Rgb(69, 133, 136),  // Blue
-                    Color::Rgb(177, 98, 134),  // Purple
-                    Color::Rgb(104, 157, 106), // Aqua
-                    Color::Rgb(254, 128, 25),  // Orange
-                ],
-            },
-            "tokyo-night" => Self {
-                background: Color::Rgb(26, 27, 38),
-                text: Color::Rgb(169, 177, 214),
-                title: Color::Rgb(122, 162, 247), // Blue
-                border: Color::Rgb(86, 95, 137),
-                border_selected: Color::Rgb(255, 158, 100), // Orange
-                legend_text: Color::Rgb(169, 177, 214),
-                legend_dim: Color::Rgb(86, 95, 137),
-                palette: vec![
-                    Color::Rgb(247, 118, 142), // Red
-                    Color::Rgb(158, 206, 106), // Green
-                    Color::Rgb(224, 175, 104), // Yellow
-                    Color::Rgb(122, 162, 247), // Blue
-                    Color::Rgb(187, 154, 247), // Magenta
-                    Color::Rgb(125, 207, 255), // Cyan
-                    Color::Rgb(255, 158, 100), // Orange
-                ],
-            },
-            "catppuccin" => Self {
-                background: Color::Rgb(30, 30, 46),
-                text: Color::Rgb(205, 214, 244),
-                title: Color::Rgb(137, 180, 250), // Blue
-                border: Color::Rgb(88, 91, 112),
-                border_selected: Color::Rgb(249, 226, 175), // Yellow
-                legend_text: Color::Rgb(205, 214, 244),
-                legend_dim: Color::Rgb(88, 91, 112),
-                palette: vec![
-                    Color::Rgb(243, 139, 168), // Red
-                    Color::Rgb(166, 227, 161), // Green
-                    Color::Rgb(249, 226, 175), // Yellow
-                    Color::Rgb(137, 180, 250), // Blue
-                    Color::Rgb(203, 166, 247), // Mauve
-                    Color::Rgb(148, 226, 213), // Teal
-                    Color::Rgb(250, 179, 135), // Peach
-                ],
-            },
-            _ => Self::default(),
+        builtin(name).unwrap_or_default()
+    }
+
+    /// Replaces a threshold step color the terminal cannot show.
+    pub(crate) fn threshold_color(&self, color: Color) -> Color {
+        if color == Color::Reset {
+            self.threshold_default
+        } else {
+            color
+        }
+    }
+}
+
+/// The ANSI theme: follows the terminal's own palette and background.
+fn terminal() -> Theme {
+    Theme {
+        name: "terminal".to_string(),
+        background: Color::Reset,
+        surface: Color::Reset,
+        text: Color::Reset,
+        text_muted: Color::DarkGray,
+        title: Color::Cyan,
+        border: Color::DarkGray,
+        border_focused: Color::Yellow,
+        selection_fg: Color::Cyan,
+        selection_bg: Color::Reset,
+        error: Color::Red,
+        warning: Color::Yellow,
+        success: Color::Green,
+        axis: Color::Gray,
+        grid: Color::DarkGray,
+        cursor: Color::White,
+        gauge_track: Color::DarkGray,
+        heatmap: [Color::Cyan, Color::Yellow, Color::Red],
+        heatmap_empty: Color::DarkGray,
+        annotation: Color::Yellow,
+        threshold_default: Color::Reset,
+        palette: vec![
+            Color::Green,
+            Color::Yellow,
+            Color::Blue,
+            Color::Magenta,
+            Color::Cyan,
+            Color::Red,
+            Color::LightGreen,
+            Color::LightYellow,
+            Color::LightBlue,
+            Color::LightMagenta,
+            Color::LightCyan,
+            Color::LightRed,
+        ],
+    }
+}
+
+/// The handful of colors a palette-based theme is built from.
+#[derive(Debug, Clone, Copy)]
+struct Base {
+    bg: u32,
+    /// Popups and modals.
+    bg_alt: u32,
+    /// Selected rows and gauge tracks.
+    highlight: u32,
+    /// Grid lines and empty heatmap cells.
+    subtle: u32,
+    border: u32,
+    muted: u32,
+    fg: u32,
+    title: u32,
+    focus: u32,
+    red: u32,
+    orange: u32,
+    yellow: u32,
+    green: u32,
+    cyan: u32,
+    blue: u32,
+    purple: u32,
+}
+
+const fn rgb(hex: u32) -> Color {
+    Color::Rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8)
+}
+
+impl Theme {
+    fn from_base(name: &str, base: &Base) -> Self {
+        let mut palette = Vec::new();
+        for hex in [
+            base.blue,
+            base.green,
+            base.yellow,
+            base.purple,
+            base.cyan,
+            base.orange,
+            base.red,
+        ] {
+            let color = rgb(hex);
+            if !palette.contains(&color) {
+                palette.push(color);
+            }
+        }
+        Self {
+            name: name.to_string(),
+            background: rgb(base.bg),
+            surface: rgb(base.bg_alt),
+            text: rgb(base.fg),
+            text_muted: rgb(base.muted),
+            title: rgb(base.title),
+            border: rgb(base.border),
+            border_focused: rgb(base.focus),
+            selection_fg: rgb(base.title),
+            selection_bg: rgb(base.highlight),
+            error: rgb(base.red),
+            warning: rgb(base.yellow),
+            success: rgb(base.green),
+            axis: rgb(base.muted),
+            grid: rgb(base.subtle),
+            cursor: rgb(base.fg),
+            gauge_track: rgb(base.highlight),
+            heatmap: [rgb(base.blue), rgb(base.yellow), rgb(base.red)],
+            heatmap_empty: rgb(base.subtle),
+            annotation: rgb(base.focus),
+            threshold_default: rgb(base.orange),
+            palette,
         }
     }
 }
@@ -219,5 +220,61 @@ pub(crate) fn parse_grafana_color(c: &str) -> Color {
         "white" => Color::White,
         "black" => Color::Black,
         _ => Color::Reset,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_builtin_resolves_with_a_usable_palette() {
+        for name in builtin_names() {
+            let theme = builtin(name).unwrap_or_else(|| panic!("{name} should resolve"));
+            assert_eq!(theme.name, name);
+            assert!(!theme.palette.is_empty(), "{name} palette is empty");
+            if name != "terminal" {
+                assert_ne!(theme.background, Color::Reset, "{name} paints no background");
+                assert_ne!(theme.text, Color::Reset, "{name} has no text color");
+            }
+        }
+    }
+
+    #[test]
+    fn lookup_ignores_case() {
+        assert_eq!(builtin("Dracula").map(|t| t.name), Some("dracula".to_string()));
+    }
+
+    #[test]
+    fn unknown_names_fall_back_to_the_terminal_theme() {
+        assert_eq!(Theme::from_str("nope").name, "terminal");
+        assert_eq!(Theme::from_str("default").name, "terminal");
+    }
+
+    #[test]
+    fn derived_palettes_skip_duplicate_accents() {
+        let base = Base {
+            cyan: 0x66d9ef,
+            blue: 0x66d9ef,
+            ..builtin::TOKYO_NIGHT
+        };
+        let theme = Theme::from_base("dupes", &base);
+        assert_eq!(theme.palette.len(), 6);
+        for name in builtin_names() {
+            let palette = builtin(name).unwrap().palette;
+            for (index, color) in palette.iter().enumerate() {
+                assert!(
+                    !palette[..index].contains(color),
+                    "{name} repeats {color:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn threshold_color_replaces_only_reset() {
+        let theme = builtin("tokyo-night").unwrap();
+        assert_eq!(theme.threshold_color(Color::Reset), theme.threshold_default);
+        assert_eq!(theme.threshold_color(Color::Red), Color::Red);
     }
 }

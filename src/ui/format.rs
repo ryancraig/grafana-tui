@@ -75,19 +75,14 @@ impl DisplayFormat {
     }
 }
 
-/// Maps a normalized value (0.0-1.0) to a heatmap color (blue -> green -> yellow -> red)
-pub(crate) fn value_to_heatmap_color(normalized: f64) -> Color {
-    // Use a simple color gradient for heatmap
-    // 0.0 = Blue (cold), 0.5 = Yellow, 1.0 = Red (hot)
+/// Maps a normalized value (0.0-1.0) to the theme's low, mid or high heatmap band.
+pub(crate) fn value_to_heatmap_color(normalized: f64, bands: [Color; 3]) -> Color {
     if normalized < 0.33 {
-        // Blue to Cyan
-        Color::Cyan
+        bands[0]
     } else if normalized < 0.66 {
-        // Yellow/Green
-        Color::Yellow
+        bands[1]
     } else {
-        // Red/Magenta for hot values
-        Color::Red
+        bands[2]
     }
 }
 

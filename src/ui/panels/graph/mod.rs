@@ -257,7 +257,11 @@ pub(super) fn render_graph_panel(
 
     // Declare helper datasets to extend their lifetimes
     let mut cursor_dataset = vec![];
-    let threshold_data = prepare_thresholds(p, &app.threshold_marker, [start, now]);
+    let mut threshold_data = prepare_thresholds(p, &app.threshold_marker, [start, now]);
+    for (_, color) in &mut threshold_data.labels {
+        *color = theme.threshold_color(*color);
+    }
+    let grid_color = app.grid_color();
     let mut threshold_overlay_datasets = Vec::new();
 
     if !app.threshold_marker.ends_with("line") {
@@ -343,7 +347,7 @@ pub(super) fn render_graph_panel(
                 .name("")
                 .marker(ratatui::symbols::Marker::Braille)
                 .graph_type(GraphType::Line)
-                .style(Style::default().fg(Color::White))
+                .style(Style::default().fg(theme.cursor))
                 .data(&cursor_dataset),
         );
         if !strong_data_datasets.is_empty()
@@ -354,7 +358,7 @@ pub(super) fn render_graph_panel(
                     .name("")
                     .marker(ratatui::symbols::Marker::Braille)
                     .graph_type(GraphType::Line)
-                    .style(Style::default().fg(Color::White))
+                    .style(Style::default().fg(theme.cursor))
                     .data(&cursor_dataset),
             );
         }
@@ -412,7 +416,9 @@ pub(super) fn render_graph_panel(
     };
     let chart_y_label_width = chart_y_label_width(&chart_y_labels);
 
+    // Chart fills its plot with the style's background, or reset without one.
     let chart = Chart::new(chart_datasets)
+        .style(Style::default().bg(app.background()))
         // No block, as we rendered it outside
         .x_axis(
             Axis::default()
@@ -422,7 +428,7 @@ pub(super) fn render_graph_panel(
         )
         .y_axis(
             Axis::default()
-                .style(Style::default().fg(Color::Gray))
+                .style(Style::default().fg(theme.axis))
                 .bounds(y_bounds)
                 .labels(chart_y_labels.clone()),
         );
@@ -443,7 +449,7 @@ pub(super) fn render_graph_panel(
             )
             .y_axis(
                 Axis::default()
-                    .style(Style::default().fg(Color::Gray))
+                    .style(Style::default().fg(theme.axis))
                     .bounds(y_bounds)
                     .labels(chart_y_labels.clone()),
             );
@@ -491,7 +497,7 @@ pub(super) fn render_graph_panel(
             )
             .y_axis(
                 Axis::default()
-                    .style(Style::default().fg(Color::Gray))
+                    .style(Style::default().fg(theme.axis))
                     .bounds(y_bounds)
                     .labels(chart_y_labels.clone()),
             );
@@ -538,7 +544,7 @@ pub(super) fn render_graph_panel(
                     .name("")
                     .marker(ratatui::symbols::Marker::Braille)
                     .graph_type(GraphType::Line)
-                    .style(Style::default().fg(app.autogrid_color))
+                    .style(Style::default().fg(grid_color))
                     .data(dataset)
             })
             .collect();
@@ -552,7 +558,7 @@ pub(super) fn render_graph_panel(
             )
             .y_axis(
                 Axis::default()
-                    .style(Style::default().fg(Color::Gray))
+                    .style(Style::default().fg(theme.axis))
                     .bounds(y_bounds)
                     .labels(chart_y_labels),
             );
@@ -569,7 +575,7 @@ pub(super) fn render_graph_panel(
             [start, now],
             &autogrid_time_ticks,
             time_range_secs,
-            app.autogrid_color,
+            grid_color,
         );
     }
 
@@ -586,7 +592,7 @@ pub(super) fn render_graph_panel(
                 autogrid_ticks: &autogrid_value_ticks,
                 threshold_labels: &threshold_data.labels,
                 display: &p.display,
-                color: app.autogrid_color,
+                color: grid_color,
             },
         );
     }
@@ -596,7 +602,7 @@ pub(super) fn render_graph_panel(
         &annotation_clusters,
         plot_bounds,
         strong_data_buf.as_ref(),
-        theme.border_selected,
+        theme.annotation,
     );
 
     render_forced_point_markers(
@@ -612,7 +618,7 @@ pub(super) fn render_graph_panel(
         if let Some(cluster) = active_annotation {
             let [heading, details] =
                 format_cluster_detail_lines(cluster, usize::from(legend_area.width));
-            let detail_style = Style::default().fg(theme.border_selected);
+            let detail_style = Style::default().fg(theme.annotation);
             let annotation_detail = Paragraph::new(vec![
                 Line::styled(heading, detail_style),
                 Line::styled(details, detail_style),
@@ -859,7 +865,7 @@ mod tests {
             ExportOptions::default(),
         );
         app.view_end_ts = 100;
-        app.autogrid_color = Color::Red;
+        app.autogrid_color = Some(Color::Red);
         app
     }
 
@@ -918,6 +924,56 @@ mod tests {
             .count();
 
         assert_eq!(grid_colored_cells_inside_fill, 0);
+    }
+
+    #[test]
+    fn overlays_keep_the_painted_background_and_use_theme_roles() {
+        for marker in ["dashed-line", "dot"] {
+            let mut panel = area_fill_panel();
+            panel.thresholds = Some(crate::app::Thresholds {
+                mode: crate::app::ThresholdMode::Absolute,
+                steps: vec![crate::app::ThresholdStep {
+                    value: Some(5.0),
+                    color: Color::Reset,
+                }],
+                style: None,
+            });
+            let mut app = area_fill_app(panel);
+            app.theme = crate::theme::builtin("solarized-light").unwrap();
+            app.autogrid_color = None;
+            app.threshold_marker = marker.to_string();
+            let background = app.theme.background;
+            let panel = &app.panels[0];
+            let area = Rect::new(0, 0, 80, 20);
+            let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+
+            terminal
+                .draw(|frame| {
+                    frame.render_widget(
+                        ratatui::widgets::Block::default().style(Style::default().bg(background)),
+                        area,
+                    );
+                    render_graph_panel(frame, area, 0, panel, &app, Some(50.0), false);
+                })
+                .unwrap();
+
+            let cells = terminal.backend().buffer().content();
+            assert!(
+                cells.iter().all(|cell| cell.bg == background),
+                "{marker}: an overlay reset the background"
+            );
+            for (role, color) in [
+                ("cursor", app.theme.cursor),
+                ("axis", app.theme.axis),
+                ("grid", app.theme.grid),
+                ("threshold_default", app.theme.threshold_default),
+            ] {
+                assert!(
+                    cells.iter().any(|cell| cell.fg == color),
+                    "{marker}: no {role} cell"
+                );
+            }
+        }
     }
 
     #[test]

@@ -26,6 +26,11 @@ use ratatui::{
 
 pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
     let size = frame.area();
+    let theme = app.theme.clone();
+    frame.render_widget(
+        Block::default().style(Style::default().fg(theme.text).bg(app.background())),
+        size,
+    );
 
     // Layout: title bar, charts area, footer
     let chunks = Layout::default()
@@ -38,22 +43,29 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
         .split(size);
 
     // Title
-    let title_text = format!(
-        "{} — range={} step={}  panels={}  {}(r to refresh, +/- range, [] pan, 0 live, q quit)",
+    let mut title_spans = vec![Span::raw(format!(
+        "{} — range={} step={}  panels={}  ",
         app.title,
         format_duration(app.range),
         format_duration(app.step),
         normal_panel_count(app),
-        if app.is_live() { "" } else { "⏸ PAUSED " }
-    );
+    ))];
+    if !app.is_live() {
+        title_spans.push(Span::styled("⏸ PAUSED ", Style::default().fg(theme.warning)));
+    }
+    title_spans.push(Span::raw("(r to refresh, +/- range, [] pan, 0 live, q quit)"));
     let title_block = Block::default()
         .borders(Borders::ALL)
-        .title(Line::from(title_text).alignment(Alignment::Center));
+        .border_style(Style::default().fg(theme.border))
+        .title_style(Style::default().fg(theme.text))
+        .title(Line::from(title_spans).alignment(Alignment::Center));
     frame.render_widget(title_block, chunks[0]);
 
     // Charts area: use Grafana grid if any panel has it, else fallback to 2-column flow
     let area = chunks[1];
-    let charts_block = Block::default().borders(Borders::ALL);
+    let charts_block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.border));
     frame.render_widget(charts_block, area);
     let inner_area = area.inner(Margin {
         vertical: 1,
@@ -156,10 +168,12 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
     } else {
         "↑/↓ navigate"
     };
-    let summary = format!(
-        "Mode: {}{} | Prom: {} | range={} step={:?} refresh={} | grid={} | panels={} (skipped {}) errors={} | keys: {navigation_hint}, r refresh, e export, Ctrl+E record, +/- range, q quit, ? debug:{}",
-        mode_display,
-        if app.recording.is_some() { " REC" } else { "" },
+    let mut summary = vec![Span::raw(format!("Mode: {mode_display}"))];
+    if app.recording.is_some() {
+        summary.push(Span::styled(" REC", Style::default().fg(theme.error)));
+    }
+    summary.push(Span::raw(format!(
+        " | Prom: {} | range={} step={:?} refresh={} | grid={} | panels={} (skipped {}) ",
         app.prometheus.base,
         format_duration(app.range),
         app.step,
@@ -167,20 +181,30 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
         if app.autogrid_enabled { "on" } else { "off" },
         panel_count_display,
         app.skipped_panels,
-        errors,
+    )));
+    summary.push(Span::styled(
+        format!("errors={errors}"),
+        if errors > 0 {
+            Style::default().fg(theme.error)
+        } else {
+            Style::default()
+        },
+    ));
+    summary.push(Span::raw(format!(
+        " | keys: {navigation_hint}, r refresh, e export, Ctrl+E record, +/- range, q quit, ? debug:{}",
         if app.debug_bar { "on" } else { "off" }
-    );
+    )));
 
     let detail = build_footer_detail(app);
 
     // Statuses such as export results come first: the summary alone usually
     // fills the two footer lines, which would hide them.
-    let text = if detail.is_empty() {
-        summary
-    } else {
-        format!("{detail}\n{summary}")
-    };
-    let footer = Paragraph::new(text).wrap(Wrap { trim: true });
+    let mut lines = Vec::new();
+    if !detail.is_empty() {
+        lines.extend(detail.lines().map(|line| Line::raw(line.to_string())));
+    }
+    lines.push(Line::from(summary));
+    let footer = Paragraph::new(lines).wrap(Wrap { trim: true });
     frame.render_widget(footer, chunks[2]);
 
     // Search Popup
@@ -189,7 +213,8 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
         let block = Block::default()
             .title(" Search Dashboard ")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(app.theme.border_selected));
+            .border_style(Style::default().fg(theme.border_focused))
+            .style(Style::default().fg(theme.text).bg(theme.surface));
         frame.render_widget(Clear, area); // Clear background
         frame.render_widget(block, area);
 
@@ -239,9 +264,9 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
         let list = List::new(results)
             .highlight_style(
                 Style::default()
-                    .fg(app.theme.title)
-                    .add_modifier(Modifier::BOLD)
-                    .bg(app.theme.background), // Optional: add background to make it pop more?
+                    .fg(theme.selection_fg)
+                    .bg(theme.selection_bg)
+                    .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol(">> ");
 
@@ -271,7 +296,7 @@ pub(crate) fn render_row_header(
     let text = format!("{marker} {}{}", "  ".repeat(depth), row.title);
     let style = Style::default()
         .fg(if selected {
-            theme.border_selected
+            theme.border_focused
         } else {
             theme.border
         })
@@ -839,7 +864,7 @@ mod tests {
                 .cell((expanded.x, expanded.y))
                 .unwrap()
                 .fg,
-            app.theme.border_selected
+            app.theme.border_focused
         );
         assert_eq!(
             terminal
@@ -951,7 +976,7 @@ mod tests {
                     .cell((left.x, left.y))
                     .unwrap()
                     .fg,
-                app.theme.border_selected
+                app.theme.border_focused
             );
             assert_eq!(
                 terminal
@@ -963,6 +988,72 @@ mod tests {
                 app.theme.border
             );
         }
+    }
+
+    #[test]
+    fn theme_background_fills_every_cell_including_popups() {
+        let mut app = test_app();
+        app.panels = vec![graph_panel("cpu")];
+        app.layout = crate::dashboard::DashboardLayout::flat(1);
+        app.theme = crate::theme::builtin("solarized-light").unwrap();
+        app.mode = AppMode::Search;
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+
+        let popup = centered_rect(60, 20, Rect::new(0, 0, 100, 30));
+        let buffer = terminal.backend().buffer();
+        for y in 0..30 {
+            for x in 0..100 {
+                let expected = if popup.contains(Position::new(x, y)) {
+                    app.theme.surface
+                } else {
+                    app.theme.background
+                };
+                assert_eq!(buffer[(x, y)].bg, expected, "cell ({x}, {y})");
+            }
+        }
+    }
+
+    #[test]
+    fn every_panel_type_keeps_the_theme_background() {
+        for dashboard in ["all_visualizations.json", "thresholds_demo.json"] {
+            let mut app = v2_example_app(dashboard);
+            app.theme = crate::theme::builtin("solarized-light").unwrap();
+            let mut terminal = Terminal::new(TestBackend::new(160, 60)).unwrap();
+
+            terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+
+            let buffer = terminal.backend().buffer();
+            for (index, cell) in buffer.content().iter().enumerate() {
+                assert_ne!(
+                    cell.bg,
+                    Color::Reset,
+                    "{dashboard}: cell ({}, {}) shows the terminal background",
+                    index % 160,
+                    index / 160
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn transparent_background_leaves_the_terminal_background() {
+        let mut app = test_app();
+        app.theme = crate::theme::builtin("solarized-light").unwrap();
+        app.transparent_background = true;
+        let mut terminal = Terminal::new(TestBackend::new(140, 20)).unwrap();
+
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        assert!(buffer.content().iter().all(|cell| cell.bg == Color::Reset));
+        assert_eq!(buffer[(0, 0)].fg, app.theme.border);
+        // Block titles inherit the border style unless they set their own.
+        let title = (0..140)
+            .find(|&x| buffer[(x, 0)].symbol() == "T")
+            .expect("title bar text");
+        assert_eq!(buffer[(title, 0)].fg, app.theme.text);
     }
 
     #[test]

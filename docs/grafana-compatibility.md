@@ -402,7 +402,7 @@ Grafatui provides several TUI-native capabilities that don't map directly to Gra
 
 | Grafatui Feature | Description |
 |---|---|
-| **8 color themes** | `default`, `dracula`, `monokai`, `solarized-dark`, `solarized-light`, `gruvbox`, `tokyo-night`, `catppuccin` |
+| **8 color themes** | `terminal`, `dracula`, `monokai`, `solarized-dark`, `solarized-light`, `gruvbox`, `tokyo-night`, `catppuccin` |
 | **Keyboard navigation** | Vim-style (`j`/`k`), arrow keys, page up/down |
 | **Panel search** | `/` opens a fuzzy-search popup |
 | **Fullscreen mode** | `f` to focus on a single panel |

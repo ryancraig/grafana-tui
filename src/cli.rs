@@ -99,15 +99,19 @@ pub(crate) struct Args {
     #[arg(long, value_parser = parse_key_val::<String, String>, value_name = "KEY=VALUE")]
     pub(crate) var: Vec<(String, String)>,
 
-    /// Color theme (default, dracula, monokai, solarized-dark, solarized-light, gruvbox, tokyo-night, catppuccin)
+    /// Color theme (terminal, tokyo-night, catppuccin, gruvbox, dracula, monokai, solarized-dark, solarized-light)
     #[arg(long, value_name = "NAME")]
     pub(crate) theme: Option<String>,
+
+    /// Keep the terminal's own background instead of painting the theme's.
+    #[arg(long)]
+    pub(crate) transparent_background: bool,
 
     /// Marker symbol to use for threshold lines (dashed, dot, braille, block, bar, quadrant, sextant, octant)
     #[arg(long, value_name = "MARKER")]
     pub(crate) threshold_marker: Option<String>,
 
-    /// Color to use for automatic grid lines and labels (e.g., gray, dark-gray, #666666).
+    /// Color to use for automatic grid lines and labels (e.g., gray, dark-gray, #666666). Defaults to the theme's grid color.
     #[arg(long, value_name = "COLOR")]
     pub(crate) autogrid_color: Option<String>,
 

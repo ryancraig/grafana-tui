@@ -18,9 +18,10 @@ Grafatui can be configured with CLI options, a TOML configuration file, or both.
 | `--range <DURATION>` | Time range window, such as `5m`, `1h`, or `24h` | `5m` |
 | `--step <DURATION>` | Query step resolution, such as `5s` or `30s` | `5s` |
 | `--var <KEY=VALUE>` | Override a dashboard variable (not a V2 row or tab variable); repeat a key to select several values | none |
-| `--theme <NAME>` | UI theme | `default` |
+| `--theme <NAME>` | UI theme | `terminal` |
+| `--transparent-background` | Keep the terminal's background instead of painting the theme's | `false` |
 | `--threshold-marker <MARKER>` | Marker for threshold lines | `dashed` |
-| `--autogrid-color <COLOR>` | Color for automatic graph grid lines and labels | `dark-gray` |
+| `--autogrid-color <COLOR>` | Color for automatic graph grid lines and labels | theme grid color |
 | `--export-dir <DIR>` | Directory for exports and recordings | `./grafatui-exports` |
 | `--export-format <FORMAT>` | `svg`, `png`, or `both` | `svg` |
 | `--record-max-frames <COUNT>` | Maximum changed frames per recording | `300` |
@@ -43,12 +44,13 @@ refresh_rate = 1000
 time_range = "1h"
 step = "5s"
 theme = "dracula"
+transparent_background = false
 threshold_marker = "dashed"
 export_dir = "./grafatui-exports"
 export_format = "svg"
 record_max_frames = 300
 autogrid = true
-autogrid_color = "dark-gray"
+autogrid_color = "dark-gray"  # omit to use the theme's grid color
 grafana_json = "~/.config/grafatui/my-dashboard.json"
 annotations_file = "./events.jsonl"
 
@@ -91,14 +93,22 @@ file or complete command configuration rather than merging individual fields.
 
 Built-in themes include:
 
-- `default`
+- `terminal` (alias `default`): the terminal's own ANSI colors and background
+- `tokyo-night`
+- `catppuccin`
+- `gruvbox`
 - `dracula`
 - `monokai`
 - `solarized-dark`
 - `solarized-light`
-- `gruvbox`
-- `tokyo-night`
-- `catppuccin`
+
+Every theme colors the whole interface: panel chrome, popups, axes, grid,
+cursor, gauges, heatmaps, status messages, and SVG/PNG exports.
+
+Themes other than `terminal` paint their own background, so light themes stay
+readable in a dark terminal. Set `transparent_background = true`, or pass
+`--transparent-background`, to keep the terminal's background instead.
+Exports always use the theme's background.
 
 Use a theme from the CLI:
 

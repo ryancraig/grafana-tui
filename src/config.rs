@@ -28,6 +28,7 @@ pub(crate) struct Config {
     pub(crate) time_range: Option<String>,
     pub(crate) step: Option<String>,
     pub(crate) theme: Option<String>,
+    pub(crate) transparent_background: Option<bool>,
     #[serde(alias = "grafana_dashboard")]
     pub(crate) grafana_json: Option<PathBuf>,
     pub(crate) annotations_file: Option<PathBuf>,
@@ -106,6 +107,7 @@ mod tests {
             prometheus_url = "http://localhost:9090"
             refresh_rate = 5000
             theme = "dracula"
+            transparent_background = true
             export_format = "svg"
             autogrid = false
             autogrid_color = "gray"
@@ -118,6 +120,7 @@ mod tests {
         );
         assert_eq!(config.refresh_rate, Some(5000));
         assert_eq!(config.theme, Some("dracula".to_string()));
+        assert_eq!(config.transparent_background, Some(true));
         assert_eq!(config.export_format, Some(crate::export::ExportFormat::Svg));
         assert_eq!(config.autogrid, Some(false));
         assert_eq!(config.autogrid_color, Some("gray".to_string()));

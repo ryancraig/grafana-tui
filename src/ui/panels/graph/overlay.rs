@@ -63,7 +63,7 @@ pub(super) fn is_blank_cell(cell: &ratatui::buffer::Cell) -> bool {
 
 pub(super) fn overlay_cell_if_blank(dst: &mut ratatui::buffer::Cell, src: &ratatui::buffer::Cell) {
     if is_blank_cell(dst) && !is_blank_cell(src) {
-        dst.set_symbol(src.symbol()).set_style(src.style());
+        copy_foreground(dst, src);
     }
 }
 
@@ -77,8 +77,17 @@ pub(super) fn overlay_cell_if_blank_or_weak_area_fill(
     }
 
     if is_blank_cell(dst) || (is_braille_cell(dst) && is_blank_cell(strong_data_mask)) {
-        dst.set_symbol(src.symbol()).set_style(src.style());
+        copy_foreground(dst, src);
     }
+}
+
+/// Copies the symbol and foreground only. Overlay buffers start with a reset
+/// background, which would otherwise erase the theme's background fill.
+pub(super) fn copy_foreground(dst: &mut ratatui::buffer::Cell, src: &ratatui::buffer::Cell) {
+    dst.set_symbol(src.symbol())
+        .set_fg(src.fg)
+        .modifier
+        .insert(src.modifier);
 }
 
 fn is_braille_cell(cell: &ratatui::buffer::Cell) -> bool {

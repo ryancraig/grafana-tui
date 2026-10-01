@@ -46,7 +46,7 @@ pub(super) fn render_gauge(frame: &mut Frame, area: Rect, p: &PanelState, app: &
 
     let gauge = Gauge::default()
         .block(Block::default().borders(Borders::NONE))
-        .gauge_style(Style::default().fg(color).bg(Color::DarkGray))
+        .gauge_style(Style::default().fg(color).bg(theme.gauge_track))
         .ratio(ratio)
         .label(format!("{} ({})", p.display.format_number(value), name));
 

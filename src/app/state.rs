@@ -359,8 +359,11 @@ pub(crate) struct AppState {
     pub(crate) threshold_marker: String,
     /// Global runtime toggle for automatic grid rendering.
     pub(crate) autogrid_enabled: bool,
-    /// Color used for automatic grid lines and labels.
-    pub(crate) autogrid_color: Color,
+    /// Configured color for automatic grid lines and labels; the theme's grid
+    /// color applies when unset.
+    pub(crate) autogrid_color: Option<Color>,
+    /// Leaves the terminal's own background visible instead of the theme's.
+    pub(crate) transparent_background: bool,
     /// Image export and recording configuration.
     pub(crate) export: ExportOptions,
     /// Active frame recording state, if recording is enabled.
@@ -435,11 +438,26 @@ impl AppState {
             cursor_x: None,
             threshold_marker,
             autogrid_enabled: true,
-            autogrid_color: Color::DarkGray,
+            autogrid_color: None,
+            transparent_background: false,
             export,
             recording: None,
             export_status: None,
         }
+    }
+
+    /// Fill behind the dashboard: the theme's background unless transparent.
+    pub(crate) fn background(&self) -> Color {
+        if self.transparent_background {
+            Color::Reset
+        } else {
+            self.theme.background
+        }
+    }
+
+    /// Color for automatic grid lines and labels.
+    pub(crate) fn grid_color(&self) -> Color {
+        self.autogrid_color.unwrap_or(self.theme.grid)
     }
 
     /// Zoom in: halve the time range.

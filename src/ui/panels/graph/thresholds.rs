@@ -15,7 +15,7 @@
  */
 
 use super::labels::PlotBounds;
-use super::overlay::{is_blank_cell, overlay_cell_if_blank_or_weak_area_fill};
+use super::overlay::{copy_foreground, is_blank_cell, overlay_cell_if_blank_or_weak_area_fill};
 use crate::app::{PanelState, ThresholdMode};
 use ratatui::{prelude::*, widgets::GraphType};
 
@@ -129,8 +129,7 @@ pub(super) fn render_raw_threshold_lines(
                         overlay_cell_if_blank_or_weak_area_fill(cell, &line_cell, mask_cell);
                     }
                 } else if is_blank_cell(cell) {
-                    cell.set_symbol(line_cell.symbol())
-                        .set_style(line_cell.style());
+                    copy_foreground(cell, &line_cell);
                 }
             }
         }

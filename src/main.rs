@@ -136,8 +136,9 @@ async fn main() -> Result<()> {
         .autogrid_color
         .or(config.autogrid_color)
         .map(|color| theme::parse_grafana_color(&color))
-        .filter(|color| *color != ratatui::style::Color::Reset)
-        .unwrap_or(ratatui::style::Color::DarkGray);
+        .filter(|color| *color != ratatui::style::Color::Reset);
+    let transparent_background =
+        args.transparent_background || config.transparent_background.unwrap_or(false);
 
     let mut variables = VariableState::default();
     let mut query_vars = Vec::new();
@@ -233,6 +234,7 @@ async fn main() -> Result<()> {
     state.annotations = annotations::AnnotationState::from_source(annotation_source);
     state.autogrid_enabled = autogrid_enabled;
     state.autogrid_color = autogrid_color;
+    state.transparent_background = transparent_background;
     state.vars = variables.vars;
     state.var_values = variables.var_values;
     state.regex_vars = variables.regex_vars;
