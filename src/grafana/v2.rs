@@ -134,10 +134,7 @@ fn parse_auto_grid_layout(
         require_expected_kind(item, &item_path, "AutoGridLayoutItem")?;
         let item_spec_path = format!("{item_path}.spec");
         let item_spec = require_object_from(item, "spec", &item_spec_path)?;
-        ensure!(
-            !item_spec.contains_key("conditionalRendering"),
-            "unsupported Grafana V2 conditional auto grid item rendering at {item_spec_path}.conditionalRendering"
-        );
+        let condition = parse_condition_group(item_spec, &item_spec_path, diagnostics)?;
         let repeat = parse_repeat(item_spec, &item_spec_path)?;
         let (element_name, element) =
             resolve_element_reference(item_spec, elements, &item_spec_path)?;
@@ -145,6 +142,7 @@ fn parse_auto_grid_layout(
         // Auto grid items are positioned when projected, so the panel has no grid.
         if let Some(mut panel) = parse_panel(element, &element_path, None, diagnostics)? {
             panel.repeat = repeat;
+            panel.condition = condition;
             panels.push(panel);
         }
     }
@@ -200,10 +198,7 @@ fn parse_tabs_layout(
         let tab_spec_path = format!("{tab_path}.spec");
         let tab_spec = require_object_from(tab, "spec", &tab_spec_path)?;
         let title = optional_string_from(tab_spec, "title", &tab_spec_path)?.unwrap_or_default();
-        ensure!(
-            !tab_spec.contains_key("conditionalRendering"),
-            "unsupported Grafana V2 conditional tab rendering at {tab_spec_path}.conditionalRendering"
-        );
+        let condition = parse_condition_group(tab_spec, &tab_spec_path, diagnostics)?;
         let repeat = parse_repeat(tab_spec, &tab_spec_path)?;
         let variables_path = format!("{tab_spec_path}.variables");
         ensure!(
@@ -216,6 +211,7 @@ fn parse_tabs_layout(
         normalized.push(model::Tab {
             title,
             repeat,
+            condition,
             source_path: tab_path,
             children,
         });
@@ -274,10 +270,7 @@ fn parse_rows_layout(
         let collapsed = optional_bool_from(row_spec, "collapse", &row_spec_path)?;
         let hidden_header = optional_bool_from(row_spec, "hideHeader", &row_spec_path)?;
 
-        ensure!(
-            !row_spec.contains_key("conditionalRendering"),
-            "unsupported Grafana V2 conditional row rendering at {row_spec_path}.conditionalRendering"
-        );
+        let condition = parse_condition_group(row_spec, &row_spec_path, diagnostics)?;
         let repeat = parse_repeat(row_spec, &row_spec_path)?;
 
         let variables_path = format!("{row_spec_path}.variables");
@@ -296,6 +289,7 @@ fn parse_rows_layout(
         nodes.push(model::LayoutNode::Row(model::Row {
             title,
             repeat,
+            condition,
             collapsed,
             hidden_header,
             source_path: row_path,
@@ -630,6 +624,109 @@ fn parse_repeat(spec: &JsonObject, spec_path: &str) -> Result<Option<model::Repe
     }))
 }
 
+/// Reads the `conditionalRendering` group of a row, tab, or auto grid item spec.
+///
+/// Condition kinds Grafatui does not know are skipped with a diagnostic, which
+/// leaves them undecided, as Grafana treats conditions it cannot evaluate.
+fn parse_condition_group(
+    spec: &JsonObject,
+    spec_path: &str,
+    diagnostics: &mut Vec<super::ImportDiagnostic>,
+) -> Result<Option<crate::conditions::ConditionGroup>> {
+    use crate::conditions::{Condition, ConditionGroup, VariableOperator};
+
+    let path = format!("{spec_path}.conditionalRendering");
+    let Some(group) = optional_object_from(spec, "conditionalRendering", &path)? else {
+        return Ok(None);
+    };
+    require_expected_kind(group, &path, "ConditionalRenderingGroup")?;
+    let group_spec_path = format!("{path}.spec");
+    let Some(group_spec) = optional_object_from(group, "spec", &group_spec_path)? else {
+        return Ok(None);
+    };
+    let show = match optional_string_from(group_spec, "visibility", &group_spec_path)?.as_deref() {
+        None | Some("show") => true,
+        Some("hide") => false,
+        Some(other) => anyhow::bail!(
+            "invalid Grafana V2 condition visibility `{other}` at {group_spec_path}.visibility: expected `show` or `hide`"
+        ),
+    };
+    let match_all = match optional_string_from(group_spec, "condition", &group_spec_path)?
+        .as_deref()
+    {
+        None | Some("and") => true,
+        Some("or") => false,
+        Some(other) => anyhow::bail!(
+            "invalid Grafana V2 condition `{other}` at {group_spec_path}.condition: expected `and` or `or`"
+        ),
+    };
+
+    let items_path = format!("{group_spec_path}.items");
+    let mut conditions = Vec::new();
+    for (index, item) in optional_array_from(group_spec, "items", &items_path)?
+        .iter()
+        .enumerate()
+    {
+        let item_path = format!("{items_path}[{index}]");
+        let item = item.as_object().ok_or_else(|| {
+            anyhow!("invalid Grafana V2 condition at {item_path}: expected an object")
+        })?;
+        let kind = require_string_from(item, "kind", &format!("{item_path}.kind"))?;
+        let item_spec_path = format!("{item_path}.spec");
+        let condition = match kind {
+            "ConditionalRenderingVariable" => {
+                let item_spec = require_object_from(item, "spec", &item_spec_path)?;
+                let operator = match optional_string_from(item_spec, "operator", &item_spec_path)?
+                    .as_deref()
+                {
+                    None | Some("equals") => VariableOperator::Equals,
+                    Some("notEquals") => VariableOperator::NotEquals,
+                    Some("matches") => VariableOperator::Matches,
+                    Some("notMatches") => VariableOperator::NotMatches,
+                    Some(other) => anyhow::bail!(
+                        "invalid Grafana V2 condition operator `{other}` at {item_spec_path}.operator"
+                    ),
+                };
+                let name_path = format!("{item_spec_path}.variable");
+                Condition::Variable {
+                    name: require_string_from(item_spec, "variable", &name_path)?.to_string(),
+                    operator,
+                    value: optional_string_from(item_spec, "value", &item_spec_path)?
+                        .unwrap_or_default(),
+                }
+            }
+            "ConditionalRenderingData" => {
+                let item_spec = require_object_from(item, "spec", &item_spec_path)?;
+                Condition::Data {
+                    has_data: optional_bool_from(item_spec, "value", &item_spec_path)?,
+                }
+            }
+            "ConditionalRenderingTimeRangeSize" => {
+                let item_spec = require_object_from(item, "spec", &item_spec_path)?;
+                let value = optional_string_from(item_spec, "value", &item_spec_path)?;
+                Condition::TimeRangeAtMost(
+                    value.as_deref().and_then(crate::conditions::parse_time_range_size),
+                )
+            }
+            other => {
+                diagnostics.push(super::ImportDiagnostic::new(
+                    "unsupported_condition",
+                    &item_path,
+                    format!("unsupported Grafana V2 condition kind `{other}` is ignored"),
+                ));
+                continue;
+            }
+        };
+        conditions.push(condition);
+    }
+
+    Ok(Some(ConditionGroup {
+        show,
+        match_all,
+        conditions,
+    }))
+}
+
 /// Reads the `element` reference of a grid or auto grid item spec.
 fn parse_element_reference(spec: &JsonObject, spec_path: &str) -> Result<String> {
     let element_path = format!("{spec_path}.element");
@@ -781,6 +878,7 @@ fn parse_panel(
 
     Ok(Some(model::Panel {
         repeat: None,
+        condition: None,
         kind: raw.spec.viz_config.group,
         title: raw.spec.title,
         source_path: path.to_string(),

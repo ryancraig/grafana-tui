@@ -15,7 +15,10 @@
  */
 
 use crate::app::data::{downsample, expand_expr, format_legend};
-use crate::app::template::{DashboardTemplate, Scope, Variables, scoped_vars};
+use crate::app::template::{
+    DashboardTemplate, MaterializedCondition, Scope, Variables, scoped_vars,
+};
+use crate::conditions::{ConditionContext, ConditionTarget};
 use crate::app::variables::refresh_query_variables;
 use crate::dashboard::{DashboardItemId, DashboardLayout, RowId, TabGroupId};
 use crate::export::{ExportOptions, RecordingState};
@@ -308,6 +311,17 @@ pub(crate) struct AppState {
     pub(crate) template: Option<DashboardTemplate>,
     /// Variable values bound by repeats, for panels inside repeated items.
     pub(crate) panel_scopes: HashMap<usize, Scope>,
+    /// Variables with `All` selected, for conditional rendering.
+    pub(crate) all_vars: HashSet<String>,
+    /// Names of every dashboard variable, for conditional rendering.
+    pub(crate) variable_names: HashSet<String>,
+    /// The expanded template including items conditional rendering hides;
+    /// `layout` is this without `hidden_items`.
+    unfiltered_layout: DashboardLayout,
+    /// Conditional rendering of `unfiltered_layout`'s items.
+    conditions: Vec<MaterializedCondition>,
+    /// Items conditional rendering currently hides.
+    hidden_items: HashSet<ConditionTarget>,
     /// Prometheus-backed template variables imported from Grafana.
     pub(crate) query_vars: Vec<TemplateQueryVar>,
     /// Count of panels skipped during import.
@@ -389,6 +403,11 @@ impl AppState {
             regex_vars: HashSet::new(),
             template: None,
             panel_scopes: HashMap::new(),
+            all_vars: HashSet::new(),
+            variable_names: HashSet::new(),
+            unfiltered_layout: DashboardLayout::default(),
+            conditions: Vec::new(),
+            hidden_items: HashSet::new(),
             query_vars: Vec::new(),
             skipped_panels,
             layout,
@@ -498,13 +517,88 @@ impl AppState {
             .map(|instance| (instance.index, instance.scope))
             .collect();
 
+        self.unfiltered_layout
+            .sync_state_from(&self.layout, &self.hidden_items);
         let mut layout = materialized.layout;
-        layout.restore_state(&self.layout);
-        self.layout = layout;
+        layout.restore_state(&self.unfiltered_layout);
+        self.unfiltered_layout = layout;
+        self.conditions = materialized.conditions;
+        self.show_conditional_items();
+    }
+
+    /// Re-evaluates conditional rendering, for example after new data or a
+    /// time range change.
+    fn apply_conditions(&mut self) {
+        if self.template.is_none() || self.conditions.is_empty() {
+            return;
+        }
+        self.unfiltered_layout
+            .sync_state_from(&self.layout, &self.hidden_items);
+        self.show_conditional_items();
+    }
+
+    /// Shows `unfiltered_layout` without the items its conditions hide.
+    fn show_conditional_items(&mut self) {
+        self.hidden_items = self.evaluate_hidden_items();
+        self.layout = self.unfiltered_layout.without(&self.hidden_items);
         self.selected_item = self
             .selected_item
             .and_then(|id| self.layout.nearest_visible_ancestor(id))
             .or_else(|| self.layout.first_visible());
+    }
+
+    fn evaluate_hidden_items(&self) -> HashSet<ConditionTarget> {
+        let panel_has_data = |index: usize| {
+            let panel = self.panels.get(index)?;
+            let loaded =
+                panel.last_url.is_some() || panel.last_error.is_some() || !panel.series.is_empty();
+            loaded.then(|| {
+                panel
+                    .series
+                    .iter()
+                    .any(|series| !series.points.is_empty() || series.value.is_some())
+            })
+        };
+        let context = ConditionContext {
+            values: &self.var_values,
+            defined: &self.variable_names,
+            all_selected: &self.all_vars,
+            range_seconds: self.range.as_secs_f64(),
+            panel_has_data: &panel_has_data,
+        };
+        self.conditions
+            .iter()
+            .filter(|condition| {
+                let panel = match condition.target {
+                    ConditionTarget::Panel(index) => Some(index),
+                    ConditionTarget::Row(_) | ConditionTarget::Tab(..) => None,
+                };
+                !condition.group.shows(&context, &condition.scope, panel)
+            })
+            .map(|condition| condition.target)
+            .collect()
+    }
+
+    /// Panels to query: the visible ones, plus panels hidden only by their own
+    /// data condition, whose data decides whether they reappear.
+    fn panels_to_fetch(&self) -> Vec<usize> {
+        let data_hidden: HashSet<ConditionTarget> = self
+            .conditions
+            .iter()
+            .filter(|condition| {
+                matches!(condition.target, ConditionTarget::Panel(_)) && condition.group.uses_data()
+            })
+            .map(|condition| condition.target)
+            .collect();
+        if data_hidden.is_empty() {
+            return self.visible_panel_indices();
+        }
+        let hidden = self
+            .hidden_items
+            .difference(&data_hidden)
+            .copied()
+            .collect();
+        self.unfiltered_layout.without(&hidden).visible_panel_indices()
     }
 
     pub(crate) fn selected_panel_index(&self) -> Option<usize> {
@@ -739,7 +833,7 @@ impl AppState {
     pub(crate) async fn refresh(&mut self) -> Result<()> {
         let range = self.range;
         let step = self.step;
-        let visible_panel_indices = self.visible_panel_indices();
+        let visible_panel_indices = self.panels_to_fetch();
 
         // Calculate end timestamp: "now" minus time_offset
         let end_ts = chrono::Utc::now().timestamp() - self.time_offset.as_secs() as i64;
@@ -768,8 +862,19 @@ impl AppState {
             // Resolved variables changed which items repeat and their scopes, so
             // panels fetched with the previous layout are fetched again.
             self.materialize_layout();
-            let visible_panel_indices = self.visible_panel_indices();
-            self.refresh_panel_indices(&visible_panel_indices, false).await;
+            let panels = self.panels_to_fetch();
+            self.refresh_panel_indices(&panels, false).await;
+        } else {
+            // New data or a new time range can reveal conditionally hidden items.
+            self.apply_conditions();
+            let revealed: Vec<usize> = self
+                .panels_to_fetch()
+                .into_iter()
+                .filter(|index| !visible_panel_indices.contains(index))
+                .collect();
+            if !revealed.is_empty() {
+                self.refresh_panel_indices(&revealed, false).await;
+            }
         }
 
         self.reconcile_visible_annotation_targets();
@@ -813,6 +918,7 @@ impl AppState {
             refresh_variables,
         )
         .await;
+        self.apply_conditions();
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1238,6 +1344,153 @@ mod tests {
         for (index, panel) in app.panels.iter().enumerate() {
             assert!(panel.last_error.is_none(), "panel {index}: {:?}", panel.last_error);
         }
+    }
+
+    fn condition(
+        conditions: Vec<crate::conditions::Condition>,
+    ) -> crate::conditions::ConditionGroup {
+        crate::conditions::ConditionGroup {
+            show: true,
+            match_all: true,
+            conditions,
+        }
+    }
+
+    #[test]
+    fn repeated_row_conditions_see_their_own_value() {
+        let mut app = create_test_app();
+        app.panels = vec![test_panel("CPU $dc", PanelType::Graph)];
+        app.var_values
+            .insert("dc".to_string(), vec!["eu".to_string(), "us".to_string()]);
+        app.variable_names.insert("dc".to_string());
+        let mut repeats = crate::dashboard::Repeats::default();
+        repeats
+            .rows
+            .insert(RowId::new(0), crate::dashboard::Repeat::new("dc"));
+        let mut conditions = crate::conditions::Conditions::default();
+        conditions.rows.insert(
+            RowId::new(0),
+            condition(vec![crate::conditions::Condition::Variable {
+                name: "dc".to_string(),
+                operator: crate::conditions::VariableOperator::Equals,
+                value: "us".to_string(),
+            }]),
+        );
+        let layout = DashboardLayout::new(vec![DashboardLayoutItem::Row(DashboardRow::new(
+            RowId::new(0),
+            "Region $dc",
+            false,
+            false,
+            vec![DashboardLayoutItem::Panel(0)],
+        ))]);
+
+        app.apply_template(
+            DashboardTemplate::new(layout, repeats, &app.panels).with_conditions(conditions),
+        );
+
+        let rows: Vec<_> = app
+            .layout
+            .items
+            .iter()
+            .map(|item| match item {
+                DashboardLayoutItem::Row(row) => (row.id, row.title.as_str()),
+                item => panic!("unexpected {item:?}"),
+            })
+            .collect();
+        assert_eq!(rows, [(RowId::new(1), "Region us")]);
+        assert_eq!(app.visible_panel_indices(), [1]);
+        assert_eq!(app.selected_item, Some(DashboardItemId::Row(RowId::new(1))));
+    }
+
+    #[test]
+    fn time_range_conditions_follow_zoom_and_keep_row_state() {
+        let mut app = create_test_app();
+        app.panels = vec![test_panel("Detail", PanelType::Graph)];
+        app.range = Duration::from_secs(6 * 3600);
+        let mut conditions = crate::conditions::Conditions::default();
+        conditions.rows.insert(
+            RowId::new(0),
+            condition(vec![crate::conditions::Condition::TimeRangeAtMost(Some(
+                3600.0,
+            ))]),
+        );
+        let layout = DashboardLayout::new(vec![DashboardLayoutItem::Row(DashboardRow::new(
+            RowId::new(0),
+            "Short ranges",
+            false,
+            false,
+            vec![DashboardLayoutItem::Panel(0)],
+        ))]);
+        app.apply_template(
+            DashboardTemplate::new(layout, crate::dashboard::Repeats::default(), &app.panels)
+                .with_conditions(conditions),
+        );
+        assert!(app.layout.items.is_empty());
+
+        app.range = Duration::from_secs(3600);
+        app.apply_conditions();
+        assert_eq!(app.visible_panel_indices(), [0]);
+        app.layout.set_row_collapsed(RowId::new(0), true);
+
+        app.range = Duration::from_secs(6 * 3600);
+        app.apply_conditions();
+        app.range = Duration::from_secs(1800);
+        app.apply_conditions();
+
+        assert!(app.layout.row(RowId::new(0)).unwrap().collapsed);
+    }
+
+    #[tokio::test]
+    async fn data_conditions_hide_empty_panels_but_keep_fetching_them() {
+        let (url, _) = mock_prometheus(|_| {
+            r#"{"status":"success","data":{"resultType":"matrix","result":[]}}"#
+        })
+        .await;
+        let mut app = create_test_app();
+        app.prometheus = prom::PromClient::new(url);
+        let mut panels = vec![
+            test_panel("Has data", PanelType::Graph),
+            test_panel("Always", PanelType::Graph),
+        ];
+        for panel in &mut panels {
+            panel.exprs = vec!["up".to_string()];
+            panel.legends = vec![None];
+            panel.query_modes = vec![QueryMode::Range];
+        }
+        app.panels = panels;
+        let mut conditions = crate::conditions::Conditions::default();
+        conditions.panels.insert(
+            0,
+            condition(vec![crate::conditions::Condition::Data { has_data: true }]),
+        );
+        let layout = DashboardLayout::new(vec![DashboardLayoutItem::AutoGrid(
+            crate::dashboard::DashboardAutoGrid {
+                panels: vec![0, 1],
+                max_columns: 3,
+                min_column_width: 56,
+                row_height: 9,
+            },
+        )]);
+        app.apply_template(
+            DashboardTemplate::new(layout, crate::dashboard::Repeats::default(), &app.panels)
+                .with_conditions(conditions),
+        );
+        // Before its data loads the condition is undecided and the panel shows.
+        assert_eq!(app.visible_panel_indices(), [0, 1]);
+
+        app.refresh().await.unwrap();
+
+        assert_eq!(app.visible_panel_indices(), [1]);
+        assert_eq!(app.panels_to_fetch(), [0, 1]);
+
+        app.panels[0].series = vec![SeriesView {
+            name: "up".to_string(),
+            value: Some(1.0),
+            points: vec![(1.0, 1.0)],
+            visible: true,
+        }];
+        app.apply_conditions();
+        assert_eq!(app.visible_panel_indices(), [0, 1]);
     }
 
     #[tokio::test]

@@ -1,4 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use crate::conditions::ConditionTarget;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct RowId(usize);
@@ -281,6 +283,28 @@ impl DashboardLayout {
         apply_state(&mut self.items, &rows, &tabs);
     }
 
+    /// This layout without the rows, tabs, and auto grid panels in `hidden`.
+    ///
+    /// Tab groups and auto grids left empty are dropped. A tab group whose
+    /// active tab is hidden activates its first remaining tab.
+    pub(crate) fn without(&self, hidden: &HashSet<ConditionTarget>) -> DashboardLayout {
+        DashboardLayout::new(filter_items(&self.items, hidden))
+    }
+
+    /// Copies row collapse state and active tabs back from `displayed`, which
+    /// is this layout `without` the `hidden` items, so the state survives
+    /// rebuilding the displayed layout for a new set of hidden items.
+    pub(crate) fn sync_state_from(
+        &mut self,
+        displayed: &DashboardLayout,
+        hidden: &HashSet<ConditionTarget>,
+    ) {
+        let mut rows = HashMap::new();
+        let mut tabs = HashMap::new();
+        collect_state(&displayed.items, &mut rows, &mut tabs);
+        sync_state(&mut self.items, &rows, &tabs, hidden);
+    }
+
     pub(crate) fn nearest_visible_ancestor(&self, id: DashboardItemId) -> Option<DashboardItemId> {
         let visible = self.visible_items();
         if visible.iter().any(|item| item.id == id) {
@@ -297,6 +321,100 @@ impl DashboardLayout {
         }
 
         self.first_visible()
+    }
+}
+
+fn filter_items(
+    items: &[DashboardLayoutItem],
+    hidden: &HashSet<ConditionTarget>,
+) -> Vec<DashboardLayoutItem> {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            DashboardLayoutItem::Panel(index) => (!hidden.contains(&ConditionTarget::Panel(*index)))
+                .then(|| item.clone()),
+            DashboardLayoutItem::Row(row) => (!hidden.contains(&ConditionTarget::Row(row.id)))
+                .then(|| {
+                    DashboardLayoutItem::Row(DashboardRow {
+                        children: filter_items(&row.children, hidden),
+                        ..row.clone()
+                    })
+                }),
+            DashboardLayoutItem::Tabs(group) => {
+                let shown: Vec<usize> = (0..group.tabs.len())
+                    .filter(|&position| !hidden.contains(&ConditionTarget::Tab(group.id, position)))
+                    .collect();
+                if shown.is_empty() {
+                    return None;
+                }
+                let active = group
+                    .active
+                    .and_then(|active| shown.iter().position(|&position| position == active))
+                    .unwrap_or(0);
+                Some(DashboardLayoutItem::Tabs(DashboardTabs {
+                    id: group.id,
+                    tabs: shown
+                        .iter()
+                        .map(|&position| {
+                            let tab = &group.tabs[position];
+                            DashboardTab {
+                                title: tab.title.clone(),
+                                children: filter_items(&tab.children, hidden),
+                            }
+                        })
+                        .collect(),
+                    active: Some(active),
+                }))
+            }
+            DashboardLayoutItem::AutoGrid(grid) => {
+                let panels: Vec<usize> = grid
+                    .panels
+                    .iter()
+                    .copied()
+                    .filter(|index| !hidden.contains(&ConditionTarget::Panel(*index)))
+                    .collect();
+                (!panels.is_empty()).then(|| {
+                    DashboardLayoutItem::AutoGrid(DashboardAutoGrid {
+                        panels,
+                        ..grid.clone()
+                    })
+                })
+            }
+        })
+        .collect()
+}
+
+/// Applies displayed row and tab state to a layout that also holds `hidden`
+/// items, translating each displayed active tab back to its position among
+/// all of the group's tabs.
+fn sync_state(
+    items: &mut [DashboardLayoutItem],
+    rows: &HashMap<RowId, bool>,
+    tabs: &HashMap<TabGroupId, Option<usize>>,
+    hidden: &HashSet<ConditionTarget>,
+) {
+    for item in items {
+        match item {
+            DashboardLayoutItem::Row(row) => {
+                if let Some(&collapsed) = rows.get(&row.id) {
+                    row.collapsed = collapsed;
+                }
+                sync_state(&mut row.children, rows, tabs, hidden);
+            }
+            DashboardLayoutItem::Tabs(group) => {
+                if let Some(&Some(displayed)) = tabs.get(&group.id) {
+                    let id = group.id;
+                    group.active = (0..group.tabs.len())
+                        .filter(|&position| !hidden.contains(&ConditionTarget::Tab(id, position)))
+                        .nth(displayed)
+                        .or(group.active);
+                }
+                for tab in &mut group.tabs {
+                    sync_state(&mut tab.children, rows, tabs, hidden);
+                }
+            }
+            DashboardLayoutItem::Panel(_) | DashboardLayoutItem::AutoGrid(_) => {}
+        }
     }
 }
 
@@ -678,6 +796,102 @@ mod tests {
             min_column_width: 10,
             row_height: 4,
         })
+    }
+
+    fn conditional_layout() -> DashboardLayout {
+        DashboardLayout::new(vec![
+            DashboardLayoutItem::Row(DashboardRow::new(
+                RowId::new(0),
+                "Hidden row",
+                false,
+                false,
+                vec![DashboardLayoutItem::Panel(0)],
+            )),
+            DashboardLayoutItem::Tabs(DashboardTabs {
+                id: TabGroupId::new(0),
+                tabs: vec![
+                    DashboardTab {
+                        title: "A".to_string(),
+                        children: vec![DashboardLayoutItem::Row(DashboardRow::new(
+                            RowId::new(1),
+                            "In A",
+                            false,
+                            false,
+                            vec![],
+                        ))],
+                    },
+                    DashboardTab {
+                        title: "B".to_string(),
+                        children: vec![auto_grid(vec![1, 2])],
+                    },
+                    DashboardTab {
+                        title: "C".to_string(),
+                        children: vec![],
+                    },
+                ],
+                active: Some(0),
+            }),
+        ])
+    }
+
+    #[test]
+    fn hidden_conditional_items_are_left_out_of_the_layout() {
+        let layout = conditional_layout();
+        let hidden = HashSet::from([
+            ConditionTarget::Row(RowId::new(0)),
+            ConditionTarget::Tab(TabGroupId::new(0), 0),
+            ConditionTarget::Panel(1),
+        ]);
+
+        let shown = layout.without(&hidden);
+
+        let [DashboardLayoutItem::Tabs(group)] = shown.items.as_slice() else {
+            panic!("expected only the tab group, got {:?}", shown.items);
+        };
+        let titles: Vec<_> = group.tabs.iter().map(|tab| tab.title.as_str()).collect();
+        assert_eq!(titles, ["B", "C"]);
+        // The active tab was hidden, so the first remaining tab is active.
+        assert_eq!(group.active, Some(0));
+        assert_eq!(group.tabs[0].children, [auto_grid(vec![2])]);
+        assert_eq!(shown.visible_panel_indices(), [2]);
+    }
+
+    #[test]
+    fn tab_groups_and_auto_grids_with_nothing_left_are_dropped() {
+        let layout = DashboardLayout::new(vec![
+            auto_grid(vec![0]),
+            DashboardLayoutItem::Tabs(DashboardTabs::new(
+                TabGroupId::new(0),
+                vec![DashboardTab {
+                    title: "Only".to_string(),
+                    children: vec![],
+                }],
+            )),
+        ]);
+        let hidden = HashSet::from([
+            ConditionTarget::Panel(0),
+            ConditionTarget::Tab(TabGroupId::new(0), 0),
+        ]);
+
+        assert!(layout.without(&hidden).items.is_empty());
+    }
+
+    #[test]
+    fn displayed_state_syncs_back_through_hidden_items() {
+        let mut layout = conditional_layout();
+        let hidden = HashSet::from([ConditionTarget::Tab(TabGroupId::new(0), 0)]);
+        let mut displayed = layout.without(&hidden);
+        // Activate "C", the second displayed tab, and collapse the first row.
+        displayed.set_active_tab(TabGroupId::new(0), 1);
+        displayed.set_row_collapsed(RowId::new(0), true);
+
+        layout.sync_state_from(&displayed, &hidden);
+
+        assert_eq!(layout.tabs(TabGroupId::new(0)).unwrap().active, Some(2));
+        assert!(layout.row(RowId::new(0)).unwrap().collapsed);
+        // Showing every tab again keeps "C" active.
+        let shown = layout.without(&HashSet::new());
+        assert_eq!(shown.tabs(TabGroupId::new(0)).unwrap().active, Some(2));
     }
 
     #[test]

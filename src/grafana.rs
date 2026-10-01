@@ -40,6 +40,12 @@ pub(crate) struct DashboardImport {
     pub(crate) var_values: HashMap<String, Vec<String>>,
     /// Multi-value and include-all variables, whose values are regex-escaped.
     pub(crate) regex_vars: HashSet<String>,
+    /// Variables with `All` selected.
+    pub(crate) all_vars: HashSet<String>,
+    /// Names of every variable the dashboard defines.
+    pub(crate) variable_names: HashSet<String>,
+    /// Conditional rendering of rows, tabs, and auto grid items in `layout`.
+    pub(crate) conditions: crate::conditions::Conditions,
     /// Repeat settings for panels, rows, and tabs in `layout`.
     pub(crate) repeats: crate::dashboard::Repeats,
     /// Dynamic query variables extracted from `templating.list`.
@@ -390,6 +396,7 @@ mod tests {
     fn test_model_panel(kind: &str, expr: Option<&str>) -> model::LayoutNode {
         model::LayoutNode::Panel(model::Panel {
             repeat: None,
+            condition: None,
             kind: kind.into(),
             title: kind.into(),
             source_path: format!("layout.{kind}"),
@@ -417,6 +424,7 @@ mod tests {
             title: "Rows".into(),
             layout: vec![model::LayoutNode::Row(model::Row {
                 repeat: None,
+                condition: None,
                 title: "Group".into(),
                 collapsed: false,
                 hidden_header: false,
@@ -756,15 +764,8 @@ mod tests {
     }
 
     #[test]
-    fn v2_auto_grid_rejects_conditions_and_malformed_items_at_native_paths() {
+    fn v2_auto_grid_rejects_malformed_items_at_native_paths() {
         for (spec, expected) in [
-            (
-                serde_json::json!({"items": [{"kind": "AutoGridLayoutItem", "spec": {
-                    "element": {"kind": "ElementReference", "name": "panel-1"},
-                    "conditionalRendering": {"kind": "ConditionalRenderingGroup", "spec": {}}
-                }}]}),
-                "spec.layout.spec.items[0].spec.conditionalRendering",
-            ),
             (
                 serde_json::json!({"items": [{"kind": "GridLayoutItem", "spec": {}}]}),
                 "spec.layout.spec.items[0].kind",
@@ -833,14 +834,8 @@ mod tests {
     }
 
     #[test]
-    fn v2_tabs_reject_conditions_and_scoped_variables_at_native_paths() {
-        for (field, value) in [
-            (
-                "conditionalRendering",
-                serde_json::json!({"kind": "ConditionalRenderingGroup"}),
-            ),
-            ("variables", serde_json::json!([{"kind": "TextVariable"}])),
-        ] {
+    fn v2_tabs_reject_scoped_variables_at_native_paths() {
+        for (field, value) in [("variables", serde_json::json!([{"kind": "TextVariable"}]))] {
             let mut spec = serde_json::json!({
                 "title": "Tab",
                 "layout": {"kind": "GridLayout", "spec": {"items": []}}
@@ -948,12 +943,8 @@ mod tests {
     }
 
     #[test]
-    fn v2_rows_reject_conditions_and_scoped_variables_at_native_paths() {
+    fn v2_rows_reject_scoped_variables_at_native_paths() {
         for (field, value) in [
-            (
-                "conditionalRendering",
-                serde_json::json!({"kind": "ConditionalRenderingGroup", "spec": {}}),
-            ),
             (
                 "variables",
                 serde_json::json!([{"kind": "TextVariable", "spec": {"name": "x"}}]),
@@ -2044,6 +2035,147 @@ mod tests {
             })
         );
         assert!(dashboard.diagnostics.is_empty());
+    }
+
+    fn v2_row_with_condition(condition: serde_json::Value) -> Result<DashboardImport> {
+        let mut json = v2_row_resource_with_field("conditionalRendering", condition);
+        json["spec"]["variables"] = serde_json::json!([
+            {"kind": "CustomVariable", "spec": {"name": "env", "query": "prod,dev"}}
+        ]);
+        parse_grafana_dashboard(&json.to_string())
+    }
+
+    #[test]
+    fn v2_conditional_rendering_groups_are_imported_for_rows_tabs_and_auto_grid_items() {
+        use crate::conditions::{Condition, ConditionGroup, VariableOperator};
+
+        let dashboard = v2_row_with_condition(serde_json::json!({
+            "kind": "ConditionalRenderingGroup",
+            "spec": {"visibility": "hide", "condition": "or", "items": [
+                {"kind": "ConditionalRenderingVariable", "spec": {"variable": "env", "operator": "notMatches", "value": "^prod$"}},
+                {"kind": "ConditionalRenderingData", "spec": {"value": false}},
+                {"kind": "ConditionalRenderingTimeRangeSize", "spec": {"value": "7d"}},
+                {"kind": "ConditionalRenderingFuture", "spec": {}}
+            ]}
+        }))
+        .unwrap();
+
+        assert_eq!(
+            dashboard.conditions.rows.get(&crate::dashboard::RowId::new(0)),
+            Some(&ConditionGroup {
+                show: false,
+                match_all: false,
+                conditions: vec![
+                    Condition::Variable {
+                        name: "env".to_string(),
+                        operator: VariableOperator::NotMatches,
+                        value: "^prod$".to_string(),
+                    },
+                    Condition::Data { has_data: false },
+                    Condition::TimeRangeAtMost(Some(604_800.0)),
+                ],
+            })
+        );
+        assert_eq!(dashboard.diagnostics.len(), 1);
+        assert_eq!(dashboard.diagnostics[0].code, "unsupported_condition");
+        assert_eq!(
+            dashboard.diagnostics[0].path,
+            "spec.layout.spec.rows[0].spec.conditionalRendering.spec.items[3]"
+        );
+
+        let mut json = valid_v2_resource();
+        make_v2_panel_importable(&mut json);
+        let condition = serde_json::json!({
+            "kind": "ConditionalRenderingGroup",
+            "spec": {"visibility": "show", "condition": "and", "items": [
+                {"kind": "ConditionalRenderingData", "spec": {"value": true}}
+            ]}
+        });
+        json["spec"]["layout"] = serde_json::json!({
+            "kind": "TabsLayout",
+            "spec": {"tabs": [{"kind": "TabsLayoutTab", "spec": {
+                "title": "Tab",
+                "conditionalRendering": condition,
+                "layout": {"kind": "AutoGridLayout", "spec": {"items": [{
+                    "kind": "AutoGridLayoutItem",
+                    "spec": {
+                        "element": {"kind": "ElementReference", "name": "panel-1"},
+                        "conditionalRendering": condition
+                    }
+                }]}}
+            }}]}
+        });
+
+        let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
+
+        let data = ConditionGroup {
+            show: true,
+            match_all: true,
+            conditions: vec![Condition::Data { has_data: true }],
+        };
+        assert_eq!(dashboard.conditions.panels.get(&0), Some(&data));
+        assert_eq!(
+            dashboard
+                .conditions
+                .tabs
+                .get(&(crate::dashboard::TabGroupId::new(0), 0)),
+            Some(&data)
+        );
+    }
+
+    /// `v2_grafana13_conditional.json` was authored through Grafana 13.2.3's V2 API
+    /// with variable, data, and time range conditions on rows, tabs, and an auto
+    /// grid item.
+    #[test]
+    fn v2_grafana13_conditional_rendering_fixture_imports_every_group() {
+        use crate::conditions::Condition;
+
+        let dashboard = parse_grafana_dashboard(include_str!(
+            "../tests/fixtures/grafana/v2_grafana13_conditional.json"
+        ))
+        .unwrap();
+
+        assert!(dashboard.diagnostics.is_empty(), "{:?}", dashboard.diagnostics);
+        assert_eq!(dashboard.conditions.rows.len(), 2);
+        assert_eq!(dashboard.conditions.tabs.len(), 1);
+        assert_eq!(dashboard.conditions.panels.len(), 1);
+        let tab = dashboard.conditions.tabs.values().next().unwrap();
+        assert_eq!(tab.conditions, [Condition::TimeRangeAtMost(Some(3600.0))]);
+        let panel = dashboard.conditions.panels.values().next().unwrap();
+        assert_eq!(panel.conditions, [Condition::Data { has_data: true }]);
+    }
+
+    #[test]
+    fn v2_rejects_malformed_conditional_rendering_at_native_paths() {
+        let path = "spec.layout.spec.rows[0].spec.conditionalRendering";
+        for (condition, expected) in [
+            (serde_json::json!({"kind": "Other", "spec": {}}), format!("{path}.kind")),
+            (
+                serde_json::json!({"kind": "ConditionalRenderingGroup", "spec": {"visibility": "maybe"}}),
+                format!("{path}.spec.visibility"),
+            ),
+            (
+                serde_json::json!({"kind": "ConditionalRenderingGroup", "spec": {"condition": "xor"}}),
+                format!("{path}.spec.condition"),
+            ),
+            (
+                serde_json::json!({"kind": "ConditionalRenderingGroup", "spec": {"items": [
+                    {"kind": "ConditionalRenderingVariable", "spec": {"variable": "env", "operator": "like"}}
+                ]}}),
+                format!("{path}.spec.items[0].spec.operator"),
+            ),
+            (
+                serde_json::json!({"kind": "ConditionalRenderingGroup", "spec": {"items": [
+                    {"kind": "ConditionalRenderingVariable", "spec": {"value": "x"}}
+                ]}}),
+                format!("{path}.spec.items[0].spec.variable"),
+            ),
+        ] {
+            let error = v2_row_with_condition(condition.clone())
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(&expected), "{condition}: {error}");
+        }
     }
 
     #[test]

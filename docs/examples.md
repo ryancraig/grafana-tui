@@ -54,6 +54,12 @@ docker-compose down -v
   cargo run -- --grafana-json examples/dashboards/grafana_v2_repeats.yaml --prometheus-url http://localhost:19090
   ```
 
+- `examples/dashboards/grafana_v2_conditional.json`: Grafana V2 resource with conditional rendering: a row shown only for `env=prod`, a row only for `staging`, a server-error panel shown only when it has data, and a tab shown only for time ranges of an hour or less. Zoom with `+`/`-` to see the tab come and go. Run it with:
+
+  ```bash
+  cargo run -- --grafana-json examples/dashboards/grafana_v2_conditional.json --prometheus-url http://localhost:19090 --range 1h
+  ```
+
 - `examples/dashboards/grafana_v2_tabs.json`: exact Grafana V2 resource with tab, row, and empty-content behavior. Focus a tab bar and use Left/Right to switch or Enter/Space to enter its content. Run it with:
 
   ```bash

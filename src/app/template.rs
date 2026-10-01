@@ -22,6 +22,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::state::{GridUnit, PanelState};
 use super::variables::{format_prometheus_values, substitute_variables};
+use crate::conditions::{ConditionGroup, ConditionTarget, Conditions};
 use crate::dashboard::{
     DashboardAutoGrid, DashboardLayout, DashboardLayoutItem, DashboardRow, DashboardTab,
     DashboardTabs, Repeat, RepeatDirection, Repeats, RowId, TabGroupId,
@@ -89,6 +90,7 @@ pub(crate) fn scoped_vars<'a>(
 pub(crate) struct DashboardTemplate {
     layout: DashboardLayout,
     repeats: Repeats,
+    conditions: Conditions,
     panels: Vec<PanelTemplate>,
     clones: CloneIds,
 }
@@ -152,11 +154,21 @@ pub(crate) struct PanelInstance {
     pub(crate) scope: Scope,
 }
 
+/// A conditional rendering group attached to a materialized item.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct MaterializedCondition {
+    pub(crate) target: ConditionTarget,
+    pub(crate) group: ConditionGroup,
+    /// Repeat values the item was copied with, which its conditions see.
+    pub(crate) scope: Scope,
+}
+
 /// A layout with repeats expanded, and the panels it shows.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Materialized {
     pub(crate) layout: DashboardLayout,
     pub(crate) panels: Vec<PanelInstance>,
+    pub(crate) conditions: Vec<MaterializedCondition>,
 }
 
 impl DashboardTemplate {
@@ -165,6 +177,7 @@ impl DashboardTemplate {
         Self {
             layout,
             repeats,
+            conditions: Conditions::default(),
             panels: panels
                 .iter()
                 .map(|panel| PanelTemplate {
@@ -181,6 +194,12 @@ impl DashboardTemplate {
         }
     }
 
+    /// Adds conditional rendering, keyed by the same imported ids as the repeats.
+    pub(crate) fn with_conditions(mut self, conditions: Conditions) -> Self {
+        self.conditions = conditions;
+        self
+    }
+
     /// Expands repeats for the current variable values.
     ///
     /// The first copy of each repeated item keeps the item's own id, so a
@@ -188,15 +207,18 @@ impl DashboardTemplate {
     pub(crate) fn materialize(&mut self, variables: &Variables) -> Materialized {
         let mut builder = Builder {
             repeats: &self.repeats,
+            conditions: &self.conditions,
             templates: &self.panels,
             clones: &mut self.clones,
             variables,
             panels: Vec::new(),
+            materialized_conditions: Vec::new(),
         };
         let items = builder.items(&self.layout.items, &Scope::new(), true);
         Materialized {
             layout: DashboardLayout::new(items),
             panels: builder.panels,
+            conditions: builder.materialized_conditions,
         }
     }
 }
@@ -234,10 +256,12 @@ struct RepeatCopy {
 
 struct Builder<'a, 'v> {
     repeats: &'a Repeats,
+    conditions: &'a Conditions,
     templates: &'a [PanelTemplate],
     clones: &'a mut CloneIds,
     variables: &'a Variables<'v>,
     panels: Vec<PanelInstance>,
+    materialized_conditions: Vec<MaterializedCondition>,
 }
 
 impl Builder<'_, '_> {
@@ -347,6 +371,13 @@ impl Builder<'_, '_> {
                     (Some(grid), Some(repeat)) => Some(repeat_grid(grid, repeat, position, count)),
                     (grid, _) => grid,
                 };
+                if let Some(group) = self.conditions.panels.get(&source) {
+                    self.materialized_conditions.push(MaterializedCondition {
+                        target: ConditionTarget::Panel(index),
+                        group: group.clone(),
+                        scope: copy.scope.clone(),
+                    });
+                }
                 self.panels.push(PanelInstance {
                     index,
                     source,
@@ -372,6 +403,13 @@ impl Builder<'_, '_> {
             } else {
                 self.clones.row(row.id, &copy.scope)
             };
+            if let Some(group) = self.conditions.rows.get(&row.id) {
+                self.materialized_conditions.push(MaterializedCondition {
+                    target: ConditionTarget::Row(id),
+                    group: group.clone(),
+                    scope: copy.scope.clone(),
+                });
+            }
             let children = self.items(&row.children, &copy.scope, copy.primary);
             output.push(DashboardLayoutItem::Row(DashboardRow::new(
                 id,
@@ -392,7 +430,15 @@ impl Builder<'_, '_> {
         let mut tabs = Vec::new();
         for (position, tab) in group.tabs.iter().enumerate() {
             let repeat = self.repeats.tabs.get(&(group.id, position));
+            let condition = self.conditions.tabs.get(&(group.id, position));
             for copy in self.copies(repeat, scope, primary) {
+                if let Some(condition) = condition {
+                    self.materialized_conditions.push(MaterializedCondition {
+                        target: ConditionTarget::Tab(id, tabs.len()),
+                        group: condition.clone(),
+                        scope: copy.scope.clone(),
+                    });
+                }
                 tabs.push(DashboardTab {
                     title: self.variables.title(&tab.title, &copy.scope),
                     children: self.items(&tab.children, &copy.scope, copy.primary),

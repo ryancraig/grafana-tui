@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 use super::ImportDiagnostic;
+pub(super) use crate::conditions::ConditionGroup;
 pub(super) use crate::dashboard::{Repeat, RepeatDirection};
 
 #[derive(Debug, Default)]
@@ -42,6 +43,7 @@ pub(super) struct Tabs {
 pub(super) struct Tab {
     pub(super) title: String,
     pub(super) repeat: Option<Repeat>,
+    pub(super) condition: Option<ConditionGroup>,
     pub(super) source_path: String,
     pub(super) children: Vec<LayoutNode>,
 }
@@ -50,6 +52,7 @@ pub(super) struct Tab {
 pub(super) struct Row {
     pub(super) title: String,
     pub(super) repeat: Option<Repeat>,
+    pub(super) condition: Option<ConditionGroup>,
     pub(super) collapsed: bool,
     pub(super) hidden_header: bool,
     pub(super) source_path: String,
@@ -85,6 +88,8 @@ pub(super) struct Panel {
     pub(super) kind: String,
     pub(super) title: String,
     pub(super) repeat: Option<Repeat>,
+    /// Conditional rendering of the auto grid item holding this panel.
+    pub(super) condition: Option<ConditionGroup>,
     pub(super) source_path: String,
     pub(super) targets: Vec<Target>,
     pub(super) count_as_skipped_if_empty: bool,

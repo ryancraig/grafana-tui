@@ -317,6 +317,7 @@ fn normalize_classic_row(
         model::Row {
             title: panel.title.unwrap_or_default(),
             repeat,
+            condition: None,
             collapsed,
             hidden_header: false,
             source_path,
@@ -384,6 +385,7 @@ fn normalize_classic_panel(
     });
     model::LayoutNode::Panel(model::Panel {
         repeat,
+        condition: None,
         kind: panel.panel_type,
         title: panel.title.unwrap_or_default(),
         source_path: source_path.clone(),

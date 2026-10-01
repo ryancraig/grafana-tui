@@ -16,6 +16,7 @@
 
 mod annotations;
 mod app;
+mod conditions;
 mod config;
 mod dashboard;
 mod export;
@@ -180,7 +181,9 @@ async fn main() -> Result<()> {
                 options: q.options,
             })
             .collect();
-        template = Some(app::DashboardTemplate::new(d.layout, d.repeats, &ps));
+        template = Some(
+            app::DashboardTemplate::new(d.layout, d.repeats, &ps).with_conditions(d.conditions),
+        );
         (format!("{} (imported)", d.title), ps, d.skipped_panels)
     } else {
         merge_user_vars(&mut variables, config.vars.clone(), &args.var);
@@ -229,6 +232,8 @@ async fn main() -> Result<()> {
     state.vars = variables.vars;
     state.var_values = variables.var_values;
     state.regex_vars = variables.regex_vars;
+    state.all_vars = variables.all_vars;
+    state.variable_names = variables.names;
     state.query_vars = query_vars;
     // Repeats expand from the variables, so the template is applied after them.
     if let Some(template) = template {
@@ -358,6 +363,8 @@ struct VariableState {
     vars: HashMap<String, String>,
     var_values: HashMap<String, Vec<String>>,
     regex_vars: HashSet<String>,
+    all_vars: HashSet<String>,
+    names: HashSet<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -389,6 +396,8 @@ fn build_import_context(
         vars: dashboard.vars.clone(),
         var_values: dashboard.var_values.clone(),
         regex_vars: dashboard.regex_vars.clone(),
+        all_vars: dashboard.all_vars.clone(),
+        names: dashboard.variable_names.clone(),
     };
     let pinned_vars = merge_user_vars(&mut variables, config_vars, cli_vars);
 
@@ -435,6 +444,8 @@ fn merge_user_vars(
     let mut pinned_vars = HashSet::new();
     for (name, values) in selections {
         pinned_vars.insert(name.clone());
+        variables.all_vars.remove(&name);
+        variables.names.insert(name.clone());
         variables.vars.insert(
             name.clone(),
             app::format_prometheus_values(&values, values.len() > 1),
