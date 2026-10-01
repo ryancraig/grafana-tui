@@ -172,6 +172,14 @@ pub(crate) struct SeriesView {
     pub(crate) visible: bool,
 }
 
+/// Drops a panel's fetched data, keeping its configuration.
+fn clear_panel_data(panel: &mut PanelState) {
+    panel.series = Vec::new();
+    panel.last_error = None;
+    panel.last_url = None;
+    panel.last_samples = 0;
+}
+
 /// Grid positioning unit (Grafana style).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct GridUnit {
@@ -506,14 +514,20 @@ impl AppState {
             sections: &self.section_values,
         });
 
+        for &index in &materialized.reclaimed {
+            if let Some(panel) = self.panels.get_mut(index) {
+                clear_panel_data(panel);
+            }
+        }
         for instance in &materialized.panels {
-            while self.panels.len() <= instance.index {
+            if instance.fresh || instance.index >= self.panels.len() {
                 let mut copy = self.panels[instance.source].clone();
-                copy.series.clear();
-                copy.last_error = None;
-                copy.last_url = None;
-                copy.last_samples = 0;
-                self.panels.push(copy);
+                clear_panel_data(&mut copy);
+                if instance.index < self.panels.len() {
+                    self.panels[instance.index] = copy;
+                } else {
+                    self.panels.resize(instance.index + 1, copy);
+                }
             }
             let panel = &mut self.panels[instance.index];
             panel.title.clone_from(&instance.title);
@@ -526,6 +540,7 @@ impl AppState {
             .map(|instance| (instance.index, instance.scope))
             .collect();
 
+        self.panels.truncate(materialized.panel_slots);
         self.unfiltered_layout
             .sync_state_from(&self.layout, &self.hidden_items);
         let mut layout = materialized.layout;
@@ -533,6 +548,14 @@ impl AppState {
         self.unfiltered_layout = layout;
         self.conditions = materialized.conditions;
         self.section_instances = materialized.sections;
+        // Resolved section values are kept only for section copies still shown.
+        let live_sections: HashSet<_> = self
+            .section_instances
+            .iter()
+            .map(|instance| (instance.id, instance.scope.clone()))
+            .collect();
+        self.section_values
+            .retain(|key, _| live_sections.contains(key));
         self.show_conditional_items();
     }
 
@@ -670,6 +693,55 @@ impl AppState {
 
     pub(crate) fn visible_panel_indices(&self) -> Vec<usize> {
         self.layout.visible_panel_indices()
+    }
+
+    /// Panels the dashboard currently has, including ones in collapsed rows,
+    /// inactive tabs, or hidden by conditions. `panels` may also hold free slots
+    /// for repeat copies, which are not part of the dashboard.
+    pub(crate) fn dashboard_panel_indices(&self) -> Vec<usize> {
+        if self.template.is_some() {
+            self.unfiltered_layout.panel_indices()
+        } else {
+            (0..self.panels.len()).collect()
+        }
+    }
+
+    /// Panels a layout of only panels shows. Without an imported template the
+    /// panel list is the dashboard, so panels added to it after the layout was
+    /// built are shown too; with one, the layout decides, since the list also
+    /// holds hidden panels and free repeat copy slots.
+    pub(crate) fn flat_panel_indices(&self) -> Vec<usize> {
+        if self.template.is_some() {
+            self.layout.visible_panel_indices()
+        } else {
+            (0..self.panels.len()).collect()
+        }
+    }
+
+    /// Panels the dashboard view renders, outside fullscreen.
+    pub(crate) fn rendered_panel_indices(&self) -> Vec<usize> {
+        let flat = self
+            .layout
+            .items
+            .iter()
+            .all(|item| matches!(item, crate::dashboard::DashboardLayoutItem::Panel(_)));
+        if flat {
+            self.flat_panel_indices()
+        } else {
+            self.layout.visible_panel_indices()
+        }
+    }
+
+    /// The footer's panel count: `visible/total`, or just the total when all
+    /// panels are visible.
+    pub(crate) fn panel_count_label(&self) -> String {
+        let total = self.dashboard_panel_indices().len();
+        let visible = self.rendered_panel_indices().len();
+        if visible == total {
+            total.to_string()
+        } else {
+            format!("{visible}/{total}")
+        }
     }
 
     /// Selects the previous visible dashboard item.
@@ -1016,7 +1088,17 @@ impl AppState {
         })
         .buffer_unordered(4); // Max 4 concurrent panel refreshes
 
-        while let Some((p, results, url, err)) = futures.next().await {
+        while let Some((p, mut results, url, err)) = futures.next().await {
+            // Series the user hid stay hidden across refreshes.
+            let hidden: HashSet<&str> = p
+                .series
+                .iter()
+                .filter(|series| !series.visible)
+                .map(|series| series.name.as_str())
+                .collect();
+            for series in &mut results {
+                series.visible = !hidden.contains(series.name.as_str());
+            }
             p.series = results;
             p.last_samples = p.series.iter().map(|s| s.points.len()).sum();
             if let Some(u) = url {
@@ -1645,6 +1727,161 @@ mod tests {
                 "missing query for {host} in {queries:?}"
             );
         }
+    }
+
+    /// Rotates a repeated row's values the way a churning query variable (pods,
+    /// for example) does over a long session.
+    #[test]
+    fn churning_repeat_values_keep_memory_bounded() {
+        let mut app = create_test_app();
+        app.panels = vec![test_panel("CPU $pod", PanelType::Graph)];
+        let mut repeats = crate::dashboard::Repeats::default();
+        repeats
+            .rows
+            .insert(RowId::new(0), crate::dashboard::Repeat::new("pod"));
+        repeats.panels.insert(0, crate::dashboard::Repeat::new("pod"));
+        let layout = DashboardLayout::new(vec![DashboardLayoutItem::Row(DashboardRow::new(
+            RowId::new(0),
+            "Pod $pod",
+            false,
+            false,
+            vec![DashboardLayoutItem::Panel(0)],
+        ))]);
+        let sections = HashMap::from([(
+            crate::dashboard::SectionId::Row(RowId::new(0)),
+            vec![crate::grafana::SectionVariable {
+                name: "container".to_string(),
+                values: Vec::new(),
+                regex: false,
+                all: true,
+                all_value: None,
+                query: Some(TemplateQueryVar {
+                    name: "container".to_string(),
+                    query: "label_values(up, container)".to_string(),
+                    regex: None,
+                    query_path: "spec.layout.spec.rows[0].spec.variables[0]".to_string(),
+                    select_all: true,
+                    all_value: None,
+                    regex_values: false,
+                }),
+            }],
+        )]);
+        app.apply_template(
+            DashboardTemplate::new(layout, repeats, &app.panels).with_sections(sections),
+        );
+
+        for generation in 0..1000 {
+            let pods: Vec<String> = (0..3).map(|pod| format!("pod-{generation}-{pod}")).collect();
+            app.var_values.insert("pod".to_string(), pods);
+            app.materialize_layout();
+            // Section queries resolve per copy scope; record a result for each.
+            for instance in app.section_instances.clone() {
+                app.section_values.insert(
+                    (instance.id, instance.scope),
+                    HashMap::from([("container".to_string(), vec!["c".to_string()])]),
+                );
+            }
+            // Copies keep data while they are shown.
+            for index in app.visible_panel_indices() {
+                app.panels[index].series = vec![SeriesView {
+                    name: "up".to_string(),
+                    value: Some(1.0),
+                    points: vec![(1.0, 1.0)],
+                    visible: true,
+                }];
+            }
+        }
+
+        // Three row copies, each showing its pod's panel, are on screen;
+        // storage tracks them, not every value ever seen.
+        assert_eq!(app.visible_panel_indices().len(), 3);
+        // Freed slots are reused on the next update, so storage peaks at twice
+        // the copies on screen (here the primary panel plus two copies, twice).
+        assert!(app.panels.len() <= 5, "{} panels retained", app.panels.len());
+        assert!(app.section_values.len() <= 3, "{} section results", app.section_values.len());
+        let template = app.template.as_ref().unwrap();
+        assert!(template.retained_ids() <= 3 + 3, "{} ids retained", template.retained_ids());
+        // Nothing outside the layout keeps stale data.
+        let shown: HashSet<usize> = app.visible_panel_indices().into_iter().collect();
+        for (index, panel) in app.panels.iter().enumerate() {
+            if !shown.contains(&index) {
+                assert!(panel.series.is_empty(), "panel {index} kept stale series");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn hidden_series_stay_hidden_across_refreshes() {
+        let (url, _) = mock_prometheus(|_| {
+            r#"{"status":"success","data":{"resultType":"matrix","result":[
+                {"metric":{"job":"api"},"values":[[1,"1"]]},
+                {"metric":{"job":"web"},"values":[[1,"2"]]}
+            ]}}"#
+        })
+        .await;
+        let mut app = create_test_app();
+        app.prometheus = prom::PromClient::new(url);
+        let mut panel = test_panel("Up", PanelType::Graph);
+        panel.exprs = vec!["up".to_string()];
+        panel.legends = vec![Some("{{job}}".to_string())];
+        panel.query_modes = vec![QueryMode::Range];
+        app.panels = vec![panel];
+        app.apply_layout(DashboardLayout::flat(1));
+        app.refresh().await.unwrap();
+        let web = app.panels[0]
+            .series
+            .iter()
+            .position(|series| series.name == "web")
+            .unwrap();
+        app.panels[0].series[web].visible = false;
+
+        app.refresh().await.unwrap();
+
+        let visibility: Vec<(&str, bool)> = app.panels[0]
+            .series
+            .iter()
+            .map(|series| (series.name.as_str(), series.visible))
+            .collect();
+        assert!(visibility.contains(&("web", false)), "{visibility:?}");
+        assert!(visibility.contains(&("api", true)), "{visibility:?}");
+    }
+
+    #[test]
+    fn flat_repeated_layouts_draw_only_current_copies() {
+        let mut app = create_test_app();
+        let mut panel = test_panel("Pod $pod", PanelType::Graph);
+        panel.grid = Some(GridUnit {
+            x: 0,
+            y: 0,
+            w: 6,
+            h: 4,
+        });
+        app.panels = vec![panel];
+        let mut repeats = crate::dashboard::Repeats::default();
+        repeats.panels.insert(0, crate::dashboard::Repeat::new("pod"));
+        app.apply_template(DashboardTemplate::new(
+            DashboardLayout::flat(1),
+            repeats,
+            &app.panels,
+        ));
+        let pods = |names: &[&str]| names.iter().map(|name| name.to_string()).collect();
+
+        app.var_values
+            .insert("pod".to_string(), pods(&["a", "b", "c", "d"]));
+        app.materialize_layout();
+        app.var_values.insert("pod".to_string(), pods(&["a", "d"]));
+        app.materialize_layout();
+
+        // Slots for `b` and `c` are free but still allocated.
+        assert!(app.panels.len() > 2);
+        let area = ratatui::layout::Rect::new(0, 0, 120, 40);
+        let drawn: Vec<usize> = crate::ui::visible_panel_rects(area, &app)
+            .into_iter()
+            .map(|(_, index)| index)
+            .collect();
+        assert_eq!(drawn, app.visible_panel_indices());
+        assert_eq!(drawn.len(), 2);
+        assert_eq!(app.panel_count_label(), "2");
     }
 
     #[tokio::test]

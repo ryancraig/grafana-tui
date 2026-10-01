@@ -398,22 +398,7 @@ fn render_header(app: &AppState, out: &mut String, width: f64, text: &str, borde
 }
 
 fn displayed_panel_count(app: &AppState) -> String {
-    let total = app.panels.len();
-    let visible = if app
-        .layout
-        .items
-        .iter()
-        .all(|item| matches!(item, crate::dashboard::DashboardLayoutItem::Panel(_)))
-    {
-        total
-    } else {
-        app.layout.visible_panel_count()
-    };
-    if visible == total {
-        total.to_string()
-    } else {
-        format!("{visible}/{total}")
-    }
+    app.panel_count_label()
 }
 
 fn render_row_header(

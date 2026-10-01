@@ -76,7 +76,9 @@ pub(crate) fn calculate_grid_layout(area: Rect, app: &AppState) -> Vec<(Rect, us
     // Render grid-backed panels with scroll offset
     let scroll_offset = app.vertical_scroll as u16 * cell_h;
 
-    for (i, p) in app.panels.iter().enumerate() {
+    let shown = app.flat_panel_indices();
+    for &i in &shown {
+        let p = &app.panels[i];
         if let Some(g) = p.grid {
             if g.x < 0 || g.y < 0 || g.w <= 0 || g.h <= 0 {
                 continue;
@@ -115,19 +117,17 @@ pub(crate) fn calculate_grid_layout(area: Rect, app: &AppState) -> Vec<(Rect, us
     }
 
     // Extras (panels without grid)
-    let extras: Vec<(usize, &PanelState)> = app
-        .panels
+    let extras: Vec<(usize, &PanelState)> = shown
         .iter()
-        .enumerate()
+        .map(|&i| (i, &app.panels[i]))
         .filter(|(_, p)| p.grid.is_none())
         .collect();
     if !extras.is_empty() {
         // Place extras in a vertical stack under the grid.
-        let max_y_h = app
-            .panels
+        let max_y_h = shown
             .iter()
-            .filter_map(|p| {
-                let g = p.grid?;
+            .filter_map(|&i| {
+                let g = app.panels[i].grid?;
                 Some(g.y + g.h)
             })
             .max()
@@ -157,8 +157,7 @@ pub(crate) fn calculate_grid_layout(area: Rect, app: &AppState) -> Vec<(Rect, us
 }
 
 pub(crate) fn calculate_two_column_layout(area: Rect, app: &AppState) -> Vec<(Rect, usize)> {
-    let indices: Vec<usize> = (0..app.panels.len()).collect();
-    calculate_two_column_layout_subset(area, app, &indices)
+    calculate_two_column_layout_subset(area, app, &app.flat_panel_indices())
 }
 
 pub(crate) fn calculate_two_column_layout_subset(
@@ -262,7 +261,11 @@ pub(crate) fn visible_dashboard_rects(area: Rect, app: &AppState) -> Vec<Dashboa
         .iter()
         .all(|item| matches!(item, DashboardLayoutItem::Panel(_)));
     if structurally_flat {
-        let panel_rects = if app.panels.iter().any(|p| p.grid.is_some()) {
+        let panel_rects = if app
+            .flat_panel_indices()
+            .into_iter()
+            .any(|index| app.panels[index].grid.is_some())
+        {
             calculate_grid_layout(inner_area, app)
         } else {
             calculate_two_column_layout(inner_area, app)
