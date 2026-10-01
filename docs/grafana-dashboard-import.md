@@ -1,28 +1,36 @@
 # Grafana Dashboard Import
 
-Grafatui imports supported Grafana dashboard JSON files and renders supported
-panels in the terminal.
+Grafatui imports Grafana dashboards exported as JSON or YAML and renders their
+supported panels in the terminal.
 
 | Format | Status | Requirements |
 |---|---|---|
 | Classic JSON | ✅ Supported | Non-resource object with fields such as `title`, `panels`, and `templating` |
-| V2 Resource JSON | 🔶 Partial | Exact `apiVersion: dashboard.grafana.app/v2` and recursive grid, auto grid, row, or tab containers |
-| V2 Resource YAML | 🔶 Partial | The same V2 subset, read from a `.yaml` or `.yml` file |
+| V2 Resource JSON | ✅ Supported | Exact `apiVersion: dashboard.grafana.app/v2`, Grafana 13's default export format |
+| V2 Resource YAML | ✅ Supported | The same resource, read from a `.yaml` or `.yml` file |
+| V2 alpha/beta resources | ❌ Unsupported | `dashboard.grafana.app/v2alpha1` and `v2beta1`, exported by Grafana 12, are not accepted |
 | V1 Resource JSON | ❌ Unsupported | The `dashboard.grafana.app/v1` resource envelope is not accepted |
 
 `--grafana-json` (alias `--grafana-dashboard`) reads `.json` files as JSON and
 `.yaml`/`.yml` files as YAML. Files with any other extension are parsed as JSON
 first and then as YAML.
 
-The supported V2 subset maps inline `Panel` elements, Prometheus `PanelQuery`
-queries, top-level variables, `timeSettings.autoRefresh`, supported field
-configuration, fixed-grid positions, auto grids, and nested `RowsLayout`/`TabsLayout`
-containers to the same Grafatui behavior as Classic JSON.
+V2 resources and Classic dashboards share one importer, so panels, Prometheus
+queries, variables, field configuration, and diagnostics behave the same in
+both. On top of that, V2 dashboards support:
 
-Rows and tabs may recursively contain `GridLayout`, `AutoGridLayout`, `RowsLayout`,
-or `TabsLayout`. Grid items, auto grid items, rows, and tabs may repeat; rows,
-tabs, and auto grid items may render conditionally; and rows and tabs may define
-their own variables. Unsupported V2 layouts and fields are fatal import errors.
+- `GridLayout`, `AutoGridLayout`, `RowsLayout`, and `TabsLayout`, nested in any
+  combination ([auto grids](#auto-grid-layouts));
+- repeated grid items, auto grid items, rows, and tabs ([repeats](#repeats));
+- conditional rendering of rows, tabs, and auto grid items
+  ([conditional rendering](#conditional-rendering));
+- variables defined by rows and tabs ([row and tab variables](#row-and-tab-variables));
+- `timeSettings.autoRefresh` as the default refresh interval.
+
+Settings that only make sense in a browser, such as rows and auto grids that fill
+the viewport, are accepted and ignored. Layout kinds Grafatui does not know, and
+malformed fields, are import errors that name the field's path, such as
+`spec.layout.spec.rows[0].spec.repeat.direction`.
 
 Grafana's resource API writes empty lists and objects as `null` (for example
 `links`, `transformations`, `options`, and `variables`), and its exporter may
@@ -41,8 +49,9 @@ panels into the dashboard.
 An `AutoGridLayout` places its panels left to right, top to bottom, in columns of
 equal width. As in Grafana, the column count adapts to the available width: it
 is the number of minimum-width columns that fit, capped by `maxColumnCount`
-(default 3), and never more than the number of panels, so a short final list
-stretches across the full width. Resizing the terminal reflows the grid.
+(default 3), and never more than the number of panels, so a grid with fewer
+panels than columns stretches them across the full width. Resizing the terminal
+reflows the grid.
 
 Grafana sizes auto grids in CSS pixels. Grafatui converts them as follows:
 
@@ -113,17 +122,20 @@ Grafana 13 exports dashboards in the V2 Resource model by default:
 1. Open the dashboard in Grafana.
 2. In the toolbar, open **Export** and select **Export as code**.
 3. Choose JSON or YAML.
-4. Download the file, or copy it into a local `.json` or `.yaml` file.
-5. Run Grafatui with `--grafana-json`.
+4. If the dashboard uses library panels, enable **Share dashboard with another
+   instance** so they are inlined.
+5. Download the file, or copy it into a local `.json` or `.yaml` file.
+6. Run Grafatui with `--grafana-json`.
 
 ```bash
 grafatui --prometheus-url http://localhost:9090 --grafana-json ./node-exporter.yaml
 ```
 
-For dashboards that use V2 features Grafatui does not support yet, export the
-Classic model instead: under **Export as code**, expand **Advanced options**,
-set **Model** to **Classic**, and save the JSON. Grafana documents the available
-models and export controls in
+Grafana 12 exports dynamic dashboards as `v2alpha1` or `v2beta1` resources,
+which Grafatui does not accept. Export those, or any dashboard from an older
+Grafana, with the Classic model instead: under **Export as code**, expand
+**Advanced options**, set **Model** to **Classic**, and save the JSON. Grafana
+documents the available models and export controls in
 [Export a dashboard as code](https://grafana.com/docs/grafana/latest/visualizations/dashboards/share-dashboards-panels/#export-a-dashboard-as-code).
 
 ## Supported Panel Types

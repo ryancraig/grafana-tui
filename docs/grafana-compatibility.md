@@ -4,7 +4,7 @@ This document provides a comprehensive feature-parity table between the
 [Grafana dashboard JSON models](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/view-dashboard-json-model/)
 and what Grafatui currently supports.
 
-> **Snapshot**: Grafatui v0.1.12. The roadmap prioritizes Grafana parity first,
+> **Snapshot**: Grafatui `main` after v0.1.12, with Grafana V2 support. The roadmap prioritizes Grafana parity first,
 > then user-visible product value. See the [roadmap](https://github.com/fedexist/grafatui/blob/main/ROADMAP.md) for milestone
 > slices built from this compatibility ladder.
 
@@ -18,24 +18,47 @@ and what Grafatui currently supports.
 
 ## Dashboard Schema Models
 
-Grafatui imports the non-resource Classic JSON model and recursive `GridLayout`,
-`AutoGridLayout`, `RowsLayout`, and `TabsLayout` containers from the V2 Resource
-model. In Grafana 13, use
-**Export as code → Advanced options → Model: Classic** as the fallback for
-unsupported advanced V2 dashboards. See the
-[dashboard import guide](grafana-dashboard-import.md) for detailed steps.
+Grafatui imports the non-resource Classic JSON model and Grafana 13's V2
+Resource model, as JSON or YAML. Both share one importer, so the field tables
+after this section apply to V2 panels, queries, and variables too. See the
+[dashboard import guide](grafana-dashboard-import.md) for export steps.
 
 | Model | Status | Notes |
 |---|---|---|
 | Classic JSON | ✅ Supported | Accepted by `--grafana-json`; the remaining tables describe support for its fields |
+| V2 Resource JSON | ✅ Supported | Exact `dashboard.grafana.app/v2` resources, Grafana 13's default export |
+| V2 Resource YAML | ✅ Supported | The same resources, read from `.yaml`/`.yml` files |
+| V2 alpha/beta resources | ❌ Not Implemented | `dashboard.grafana.app/v2alpha1` and `v2beta1`, exported by Grafana 12, are rejected; export those as Classic JSON |
 | V1 Resource JSON | ❌ Not Implemented | The Kubernetes-style `dashboard.grafana.app/v1` resource envelope is not accepted |
-| V2 Resource JSON | 🔶 Partial | Exact `dashboard.grafana.app/v2` resources with recursive grid, row, and tab layouts are supported |
-| V2 Resource YAML | 🔶 Partial | The same V2 subset, read from `.yaml`/`.yml` files |
 
-### V2 Resource Subset
+### V2 Resource Fields
 
 | V2 field or behavior | Status | Notes |
 |---|---|---|
+| Exact `apiVersion: dashboard.grafana.app/v2` | ✅ Supported | Other resource versions are rejected |
+| Grafana 13 **Export as code** and API output | ✅ Supported | Absent or `null` lists and objects (`links`, `transformations`, `options`, `overrides`, `variables`, …) are treated as empty, as Grafana's API serializes them |
+| **Share dashboard with another instance** exports | ✅ Supported | Queries without a `datasource` use the configured Prometheus; cleared query variable selections resolve dynamically |
+| `spec.layout.kind: GridLayout` | ✅ Supported | `GridLayoutItem` coordinates map to Grafatui's fixed 24-column grid |
+| `spec.layout.kind: AutoGridLayout` | ✅ Supported | Panels flow row-major into equal-width columns that reflow with the terminal width; see [auto grid sizing](grafana-dashboard-import.md#auto-grid-layouts) |
+| `AutoGridLayout` `maxColumnCount`, `columnWidthMode`/`columnWidth`, `rowHeightMode`/`rowHeight` | ✅ Supported | Grafana's named and custom pixel sizes are converted to terminal cells and grid rows |
+| `AutoGridLayout` `fillScreen`, `fitContent`, min/max height modes | ⛔ Not Applicable | Accepted and ignored |
+| `spec.layout.kind: RowsLayout` | ✅ Supported | Rows nest any layout and preserve titles, collapsed state, and hidden-header transparency |
+| `RowsLayoutRow.spec.fillScreen` | ⛔ Not Applicable | Accepted and ignored; terminal rows size to their content |
+| `spec.layout.kind: TabsLayout` | ✅ Supported | Tabs nest any layout and show one active tab per group |
+| `repeat` on grid items, auto grid items, rows, and tabs | ✅ Supported | Expanded once per selected value of the variable, with each copy's title and queries using its value; see [repeats](grafana-dashboard-import.md#repeats) |
+| `GridLayoutItem` `repeat.direction` and `repeat.maxPerRow` | ✅ Supported | Horizontal copies share the full grid width, up to `maxPerRow` (default 4) per row; vertical copies stack; panels below move down |
+| `conditionalRendering` on rows, tabs, and auto grid items | ✅ Supported | Variable, data, and time range conditions show or hide items as variables, data, and the range change; see [conditional rendering](grafana-dashboard-import.md#conditional-rendering) |
+| Row and tab `variables` | ✅ Supported | Apply to the row or tab and everything inside it, shadowing dashboard variables; query variables resolve per row or tab copy; see [row and tab variables](grafana-dashboard-import.md#row-and-tab-variables) |
+| Top-level `spec.variables` | 🔶 Partial | Query, custom, constant, text, interval, datasource, group-by, and switch variables map to Grafatui variables; ad hoc filters emit diagnostics |
+| `spec.timeSettings.autoRefresh` | ✅ Supported | Used as the dashboard refresh interval |
+| `spec.timeSettings` `from`, `to`, `timezone` | ❌ Not Implemented | As for Classic `time` and `timezone`: use `--range`; times display in UTC |
+| Inline `Panel` elements | ✅ Supported | Supported panel visualization groups map through the Classic-equivalent importer |
+| Prometheus `PanelQuery` queries | ✅ Supported | `prometheus`, `grafana-amazonprometheus-datasource`, and `grafana-azureprometheus-datasource` query groups are imported; other datasources emit import diagnostics and are skipped |
+| `vizConfig.spec.fieldConfig` | 🔶 Partial | The supported Classic-equivalent field configuration subset applies |
+| `LibraryPanel` elements | ❌ Not Implemented | Exports reference library panels by uid only; they are skipped with a diagnostic. Export with **Share dashboard with another instance** enabled to inline them |
+| `spec.annotations` | ❌ Not Implemented | As for Classic `annotations`; Grafatui's external annotation sources are separate |
+
+---|---|---|
 | Exact `apiVersion: dashboard.grafana.app/v2` | ✅ Supported | Other resource versions are rejected |
 | Grafana 13 **Export as code** and API output | ✅ Supported | Absent or `null` lists and objects (`links`, `transformations`, `options`, `overrides`, `variables`, …) are treated as empty, as Grafana's API serializes them |
 | **Share dashboard with another instance** exports | ✅ Supported | Queries without a `datasource` use the configured Prometheus; cleared query variable selections resolve dynamically |
@@ -57,8 +80,9 @@ unsupported advanced V2 dashboards. See the
 | Row and tab `variables` | ✅ Supported | Apply to the row or tab and everything inside it, shadowing dashboard variables; query variables resolve per row or tab copy; see [row and tab variables](grafana-dashboard-import.md#row-and-tab-variables) |
 | `LibraryPanel` elements | ❌ Not Implemented | Exports reference library panels by uid only; they are skipped with a diagnostic. Export with **Share dashboard with another instance** enabled to inline them |
 
-V2 resources are accepted as JSON or YAML. Use a Classic export for any advanced
-V2 dashboard outside this grid, auto grid, rows, and tabs subset.
+Grafana's V2 schema also includes settings for its browser editor and other
+datasources; those not listed here are ignored. Use a Classic export for
+dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
 
 ---
 
@@ -394,4 +418,4 @@ Grafatui provides several TUI-native capabilities that don't map directly to Gra
 
 ---
 
-*This document was reviewed against the Grafatui source code at v0.1.12. If you notice any inaccuracies, please open an issue or PR.*
+*This document was reviewed against the Grafatui source code on `main` after v0.1.12. If you notice any inaccuracies, please open an issue or PR.*
