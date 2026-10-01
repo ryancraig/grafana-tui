@@ -63,3 +63,60 @@ fn unknown_theme_fails_before_starting_the_tui() {
     assert!(stderr.contains("unknown theme `nope`"), "{stderr}");
     assert!(stderr.contains("catppuccin-latte"), "{stderr}");
 }
+
+#[test]
+fn custom_themes_are_listed_and_selectable() {
+    let config = r##"
+        theme = "mine"
+
+        [themes.mine]
+        extends = "gruvbox-light"
+        title = "#ff0000"
+
+        [themes.tokyo-night]
+        extends = "tokyo-night"
+        grid = "dark-gray"
+    "##;
+    let output = run_with_config("custom-list", config, &["--list-themes"]);
+
+    assert!(output.status.success(), "{output:?}");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let names: Vec<_> = stdout.lines().collect();
+    assert_eq!(names.last(), Some(&"mine (current)"));
+    assert_eq!(names.iter().filter(|name| name.starts_with("tokyo-night")).count(), 4);
+}
+
+#[test]
+fn invalid_custom_theme_names_the_theme_and_key() {
+    let config = r##"
+        [themes.broken]
+        palette = ["#ff0000", "nope"]
+    "##;
+    let output = run_with_config("custom-invalid", config, &["--list-themes"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("theme `broken`"), "{stderr}");
+    assert!(stderr.contains("invalid color `nope`"), "{stderr}");
+}
+
+#[test]
+fn validate_ignores_theme_configuration() {
+    let dashboard = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("dashboards")
+        .join("simple_test.json");
+    let config = r##"
+        theme = "nope"
+
+        [themes.broken]
+        palette = []
+    "##;
+    let output = run_with_config(
+        "validate-themes",
+        config,
+        &["--validate", "--grafana-json", dashboard.to_str().unwrap()],
+    );
+
+    assert!(output.status.success(), "{output:?}");
+}

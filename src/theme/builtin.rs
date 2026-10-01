@@ -60,14 +60,20 @@ pub(crate) fn builtin_names() -> impl Iterator<Item = &'static str> {
     BUILTINS.iter().map(|builtin| builtin.name)
 }
 
+/// The built-in theme an alias points at, ignoring case.
+pub(super) fn alias_target(name: &str) -> Option<&'static str> {
+    ALIASES
+        .iter()
+        .find(|(alias, _)| alias.eq_ignore_ascii_case(name))
+        .map(|(_, target)| *target)
+}
+
 /// Looks up a built-in theme or alias, ignoring case.
 pub(crate) fn builtin(name: &str) -> Option<Theme> {
-    let name = name.to_ascii_lowercase();
-    let name = ALIASES
+    let name = alias_target(name).unwrap_or(name);
+    let builtin = BUILTINS
         .iter()
-        .find(|(alias, _)| *alias == name)
-        .map_or(name.as_str(), |(_, target)| target);
-    let builtin = BUILTINS.iter().find(|builtin| builtin.name == name)?;
+        .find(|builtin| builtin.name.eq_ignore_ascii_case(name))?;
     Some(match &builtin.spec {
         Spec::Terminal => terminal(),
         Spec::Base(base) => Theme::from_base(builtin.name, base),

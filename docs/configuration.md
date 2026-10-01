@@ -118,3 +118,49 @@ Use a theme from the CLI:
 ```bash
 grafatui --theme catppuccin-latte
 ```
+
+### Custom Themes
+
+Define your own themes in `[themes.<name>]` tables. Each starts from a built-in
+theme (`extends`, default `tokyo-night`) and overrides any of the roles below.
+Select it like a built-in, with `theme = "<name>"` or `--theme <name>`.
+
+```toml
+theme = "night-shift"
+
+[themes.night-shift]
+extends = "tokyo-night-storm"
+title = "#ff9e64"
+border_focused = "#ff9e64"
+grid = "#3b4261"
+palette = ["#7aa2f7", "#9ece6a", "#e0af68", "#bb9af7"]
+
+# Reusing a built-in name tweaks that theme in place.
+[themes.catppuccin-latte]
+extends = "catppuccin-latte"
+background = "#ffffff"
+```
+
+Colors are `#rrggbb`, an ANSI name (`black`, `red`, `green`, `yellow`, `blue`,
+`magenta`, `cyan`, `gray`, `dark-gray`, `white`, or a `light-` variant such as
+`light-blue`), or `reset` for the terminal's own color.
+
+| Key | Colors |
+|---|---|
+| `background` | Behind the whole dashboard |
+| `surface` | Behind popups and modals |
+| `text`, `text_muted`, `title` | Body text, hints, and panel titles |
+| `border`, `border_focused` | Panel borders, and the selected panel or row |
+| `selection_fg`, `selection_bg` | Highlighted entries in lists |
+| `error`, `warning`, `success` | Panel errors, recording and paused indicators |
+| `axis`, `grid`, `cursor` | Graph axes, automatic grid, and the inspect cursor |
+| `gauge_track` | Unfilled part of gauges and bar gauges |
+| `heatmap` | Three colors: low, mid, and high heatmap bands |
+| `heatmap_empty` | Heatmap cells without a value |
+| `annotation` | Annotation markers and details |
+| `threshold_default` | Threshold lines whose dashboard color has no terminal equivalent |
+| `palette` | Series colors, in order (at least one) |
+
+Unknown keys and invalid colors are reported at startup with the theme and key
+that caused them. `autogrid_color`, when set, still takes precedence over the
+theme's `grid`.

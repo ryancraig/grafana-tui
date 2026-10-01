@@ -86,7 +86,8 @@ async fn main() -> Result<()> {
         .or_else(|| config.theme.clone())
         .unwrap_or_else(|| theme::DEFAULT_THEME.to_string());
     if args.list_themes {
-        print!("{}", theme_list(&theme_name));
+        let themes = theme::catalog(&theme::custom_themes(&config.themes)?);
+        print!("{}", theme_list(&theme_name, &themes));
         return Ok(());
     }
 
@@ -205,7 +206,8 @@ async fn main() -> Result<()> {
         ("grafatui".to_string(), app::default_queries(args.query), 0)
     };
 
-    let theme = Theme::resolve(&theme_name)?;
+    let themes = theme::catalog(&theme::custom_themes(&config.themes)?);
+    let theme = theme::resolve(&theme_name, &themes)?;
 
     // Determine threshold marker
     let marker_name = args
@@ -379,14 +381,15 @@ fn install_terminal_panic_hook() {
 }
 
 /// One theme name per line, marking the one `selected` resolves to.
-fn theme_list(selected: &str) -> String {
-    let current = theme::builtin(selected).map(|theme| theme.name);
-    theme::builtin_names()
-        .map(|name| {
-            if current.as_deref() == Some(name) {
-                format!("{name} (current)\n")
+fn theme_list(selected: &str, themes: &[Theme]) -> String {
+    let current = theme::resolve(selected, themes).ok().map(|theme| theme.name);
+    themes
+        .iter()
+        .map(|theme| {
+            if current.as_ref() == Some(&theme.name) {
+                format!("{} (current)\n", theme.name)
             } else {
-                format!("{name}\n")
+                format!("{}\n", theme.name)
             }
         })
         .collect()
