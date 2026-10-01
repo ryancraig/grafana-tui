@@ -131,7 +131,11 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
     app.rendered_annotation_cluster = selected_rendered_cluster;
 
     // Footer / Status bar
-    let errors = app.panels.iter().filter(|p| p.last_error.is_some()).count();
+    let errors = app
+        .dashboard_panel_indices()
+        .into_iter()
+        .filter(|&index| app.panels[index].last_error.is_some())
+        .count();
     let panel_count_display =
         if app.mode == AppMode::Fullscreen || app.mode == AppMode::FullscreenInspect {
             "1 (Fullscreen)".to_string()
@@ -252,22 +256,7 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
 }
 
 fn normal_panel_count(app: &AppState) -> String {
-    let total = app.panels.len();
-    let visible = if app
-        .layout
-        .items
-        .iter()
-        .all(|item| matches!(item, crate::dashboard::DashboardLayoutItem::Panel(_)))
-    {
-        total
-    } else {
-        app.layout.visible_panel_count()
-    };
-    if visible == total {
-        total.to_string()
-    } else {
-        format!("{visible}/{total}")
-    }
+    app.panel_count_label()
 }
 
 pub(crate) fn render_row_header(
@@ -316,16 +305,22 @@ fn build_footer_detail(app: &AppState) -> String {
 
     if app.debug_bar {
         // Choose a debug panel: if we have grid, pick the top-left grid panel; otherwise pick the first panel
-        let debug_panel: Option<&PanelState> = if app.panels.iter().any(|p| p.grid.is_some()) {
-            app.panels
+        let shown: Vec<&PanelState> = app
+            .rendered_panel_indices()
+            .into_iter()
+            .map(|index| &app.panels[index])
+            .collect();
+        let debug_panel: Option<&PanelState> = if shown.iter().any(|p| p.grid.is_some()) {
+            shown
                 .iter()
+                .copied()
                 .filter(|p| p.grid.is_some())
                 .min_by_key(|p| {
                     let g = p.grid.unwrap();
                     (g.y, g.x)
                 })
         } else {
-            app.panels.first()
+            shown.first().copied()
         };
 
         if let Some(p) = debug_panel {

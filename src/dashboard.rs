@@ -230,8 +230,26 @@ impl DashboardLayout {
             .collect()
     }
 
-    pub(crate) fn visible_panel_count(&self) -> usize {
-        self.visible_panel_indices().len()
+    /// Every panel in the layout, including those in collapsed rows and
+    /// inactive tabs.
+    pub(crate) fn panel_indices(&self) -> Vec<usize> {
+        fn collect(items: &[DashboardLayoutItem], panels: &mut Vec<usize>) {
+            for item in items {
+                match item {
+                    DashboardLayoutItem::Panel(index) => panels.push(*index),
+                    DashboardLayoutItem::AutoGrid(grid) => panels.extend(&grid.panels),
+                    DashboardLayoutItem::Row(row) => collect(&row.children, panels),
+                    DashboardLayoutItem::Tabs(group) => {
+                        for tab in &group.tabs {
+                            collect(&tab.children, panels);
+                        }
+                    }
+                }
+            }
+        }
+        let mut panels = Vec::new();
+        collect(&self.items, &mut panels);
+        panels
     }
 
     pub(crate) fn toggle_row(&mut self, id: RowId) -> Option<LayoutChange> {
@@ -975,7 +993,7 @@ mod tests {
     fn flat_layout_lists_each_panel_at_root_depth() {
         let layout = DashboardLayout::flat(3);
 
-        assert_eq!(layout.visible_panel_count(), 3);
+        assert_eq!(layout.visible_panel_indices().len(), 3);
         assert_eq!(
             layout.visible_items(),
             vec![

@@ -18,7 +18,7 @@
 //! variables are interpolated into titles.
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use super::state::{GridUnit, PanelState};
 use super::variables::{format_prometheus_values, substitute_variables};
@@ -164,6 +164,10 @@ struct PanelTemplate {
 
 /// Ids handed out to repeat copies. A copy keeps its id, and with it its panel
 /// state and row or tab state, for as long as its scope stays selected.
+///
+/// Ids a materialization no longer uses are forgotten when it finishes, and
+/// their panel slots are reused, so memory follows the copies on screen rather
+/// than every value a variable ever had.
 #[derive(Debug, Clone, Default)]
 struct CloneIds {
     panels: HashMap<(usize, Scope), usize>,
@@ -172,28 +176,74 @@ struct CloneIds {
     next_panel: usize,
     next_row: usize,
     next_tab_group: usize,
+    /// Reclaimed panel slots below `next_panel`, reused lowest first.
+    free_panels: BTreeSet<usize>,
+    /// Keys used by the materialization in progress.
+    used_panels: HashSet<(usize, Scope)>,
+    used_rows: HashSet<(RowId, Scope)>,
+    used_tab_groups: HashSet<(TabGroupId, Scope)>,
 }
 
 impl CloneIds {
-    fn panel(&mut self, source: usize, scope: &Scope) -> usize {
-        *self
-            .panels
-            .entry((source, scope.clone()))
-            .or_insert_with(|| next(&mut self.next_panel))
+    /// The slot for a copy of panel `source`, and whether it was just assigned,
+    /// in which case the slot may hold another panel's old state.
+    fn panel(&mut self, source: usize, scope: &Scope) -> (usize, bool) {
+        let key = (source, scope.clone());
+        self.used_panels.insert(key.clone());
+        if let Some(&index) = self.panels.get(&key) {
+            return (index, false);
+        }
+        let index = self
+            .free_panels
+            .pop_first()
+            .unwrap_or_else(|| next(&mut self.next_panel));
+        self.panels.insert(key, index);
+        (index, true)
     }
 
     fn row(&mut self, source: RowId, scope: &Scope) -> RowId {
+        let key = (source, scope.clone());
+        self.used_rows.insert(key.clone());
         *self
             .rows
-            .entry((source, scope.clone()))
+            .entry(key)
             .or_insert_with(|| RowId::new(next(&mut self.next_row)))
     }
 
     fn tab_group(&mut self, source: TabGroupId, scope: &Scope) -> TabGroupId {
+        let key = (source, scope.clone());
+        self.used_tab_groups.insert(key.clone());
         *self
             .tab_groups
-            .entry((source, scope.clone()))
+            .entry(key)
             .or_insert_with(|| TabGroupId::new(next(&mut self.next_tab_group)))
+    }
+
+    /// Forgets the ids the finished materialization did not use, returning the
+    /// panel slots it reclaimed. Trailing free slots are released entirely, down
+    /// to `imported_panels`.
+    fn finish(&mut self, imported_panels: usize) -> Vec<usize> {
+        let used_panels = std::mem::take(&mut self.used_panels);
+        let used_rows = std::mem::take(&mut self.used_rows);
+        let used_tab_groups = std::mem::take(&mut self.used_tab_groups);
+        let mut reclaimed = Vec::new();
+        self.panels.retain(|key, index| {
+            let used = used_panels.contains(key);
+            if !used {
+                reclaimed.push(*index);
+            }
+            used
+        });
+        self.rows.retain(|key, _| used_rows.contains(key));
+        self.tab_groups.retain(|key, _| used_tab_groups.contains(key));
+        self.free_panels.extend(reclaimed.iter().copied());
+        while self.next_panel > imported_panels
+            && self.free_panels.last() == Some(&(self.next_panel - 1))
+        {
+            self.free_panels.pop_last();
+            self.next_panel -= 1;
+        }
+        reclaimed
     }
 }
 
@@ -213,6 +263,9 @@ pub(crate) struct PanelInstance {
     pub(crate) title: String,
     pub(crate) grid: Option<GridUnit>,
     pub(crate) scope: Scope,
+    /// Whether the slot was just assigned to this copy, so any state left in it
+    /// belongs to another panel.
+    pub(crate) fresh: bool,
 }
 
 /// A conditional rendering group attached to a materialized item.
@@ -242,6 +295,10 @@ pub(crate) struct Materialized {
     pub(crate) panels: Vec<PanelInstance>,
     pub(crate) conditions: Vec<MaterializedCondition>,
     pub(crate) sections: Vec<SectionInstance>,
+    /// Panel slots no copy uses any more, whose state can be dropped.
+    pub(crate) reclaimed: Vec<usize>,
+    /// Panel slots in use or free for reuse; slots from here on are released.
+    pub(crate) panel_slots: usize,
 }
 
 impl DashboardTemplate {
@@ -266,6 +323,12 @@ impl DashboardTemplate {
                 ..CloneIds::default()
             },
         }
+    }
+
+    /// How many repeat copy ids are remembered, across panels, rows, and tabs.
+    #[cfg(test)]
+    pub(crate) fn retained_ids(&self) -> usize {
+        self.clones.panels.len() + self.clones.rows.len() + self.clones.tab_groups.len()
     }
 
     /// Adds conditional rendering, keyed by the same imported ids as the repeats.
@@ -300,11 +363,19 @@ impl DashboardTemplate {
             materialized_conditions: Vec::new(),
         };
         let items = builder.items(&self.layout.items, &Scope::new(), true);
+        let (panels, conditions, sections) = (
+            builder.panels,
+            builder.materialized_conditions,
+            builder.section_instances,
+        );
+        let reclaimed = self.clones.finish(self.panels.len());
         Materialized {
             layout: DashboardLayout::new(items),
-            panels: builder.panels,
-            conditions: builder.materialized_conditions,
-            sections: builder.section_instances,
+            panels,
+            conditions,
+            sections,
+            reclaimed,
+            panel_slots: self.clones.next_panel,
         }
     }
 }
@@ -450,8 +521,8 @@ impl Builder<'_, '_> {
             .into_iter()
             .enumerate()
             .map(|(position, copy)| {
-                let index = if copy.primary {
-                    source
+                let (index, fresh) = if copy.primary {
+                    (source, false)
                 } else {
                     self.clones.panel(source, &copy.scope)
                 };
@@ -472,6 +543,7 @@ impl Builder<'_, '_> {
                     title: self.variables.title(&title, &copy.scope),
                     grid,
                     scope: copy.scope,
+                    fresh,
                 });
                 (index, copy.primary)
             })
@@ -1127,12 +1199,27 @@ mod tests {
         let again = template.materialize(&Vars::new(&[("dc", &["a", "b", "c"])]).get());
         let fewer = template.materialize(&Vars::new(&[("dc", &["a", "c"])]).get());
 
-        assert_eq!(first, again);
-        let indices = |materialized: &Materialized| -> Vec<usize> {
-            materialized.panels.iter().map(|panel| panel.index).collect()
+        let indices = |materialized: &Materialized| -> Vec<(usize, bool)> {
+            materialized
+                .panels
+                .iter()
+                .map(|panel| (panel.index, panel.fresh))
+                .collect()
         };
-        assert_eq!(indices(&first), [0, 1, 2]);
-        assert_eq!(indices(&fewer), [0, 2]);
+        assert_eq!(first.layout, again.layout);
+        // New copies get fresh slots once, then keep them.
+        assert_eq!(indices(&first), [(0, false), (1, true), (2, true)]);
+        assert_eq!(indices(&again), [(0, false), (1, false), (2, false)]);
+        // Dropping `b` reclaims its slot; `c` keeps its own.
+        assert_eq!(indices(&fewer), [(0, false), (2, false)]);
+        assert_eq!(fewer.reclaimed, [1]);
+        assert_eq!(fewer.panel_slots, 3);
+
+        // The free slot is reused before new ones, and trailing ones are released.
+        let reused = template.materialize(&Vars::new(&[("dc", &["a", "d"])]).get());
+        assert_eq!(indices(&reused), [(0, false), (1, true)]);
+        assert_eq!(reused.reclaimed, [2]);
+        assert_eq!(reused.panel_slots, 2);
     }
 
     #[test]
