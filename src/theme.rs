@@ -15,11 +15,13 @@
  */
 
 mod builtin;
+mod custom;
 
 use anyhow::{Result, bail};
 use ratatui::style::Color;
 
 pub(crate) use builtin::{DEFAULT_THEME, builtin, builtin_names};
+pub(crate) use custom::{ThemeSpec, custom_themes};
 
 /// Semantic UI colors. Renderers pick a role, never a literal color, so every
 /// theme restyles the whole UI and the SVG export.
@@ -64,17 +66,47 @@ impl Default for Theme {
     }
 }
 
-impl Theme {
-    /// Resolves a theme name or alias.
-    pub(crate) fn resolve(name: &str) -> Result<Self> {
-        match builtin(name) {
-            Some(theme) => Ok(theme),
-            None => bail!(
-                "unknown theme `{name}`; available themes: {}",
-                builtin_names().collect::<Vec<_>>().join(", ")
-            ),
+/// Every selectable theme: the built-ins in display order, each replaced by a
+/// user theme of the same name, followed by the remaining user themes.
+pub(crate) fn catalog(custom: &[Theme]) -> Vec<Theme> {
+    let find_custom =
+        |name: &str| custom.iter().find(|theme| theme.name.eq_ignore_ascii_case(name));
+    let mut themes: Vec<Theme> = builtin_names()
+        .map(|name| {
+            find_custom(name)
+                .cloned()
+                .unwrap_or_else(|| builtin(name).expect("listed builtins resolve"))
+        })
+        .collect();
+    for theme in custom {
+        if !builtin_names().any(|name| name.eq_ignore_ascii_case(&theme.name)) {
+            themes.push(theme.clone());
         }
     }
+    themes
+}
+
+/// Finds a theme in `catalog` by name or built-in alias, ignoring case.
+pub(crate) fn resolve(name: &str, catalog: &[Theme]) -> Result<Theme> {
+    let find = |name: &str| {
+        catalog
+            .iter()
+            .find(|theme| theme.name.eq_ignore_ascii_case(name))
+    };
+    match find(name).or_else(|| builtin::alias_target(name).and_then(find)) {
+        Some(theme) => Ok(theme.clone()),
+        None => bail!(
+            "unknown theme `{name}`; available themes: {}",
+            catalog
+                .iter()
+                .map(|theme| theme.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+impl Theme {
 
     /// Replaces a threshold step color the terminal cannot show.
     pub(crate) fn threshold_color(&self, color: Color) -> Color {
@@ -253,7 +285,7 @@ mod tests {
 
     #[test]
     fn unknown_names_are_rejected_with_the_available_names() {
-        let error = Theme::resolve("nope").unwrap_err().to_string();
+        let error = resolve("nope", &catalog(&[])).unwrap_err().to_string();
         assert!(error.contains("unknown theme `nope`"), "{error}");
         assert!(error.contains("catppuccin-latte"), "{error}");
         assert!(error.contains("gruvbox-light-soft"), "{error}");
@@ -270,9 +302,33 @@ mod tests {
             ("gruvbox-dark-medium", "gruvbox-dark"),
             ("gruvbox-light-medium", "gruvbox-light"),
         ] {
-            assert_eq!(Theme::resolve(alias).unwrap().name, canonical, "{alias}");
+            assert_eq!(resolve(alias, &catalog(&[])).unwrap().name, canonical, "{alias}");
         }
         assert_eq!(Theme::default().name, DEFAULT_THEME);
+    }
+
+    #[test]
+    fn user_themes_shadow_builtins_in_place_and_append_the_rest() {
+        let shadow = Theme {
+            name: "gruvbox-dark".to_string(),
+            title: Color::Rgb(1, 2, 3),
+            ..builtin("gruvbox-dark").unwrap()
+        };
+        let extra = Theme {
+            name: "Mine".to_string(),
+            ..Theme::default()
+        };
+        let themes = catalog(&[shadow.clone(), extra.clone()]);
+
+        let names: Vec<_> = themes.iter().map(|theme| theme.name.as_str()).collect();
+        let builtins: Vec<_> = builtin_names().collect();
+        assert_eq!(names[..builtins.len()], builtins[..]);
+        assert_eq!(names[builtins.len()..], ["Mine"]);
+        assert_eq!(resolve("gruvbox-dark", &themes).unwrap(), shadow);
+        // Aliases reach the user's override of their target.
+        assert_eq!(resolve("gruvbox", &themes).unwrap(), shadow);
+        assert_eq!(resolve("mine", &themes).unwrap(), extra);
+        assert!(resolve("nope", &themes).unwrap_err().to_string().contains("Mine"));
     }
 
     #[test]

@@ -2150,7 +2150,7 @@ mod tests {
             false,
             vec![DashboardLayoutItem::Panel(0)],
         ))]);
-        app.theme = Theme::resolve("terminal").unwrap();
+        app.theme = crate::theme::builtin("terminal").unwrap();
 
         let svg = render_svg(&app, Rect::new(0, 0, 100, 40));
 
@@ -2669,7 +2669,7 @@ mod tests {
 
         for (panel_type, first, second) in cases {
             let mut app = test_app_with_panel_type(panel_type);
-            app.theme = Theme::resolve("terminal").unwrap();
+            app.theme = crate::theme::builtin("terminal").unwrap();
             let svg = render_svg(&app, Rect::new(0, 0, 100, 40));
 
             assert!(svg.contains("CPU &lt;main&gt;"));

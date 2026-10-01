@@ -17,7 +17,7 @@
 use anyhow::Result;
 use directories::ProjectDirs;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
 
@@ -41,6 +41,9 @@ pub(crate) struct Config {
     pub(crate) autogrid: Option<bool>,
     pub(crate) autogrid_color: Option<String>,
     pub(crate) vars: Option<HashMap<String, String>>,
+    /// User-defined themes, keyed by name.
+    #[serde(default)]
+    pub(crate) themes: BTreeMap<String, crate::theme::ThemeSpec>,
 }
 
 impl Config {
@@ -100,6 +103,27 @@ pub(crate) fn expand_path(path: &std::path::Path) -> PathBuf {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn test_config_deserializes_theme_tables() {
+        let config: Config = toml::from_str(
+            r##"
+            theme = "mine"
+
+            [themes.mine]
+            extends = "catppuccin-latte"
+            title = "#ff9e64"
+            palette = ["#7aa2f7", "green"]
+            "##,
+        )
+        .unwrap();
+
+        let spec = &config.themes["mine"];
+        assert_eq!(spec.extends.as_deref(), Some("catppuccin-latte"));
+        assert_eq!(spec.title.as_deref(), Some("#ff9e64"));
+        assert_eq!(spec.palette.as_ref().map(Vec::len), Some(2));
+        assert!(Config::default().themes.is_empty());
+    }
 
     #[test]
     fn test_config_deserialization() {
