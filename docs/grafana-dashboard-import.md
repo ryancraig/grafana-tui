@@ -6,7 +6,7 @@ panels in the terminal.
 | Format | Status | Requirements |
 |---|---|---|
 | Classic JSON | ✅ Supported | Non-resource object with fields such as `title`, `panels`, and `templating` |
-| V2 Resource JSON | 🔶 Partial | Exact `apiVersion: dashboard.grafana.app/v2` and recursive grid, row, or tab containers |
+| V2 Resource JSON | 🔶 Partial | Exact `apiVersion: dashboard.grafana.app/v2` and recursive grid, auto grid, row, or tab containers |
 | V2 Resource YAML | 🔶 Partial | The same V2 subset, read from a `.yaml` or `.yml` file |
 | V1 Resource JSON | ❌ Unsupported | The `dashboard.grafana.app/v1` resource envelope is not accepted |
 
@@ -16,12 +16,12 @@ first and then as YAML.
 
 The supported V2 subset maps inline `Panel` elements, Prometheus `PanelQuery`
 queries, top-level variables, `timeSettings.autoRefresh`, supported field
-configuration, fixed-grid positions, and nested `RowsLayout`/`TabsLayout` containers to the
-same Grafatui behavior as Classic JSON.
+configuration, fixed-grid positions, auto grids, and nested `RowsLayout`/`TabsLayout`
+containers to the same Grafatui behavior as Classic JSON.
 
-Rows and tabs may recursively contain `GridLayout`, `RowsLayout`, or `TabsLayout`.
-Auto-grid, repeat, conditional rendering, and nested non-empty layout variables
-remain unsupported; unsupported V2 layouts and fields are fatal import errors. Repeated grid items are also rejected rather than silently
+Rows and tabs may recursively contain `GridLayout`, `AutoGridLayout`, `RowsLayout`,
+or `TabsLayout`. Repeat, conditional rendering, and nested non-empty layout
+variables remain unsupported; unsupported V2 layouts and fields are fatal import errors. Repeated grid items are also rejected rather than silently
 changing the dashboard.
 
 Grafana's resource API writes empty lists and objects as `null` (for example
@@ -35,6 +35,33 @@ Library panels are exported as a reference to the library panel's uid, without
 the panel itself, so Grafatui skips them with an import diagnostic. Enable
 **Share dashboard with another instance** when exporting to inline library
 panels into the dashboard.
+
+## Auto Grid Layouts
+
+An `AutoGridLayout` places its panels left to right, top to bottom, in columns of
+equal width. As in Grafana, the column count adapts to the available width: it
+is the number of minimum-width columns that fit, capped by `maxColumnCount`
+(default 3), and never more than the number of panels, so a short final list
+stretches across the full width. Resizing the terminal reflows the grid.
+
+Grafana sizes auto grids in CSS pixels. Grafatui converts them as follows:
+
+| Setting | Grafana size | Grafatui size |
+|---|---|---|
+| `columnWidthMode: narrow` | 192px minimum column width | 24 terminal columns |
+| `columnWidthMode: standard` (default) | 448px | 56 terminal columns |
+| `columnWidthMode: wide` | 768px | 96 terminal columns |
+| `columnWidthMode: custom`, `columnWidth: N` | N px | N / 8 terminal columns |
+| `rowHeightMode: short` | 168px row height | 5 grid rows |
+| `rowHeightMode: standard` (default) | 320px | 9 grid rows |
+| `rowHeightMode: tall` | 512px | 14 grid rows |
+| `rowHeightMode: custom`, `rowHeight: N` | N px | (N + 8) / 38 grid rows, rounded |
+
+Terminal columns use Grafana's 8px spacing unit, so column counts match what
+Grafana shows at a similar pixel width: a 120-column terminal shows two
+`standard` columns, and an 80-column terminal shows one. Grid rows are the same
+unit as a fixed-grid panel's `height` (30px plus an 8px margin in Grafana).
+`fillScreen`, `fitContent`, and minimum/maximum height settings are ignored.
 
 ## Export From Grafana
 

@@ -24,7 +24,7 @@ containers:
 grafatui --prometheus-url http://localhost:9090 --grafana-json ./dashboard.json
 ```
 
-For V2 dashboards that use auto-grid, repeat, conditional rendering,
+For V2 dashboards that use repeat, conditional rendering,
 nested non-empty layout variables, or library panels, use the Classic export
 fallback: open **Export as code → Advanced options**, set **Model** to
 **Classic**, then download or copy the JSON. V2 resources can be imported as

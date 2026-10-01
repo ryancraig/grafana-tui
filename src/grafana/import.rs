@@ -253,9 +253,48 @@ fn import_layout_nodes(
                     crate::dashboard::DashboardTabs::new(id, tabs),
                 ));
             }
+            model::LayoutNode::AutoGrid(grid) => {
+                let mut panels = Vec::with_capacity(grid.panels.len());
+                for panel in grid.panels {
+                    if let Some(index) = import_panel(panel, out)? {
+                        panels.push(index);
+                    }
+                }
+                if !panels.is_empty() {
+                    items.push(crate::dashboard::DashboardLayoutItem::AutoGrid(
+                        crate::dashboard::DashboardAutoGrid {
+                            panels,
+                            max_columns: grid.max_columns,
+                            min_column_width: auto_grid_column_cells(grid.column_width_px),
+                            row_height: auto_grid_row_units(grid.row_height_px),
+                        },
+                    ));
+                }
+            }
         }
     }
     Ok(items)
+}
+
+/// Grafana CSS pixels per terminal column, used to size auto grid columns.
+///
+/// This is Grafana's 8px design-system spacing unit, close to a typical monospace
+/// cell width, so column counts match what Grafana shows at a similar pixel width.
+const AUTO_GRID_PX_PER_COLUMN: f64 = 8.0;
+/// Height of one fixed-grid unit in Grafana: a 30px cell plus its 8px margin.
+const GRID_UNIT_PX: f64 = 38.0;
+const GRID_MARGIN_PX: f64 = 8.0;
+
+fn auto_grid_column_cells(width_px: f64) -> u16 {
+    (width_px / AUTO_GRID_PX_PER_COLUMN).round().clamp(1.0, f64::from(u16::MAX)) as u16
+}
+
+/// Converts a pixel height to the fixed-grid units used by `GridPos::h`, where `h`
+/// units span `h * 30px + (h - 1) * 8px`.
+fn auto_grid_row_units(height_px: f64) -> u16 {
+    ((height_px + GRID_MARGIN_PX) / GRID_UNIT_PX)
+        .round()
+        .clamp(1.0, f64::from(u16::MAX)) as u16
 }
 
 #[derive(Default)]

@@ -192,6 +192,27 @@ fn validate_accepts_grafana13_yaml_export() {
 }
 
 #[test]
+fn validate_strict_accepts_auto_grid_example_and_grafana13_fixture() {
+    for path in [
+        example_dashboard("grafana_v2_autogrid.json"),
+        fixture("v2_grafana13_autogrid.json"),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+            .args(["--validate", "--strict", "--grafana-json"])
+            .arg(&path)
+            .output()
+            .unwrap();
+
+        assert!(
+            output.status.success(),
+            "{}: {}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
 fn validate_accepts_live_grafana_v2_compatibility_example() {
     let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
         .args(["--validate", "--format", "json", "--grafana-json"])

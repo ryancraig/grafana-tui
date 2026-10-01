@@ -16,7 +16,7 @@
 
 use crate::{
     app::{AppMode, AppState, PanelState},
-    dashboard::{DashboardItemId, DashboardLayoutItem, RowId, TabGroupId},
+    dashboard::{DashboardAutoGrid, DashboardItemId, DashboardLayoutItem, RowId, TabGroupId},
 };
 use ratatui::prelude::*;
 
@@ -361,6 +361,9 @@ fn project_layout_items(
         }
         match item {
             DashboardLayoutItem::Panel(_) => unreachable!(),
+            DashboardLayoutItem::AutoGrid(grid) => {
+                cursor_y = project_auto_grid(area, cursor_y, cell_h, grid, output);
+            }
             DashboardLayoutItem::Row(row) if row.hidden_header => {
                 cursor_y =
                     project_layout_items(&row.children, depth, area, cursor_y, cell_h, app, output);
@@ -523,6 +526,42 @@ fn project_panel_group(
         .saturating_add((extras.len().div_ceil(2) as u16).saturating_mul(12))
 }
 
+/// Lays out auto grid panels row-major in equal-width columns of `row_height` grid
+/// units each, returning the y coordinate below the last row.
+fn project_auto_grid(
+    area: Rect,
+    origin_y: u16,
+    cell_h: u16,
+    grid: &DashboardAutoGrid,
+    output: &mut Vec<DashboardRect>,
+) -> u16 {
+    if grid.panels.is_empty() {
+        return origin_y;
+    }
+    let columns = grid.column_count(area.width);
+    let column_rects = Layout::horizontal(vec![
+        Constraint::Ratio(1, u32::from(columns));
+        usize::from(columns)
+    ])
+    .split(Rect::new(area.x, origin_y, area.width, 1));
+    let row_height = grid.row_height.saturating_mul(cell_h);
+    for (position, &index) in grid.panels.iter().enumerate() {
+        let row = u16::try_from(position / usize::from(columns)).unwrap_or(u16::MAX);
+        let column = &column_rects[position % usize::from(columns)];
+        output.push(panel_rect(
+            index,
+            Rect::new(
+                column.x,
+                origin_y.saturating_add(row.saturating_mul(row_height)),
+                column.width,
+                row_height,
+            ),
+        ));
+    }
+    let rows = u16::try_from(grid.panels.len().div_ceil(usize::from(columns))).unwrap_or(u16::MAX);
+    origin_y.saturating_add(rows.saturating_mul(row_height))
+}
+
 fn panel_rect(index: usize, rect: Rect) -> DashboardRect {
     DashboardRect {
         id: DashboardItemId::Panel(index),
@@ -604,8 +643,8 @@ mod tests {
     use crate::{
         app::{GridUnit, PanelOptions, PanelType, YAxisMode},
         dashboard::{
-            DashboardItemId, DashboardLayout, DashboardLayoutItem, DashboardRow, DashboardTab,
-            DashboardTabs, RowId, TabGroupId,
+            DashboardAutoGrid, DashboardItemId, DashboardLayout, DashboardLayoutItem,
+            DashboardRow, DashboardTab, DashboardTabs, RowId, TabGroupId,
         },
         export::ExportOptions,
         prom::PromClient,
@@ -729,6 +768,93 @@ mod tests {
             rects
                 .iter()
                 .all(|item| item.id != DashboardItemId::Panel(1))
+        );
+    }
+
+    fn auto_grid_app(panel_count: usize, trailing_row: bool) -> AppState {
+        let mut items = vec![DashboardLayoutItem::AutoGrid(DashboardAutoGrid {
+            panels: (0..panel_count).collect(),
+            max_columns: 3,
+            min_column_width: 56,
+            row_height: 2,
+        })];
+        if trailing_row {
+            items.push(DashboardLayoutItem::Row(DashboardRow::new(
+                RowId::new(0),
+                "After",
+                true,
+                false,
+                vec![],
+            )));
+        }
+        app_with(
+            (0..panel_count)
+                .map(|index| panel(&format!("Panel {index}"), None))
+                .collect(),
+            DashboardLayout::new(items),
+        )
+    }
+
+    fn panel_rects(rects: &[DashboardRect]) -> Vec<Rect> {
+        rects
+            .iter()
+            .filter(|item| matches!(item.kind, DashboardRectKind::Panel { .. }))
+            .map(|item| item.rect)
+            .collect()
+    }
+
+    #[test]
+    fn auto_grid_reflows_columns_with_terminal_width() {
+        let app = auto_grid_app(4, false);
+
+        // The dashboard body is the terminal width minus a one-cell border, and each
+        // 56-cell column needs a one-cell gap: 118 cells fit two, 198 fit three.
+        for (width, columns) in [(80, 1), (120, 2), (200, 3)] {
+            let area = Rect::new(0, 0, width, 50);
+            let inner = dashboard_inner_area(area);
+            let rects = panel_rects(&visible_dashboard_rects(area, &app));
+
+            assert_eq!(rects.len(), 4, "{width}");
+            let first_row: Vec<_> = rects.iter().filter(|rect| rect.y == rects[0].y).collect();
+            assert_eq!(first_row.len(), columns, "{width}");
+            assert_eq!(first_row[0].x, inner.x, "{width}");
+            assert_eq!(first_row.last().unwrap().right(), inner.right(), "{width}");
+            // Row-major order: the panel after a full row starts the next one.
+            assert_eq!(rects[columns].x, inner.x, "{width}");
+            assert_eq!(rects[columns].y, rects[0].bottom(), "{width}");
+            // Two grid units of three rows each.
+            assert!(rects.iter().all(|rect| rect.height == 6), "{width}");
+        }
+    }
+
+    #[test]
+    fn auto_grid_stretches_panels_when_fewer_than_columns() {
+        let app = auto_grid_app(2, false);
+        let area = Rect::new(0, 0, 200, 50);
+        let inner = dashboard_inner_area(area);
+
+        let rects = panel_rects(&visible_dashboard_rects(area, &app));
+
+        assert_eq!(rects.len(), 2);
+        assert_eq!(rects[0].y, rects[1].y);
+        assert_eq!(rects[0].width + rects[1].width, inner.width);
+        assert_eq!(rects[1].right(), inner.right());
+    }
+
+    #[test]
+    fn content_after_an_auto_grid_starts_below_its_last_row() {
+        let app = auto_grid_app(3, true);
+
+        let rects = visible_dashboard_rects(Rect::new(0, 0, 120, 50), &app);
+
+        let panels = panel_rects(&rects);
+        let row = rects
+            .iter()
+            .find(|item| item.id == DashboardItemId::Row(RowId::new(0)))
+            .unwrap();
+        assert_eq!(
+            row.rect.y,
+            panels.iter().map(|rect| rect.bottom()).max().unwrap()
         );
     }
 

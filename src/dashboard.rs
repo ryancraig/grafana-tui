@@ -28,6 +28,35 @@ pub(crate) enum DashboardLayoutItem {
     Row(DashboardRow),
     Tabs(DashboardTabs),
     Panel(usize),
+    AutoGrid(DashboardAutoGrid),
+}
+
+/// Panels flowed row-major into equal-width columns (Grafana V2 `AutoGridLayout`).
+///
+/// Unlike rows and tabs, an auto grid is not selectable and has no header: its
+/// panels belong to the enclosing container, and only their placement differs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DashboardAutoGrid {
+    pub(crate) panels: Vec<usize>,
+    pub(crate) max_columns: u16,
+    /// Minimum column width in terminal cells.
+    pub(crate) min_column_width: u16,
+    /// Row height in dashboard grid units, the unit of `GridPos::h`.
+    pub(crate) row_height: u16,
+}
+
+impl DashboardAutoGrid {
+    /// Number of columns for `width` cells.
+    ///
+    /// Mirrors Grafana's CSS `repeat(auto-fit, minmax(...))` track list with a
+    /// one-cell gap: as many minimum-width columns as fit, at most `max_columns`,
+    /// and never more than there are panels because `auto-fit` collapses empty
+    /// tracks so the remaining panels stretch.
+    pub(crate) fn column_count(&self, width: u16) -> u16 {
+        let fitting = width.saturating_add(1) / self.min_column_width.saturating_add(1);
+        let panels = u16::try_from(self.panels.len()).unwrap_or(u16::MAX);
+        fitting.min(self.max_columns).min(panels).max(1)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -264,7 +293,7 @@ fn find_tabs(items: &[DashboardLayoutItem], id: TabGroupId) -> Option<&Dashboard
                     return Some(found);
                 }
             }
-            DashboardLayoutItem::Panel(_) => {}
+            DashboardLayoutItem::Panel(_) | DashboardLayoutItem::AutoGrid(_) => {}
         }
     }
     None
@@ -288,7 +317,7 @@ fn find_tabs_mut(items: &mut [DashboardLayoutItem], id: TabGroupId) -> Option<&m
                     return Some(found);
                 }
             }
-            DashboardLayoutItem::Panel(_) => {}
+            DashboardLayoutItem::Panel(_) | DashboardLayoutItem::AutoGrid(_) => {}
         }
     }
     None
@@ -325,6 +354,11 @@ fn collect_visible_items(
                     collect_visible_items(&tab.children, depth + 1, visible);
                 }
             }
+            DashboardLayoutItem::AutoGrid(grid) => visible.extend(
+                grid.panels
+                    .iter()
+                    .map(|&index| VisibleDashboardItem::panel(index, depth)),
+            ),
         }
     }
 }
@@ -360,6 +394,15 @@ fn find_ancestors(
                     }
                 }
                 ancestors.pop();
+            }
+            DashboardLayoutItem::AutoGrid(grid) => {
+                if grid
+                    .panels
+                    .iter()
+                    .any(|&index| target == DashboardItemId::Panel(index))
+                {
+                    return true;
+                }
             }
             DashboardLayoutItem::Panel(_) => {}
         }
@@ -510,6 +553,84 @@ mod tests {
         assert_eq!(
             layout.visible_items(),
             vec![VisibleDashboardItem::panel(0, 0)]
+        );
+    }
+
+    fn auto_grid(panels: Vec<usize>) -> DashboardLayoutItem {
+        DashboardLayoutItem::AutoGrid(DashboardAutoGrid {
+            panels,
+            max_columns: 3,
+            min_column_width: 10,
+            row_height: 4,
+        })
+    }
+
+    #[test]
+    fn auto_grid_column_count_fits_minimum_widths_up_to_limits() {
+        let DashboardLayoutItem::AutoGrid(grid) = auto_grid(vec![0, 1, 2, 3]) else {
+            unreachable!()
+        };
+
+        // Each 10-cell column after the first also needs a one-cell gap.
+        for (width, columns) in [(0, 1), (10, 1), (20, 1), (21, 2), (32, 3), (500, 3)] {
+            assert_eq!(grid.column_count(width), columns, "{width}");
+        }
+        let two_panels = DashboardAutoGrid {
+            panels: vec![0, 1],
+            ..grid
+        };
+        assert_eq!(two_panels.column_count(500), 2);
+    }
+
+    #[test]
+    fn auto_grid_panels_are_visible_at_the_enclosing_depth() {
+        let layout = DashboardLayout::new(vec![
+            auto_grid(vec![0, 1]),
+            DashboardLayoutItem::Row(DashboardRow::new(
+                RowId::new(0),
+                "Row",
+                false,
+                false,
+                vec![auto_grid(vec![2])],
+            )),
+        ]);
+
+        assert_eq!(
+            layout.visible_items(),
+            [
+                VisibleDashboardItem::panel(0, 0),
+                VisibleDashboardItem::panel(1, 0),
+                VisibleDashboardItem {
+                    id: DashboardItemId::Row(RowId::new(0)),
+                    depth: 0,
+                },
+                VisibleDashboardItem::panel(2, 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn collapsing_a_row_hides_its_auto_grid_and_selects_the_row() {
+        let mut layout = DashboardLayout::new(vec![DashboardLayoutItem::Row(DashboardRow::new(
+            RowId::new(0),
+            "Row",
+            false,
+            false,
+            vec![auto_grid(vec![0, 1])],
+        ))]);
+
+        layout.set_row_collapsed(RowId::new(0), true);
+
+        assert_eq!(layout.visible_panel_indices(), Vec::<usize>::new());
+        assert_eq!(
+            layout.nearest_visible_ancestor(DashboardItemId::Panel(1)),
+            Some(DashboardItemId::Row(RowId::new(0)))
+        );
+        assert_eq!(
+            layout.set_row_collapsed(RowId::new(0), false),
+            Some(LayoutChange {
+                newly_visible_panels: vec![0, 1]
+            })
         );
     }
 

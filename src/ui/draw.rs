@@ -706,13 +706,19 @@ mod tests {
     }
 
     fn v2_compatibility_app() -> AppState {
+        v2_example_app("grafana_v2_compatibility.json")
+    }
+
+    /// Loads an example dashboard with its imported layout and a mock series per panel.
+    fn v2_example_app(name: &str) -> AppState {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("examples")
             .join("dashboards")
-            .join("grafana_v2_compatibility.json");
+            .join(name);
         let dashboard = crate::grafana::load_grafana_dashboard(&path).unwrap();
         let skipped_panels = dashboard.skipped_panels;
         let title = dashboard.title;
+        let layout = dashboard.layout;
         let panels = dashboard
             .queries
             .into_iter()
@@ -728,7 +734,7 @@ mod tests {
                         ],
                         visible: true,
                     }],
-                    PanelType::Stat => vec![SeriesView {
+                    _ => vec![SeriesView {
                         name: "Memory".to_string(),
                         value: Some(128.0),
                         points: vec![
@@ -738,7 +744,6 @@ mod tests {
                         ],
                         visible: true,
                     }],
-                    other => panic!("unexpected V2 example panel type: {other:?}"),
                 };
                 PanelState {
                     title: panel.title,
@@ -778,6 +783,7 @@ mod tests {
             "dashed-line".to_string(),
             ExportOptions::default(),
         );
+        app.apply_layout(layout);
         app.view_end_ts = 1_700_000_000;
         app
     }
@@ -954,6 +960,34 @@ mod tests {
                     .fg,
                 app.theme.border
             );
+        }
+    }
+
+    #[test]
+    fn v2_example_auto_grid_reflows_at_supported_viewports() {
+        for (width, height, columns) in [(120, 30, 2), (80, 24, 1)] {
+            let mut app = v2_example_app("grafana_v2_autogrid.json");
+            assert_eq!(app.panels.len(), 5);
+            assert!(app.panels.iter().all(|panel| panel.grid.is_none()));
+
+            let rects = crate::ui::visible_panel_rects(Rect::new(0, 0, width, height), &app);
+            let first_row: Vec<_> = rects
+                .iter()
+                .filter(|(rect, _)| rect.y == rects[0].0.y)
+                .collect();
+            assert_eq!(first_row.len(), columns, "{width}x{height}");
+            assert_eq!(rects[0].1, 0);
+            assert!(rects.windows(2).all(|pair| pair[0].1 < pair[1].1));
+
+            let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+            terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+            let text = terminal_text(&terminal);
+            let titles_share_a_line = text
+                .lines()
+                .any(|line| line.contains("Targets up") && line.contains("Request rate"));
+            assert_eq!(titles_share_a_line, columns > 1, "{text}");
+            assert!(text.contains("panels=5 (skipped 0)"), "{text}");
+            assert!(!text.contains("No panels"));
         }
     }
 

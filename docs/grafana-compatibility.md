@@ -19,7 +19,8 @@ and what Grafatui currently supports.
 ## Dashboard Schema Models
 
 Grafatui imports the non-resource Classic JSON model and recursive `GridLayout`,
-`RowsLayout`, and `TabsLayout` containers from the V2 Resource JSON model. In Grafana 13, use
+`AutoGridLayout`, `RowsLayout`, and `TabsLayout` containers from the V2 Resource
+model. In Grafana 13, use
 **Export as code → Advanced options → Model: Classic** as the fallback for
 unsupported advanced V2 dashboards. See the
 [dashboard import guide](grafana-dashboard-import.md) for detailed steps.
@@ -39,21 +40,23 @@ unsupported advanced V2 dashboards. See the
 | Grafana 13 **Export as code** and API output | ✅ Supported | Absent or `null` lists and objects (`links`, `transformations`, `options`, `overrides`, `variables`, …) are treated as empty, as Grafana's API serializes them |
 | **Share dashboard with another instance** exports | ✅ Supported | Queries without a `datasource` use the configured Prometheus; cleared query variable selections resolve dynamically |
 | `spec.layout.kind: GridLayout` | ✅ Supported | `GridLayoutItem` coordinates map to Grafatui's fixed 24-column grid |
-| `spec.layout.kind: RowsLayout` | ✅ Supported | Nested `GridLayout` and `RowsLayout` children preserve row titles, nesting, collapsed state, and hidden-header transparency |
-| `spec.layout.kind: TabsLayout` | ✅ Supported | Nested grid, row, and tab children preserve titles and show one active tab per group |
+| `spec.layout.kind: AutoGridLayout` | ✅ Supported | Panels flow row-major into equal-width columns that reflow with the terminal width; see [auto grid sizing](grafana-dashboard-import.md#auto-grid-layouts) |
+| `AutoGridLayout` `maxColumnCount`, `columnWidthMode`/`columnWidth`, `rowHeightMode`/`rowHeight` | ✅ Supported | Grafana's named and custom pixel sizes are converted to terminal cells and grid rows |
+| `AutoGridLayout` `fillScreen`, `fitContent`, min/max height modes | ⛔ Not Applicable | Accepted and ignored |
+| `spec.layout.kind: RowsLayout` | ✅ Supported | Nested `GridLayout`, `AutoGridLayout`, and `RowsLayout` children preserve row titles, nesting, collapsed state, and hidden-header transparency |
+| `spec.layout.kind: TabsLayout` | ✅ Supported | Nested grid, auto grid, row, and tab children preserve titles and show one active tab per group |
 | Inline `Panel` elements | ✅ Supported | Supported panel visualization groups map through the Classic-equivalent importer |
 | Prometheus `PanelQuery` queries | ✅ Supported | `prometheus`, `grafana-amazonprometheus-datasource`, and `grafana-azureprometheus-datasource` query groups are imported; other datasources emit import diagnostics and are skipped |
 | `RowsLayoutRow.spec.fillScreen` | ⛔ Not Applicable | Accepted and ignored; terminal rows size to their content |
 | Top-level `spec.variables` | 🔶 Partial | Supported variable kinds map to Grafatui variables; unsupported kinds emit diagnostics |
 | `spec.timeSettings.autoRefresh` | ✅ Supported | Used as the dashboard refresh interval |
 | `vizConfig.spec.fieldConfig` | 🔶 Partial | The supported Classic-equivalent field configuration subset applies |
-| Auto-grid layouts | ❌ Not Implemented | Rejected as fatal import errors |
-| Repeated grid items and row repeat | ❌ Not Implemented | Rejected as fatal import errors |
+| Repeated grid items, auto grid items, rows, and tabs | ❌ Not Implemented | Rejected as fatal import errors |
 | Conditional rendering and non-empty nested variables | ❌ Not Implemented | Deferred V2 features |
 | `LibraryPanel` elements | ❌ Not Implemented | Exports reference library panels by uid only; they are skipped with a diagnostic. Export with **Share dashboard with another instance** enabled to inline them |
 
 V2 resources are accepted as JSON or YAML. Use a Classic export for any advanced
-V2 dashboard outside this grid, rows, and tabs subset.
+V2 dashboard outside this grid, auto grid, rows, and tabs subset.
 
 ---
 

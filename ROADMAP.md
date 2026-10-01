@@ -209,7 +209,7 @@ with a clear import error rather than silently changing the dashboard.
 | **V2 Resource JSON compatibility** | `apiVersion: dashboard.grafana.app/v2` with a `GridLayout` | Imports Grafana 13's default JSON format without requiring a Classic export | 🔴 | ✅ |
 | **Rows layout** | `RowsLayout` and nested row layouts | Preserves dashboard grouping and collapsed sections | 🔴 | ✅ |
 | **Tabs layout** | `TabsLayout` and nested tabs | Preserves tabbed dashboard organization | 🔴 | ✅ |
-| **Auto-grid layout** | `AutoGridLayout` | Preserves automatic panel placement and sizing | 🔴 | 📋 |
+| **Auto-grid layout** | `AutoGridLayout` | Preserves automatic panel placement and sizing | 🔴 | ✅ |
 | **Repeat and dynamic layouts** | Layout and element `repeat` settings | Expands panels or groups from variable values | 🔴 | 📋 |
 | **Conditional rendering** | `conditionalRendering` on supported containers | Shows or hides content using v2 conditions | 🔴 | 📋 |
 | **Nested layout variables** | Variables scoped to rows and tabs | Preserves local variable scope in dynamic dashboards | 🔴 | 📋 |
