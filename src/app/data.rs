@@ -16,6 +16,7 @@
 
 use super::state::{GraphOptions, PanelOptions, PanelState, PanelType, YAxisMode};
 use anyhow::Result;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -27,35 +28,20 @@ pub(crate) fn expand_expr(
     step: Duration,
     vars: &HashMap<String, String>,
 ) -> String {
-    let mut s = expr.to_string();
-
     let interval = interval_duration(range, step);
-    s = replace_builtin(&s, "__interval_ms", &interval.as_millis().to_string());
-    s = replace_builtin(&s, "__interval", &format_prom_duration(interval));
-    s = replace_builtin(&s, "__range_ms", &range.as_millis().to_string());
-    s = replace_builtin(&s, "__range_s", &range.as_secs().to_string());
-    s = replace_builtin(&s, "__range", &format_prom_duration(range));
-
-    let interval_secs = std::cmp::max(step.as_secs() * 4, 60);
-    let interval_param = format!("{}s", interval_secs);
-    s = replace_builtin(
-        &s,
-        "__rate_interval_ms",
-        &(interval_secs * 1000).to_string(),
-    );
-    s = replace_builtin(&s, "__rate_interval", &interval_param);
-
-    for (k, v) in vars {
-        s = s.replace(&format!("${{{}}}", k), v);
-        s = s.replace(&format!("${}", k), v);
-    }
-
-    s
-}
-
-fn replace_builtin(expr: &str, name: &str, value: &str) -> String {
-    expr.replace(&format!("${{{}}}", name), value)
-        .replace(&format!("${}", name), value)
+    let rate_interval_secs = std::cmp::max(step.as_secs() * 4, 60);
+    super::variables::substitute_variables(expr, |name| {
+        Some(match name {
+            "__interval" => Cow::Owned(format_prom_duration(interval)),
+            "__interval_ms" => Cow::Owned(interval.as_millis().to_string()),
+            "__range" => Cow::Owned(format_prom_duration(range)),
+            "__range_s" => Cow::Owned(range.as_secs().to_string()),
+            "__range_ms" => Cow::Owned(range.as_millis().to_string()),
+            "__rate_interval" => Cow::Owned(format!("{rate_interval_secs}s")),
+            "__rate_interval_ms" => Cow::Owned((rate_interval_secs * 1000).to_string()),
+            _ => Cow::Borrowed(vars.get(name)?.as_str()),
+        })
+    })
 }
 
 fn interval_duration(range: Duration, step: Duration) -> Duration {

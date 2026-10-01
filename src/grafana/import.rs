@@ -18,8 +18,15 @@ pub(super) fn finish(dashboard: model::Dashboard) -> Result<DashboardImport> {
         diagnostics,
         ..DashboardImport::default()
     };
+    let variable_names = variables
+        .iter()
+        .map(|variable| variable.name.clone())
+        .collect();
     import_variables(&mut out, variables);
-    let mut ids = LayoutIds::default();
+    let mut ids = LayoutIds {
+        variable_names,
+        ..LayoutIds::default()
+    };
     out.layout =
         crate::dashboard::DashboardLayout::new(import_layout_nodes(layout, &mut out, &mut ids)?);
     Ok(out)
@@ -27,38 +34,44 @@ pub(super) fn finish(dashboard: model::Dashboard) -> Result<DashboardImport> {
 
 fn import_variables(out: &mut DashboardImport, variables: Vec<model::Variable>) {
     for variable in variables {
-        let value = variable
-            .current
-            .as_ref()
-            .and_then(|current| current.value.as_ref())
-            .or(variable
-                .current
-                .as_ref()
-                .and_then(|current| current.text.as_ref()));
-        if let Some(value) = value {
-            let mut value = match value {
-                serde_json::Value::String(value) => value.clone(),
-                serde_json::Value::Array(values) => values
-                    .iter()
-                    .find_map(|value| value.as_str())
-                    .unwrap_or("")
-                    .to_string(),
-                serde_json::Value::Number(value) => value.to_string(),
-                _ => String::new(),
-            };
-            if value == "$__all" {
-                value = variable
-                    .all_value
-                    .clone()
-                    .unwrap_or_else(|| ".*".to_string());
+        let select_all = current_is_all(variable.current.as_ref());
+        let regex_values = variable.multi || variable.include_all;
+        if regex_values {
+            out.regex_vars.insert(variable.name.clone());
+        }
+        let mut selected = selected_values(variable.current.as_ref());
+        if selected.is_empty() && !select_all && variable.kind.as_deref() != Some("query") {
+            // Grafana selects the first option when nothing is saved.
+            selected.extend(variable.options.first().cloned());
+        }
+        if select_all {
+            // `All` covers every option; known options let repeats iterate them now,
+            // and dynamic query variables fill them in when they resolve.
+            if !variable.options.is_empty() {
+                out.var_values
+                    .insert(variable.name.clone(), variable.options.clone());
             }
-            if !value.is_empty() {
-                out.vars.insert(variable.name.clone(), value);
-            }
+            let value = variable.all_value.clone().unwrap_or_else(|| {
+                if variable.options.is_empty() {
+                    ".*".to_string()
+                } else {
+                    crate::app::format_prometheus_values(&variable.options, true)
+                }
+            });
+            out.vars.insert(variable.name.clone(), value);
+        } else if !selected.is_empty() {
+            out.var_values
+                .insert(variable.name.clone(), selected.clone());
+            out.vars.insert(
+                variable.name.clone(),
+                crate::app::format_prometheus_values(&selected, regex_values),
+            );
         }
 
+        // An explicit multi-value selection is kept as chosen; otherwise query
+        // variables resolve against Prometheus like Grafana does on load.
         if variable.kind.as_deref() == Some("query")
-            && !current_is_all(variable.current.as_ref())
+            && selected.len() <= 1
             && let (Some(query), Some(query_path)) = (variable.query, variable.query_path)
         {
             out.query_vars.push(TemplateQueryVar {
@@ -66,14 +79,56 @@ fn import_variables(out: &mut DashboardImport, variables: Vec<model::Variable>) 
                 query,
                 regex: variable.regex.filter(|regex| !regex.trim().is_empty()),
                 query_path,
+                select_all,
+                all_value: variable.all_value,
+                regex_values,
             });
         }
     }
 }
 
+/// Non-empty values selected by a variable's `current` value, or its text as a
+/// fallback, excluding Grafana's `$__all` marker.
+fn selected_values(current: Option<&model::VariableCurrent>) -> Vec<String> {
+    let Some(current) = current else {
+        return Vec::new();
+    };
+    let values = |value: Option<&serde_json::Value>| -> Vec<String> {
+        let values = match value {
+            Some(serde_json::Value::String(value)) => vec![value.clone()],
+            Some(serde_json::Value::Number(value)) => vec![value.to_string()],
+            Some(serde_json::Value::Array(values)) => values
+                .iter()
+                .filter_map(|value| match value {
+                    serde_json::Value::String(value) => Some(value.clone()),
+                    serde_json::Value::Number(value) => Some(value.to_string()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        values
+            .into_iter()
+            .filter(|value| !value.is_empty() && value != "$__all")
+            .collect()
+    };
+    let selected = values(current.value.as_ref());
+    if selected.is_empty() {
+        values(current.text.as_ref())
+    } else {
+        selected
+    }
+}
+
+/// Whether `All` is selected: the value is Grafana's `$__all` marker, or, when
+/// there is no value, the text says `All`. An explicit value list wins over text.
 fn current_is_all(current: Option<&model::VariableCurrent>) -> bool {
-    current.is_some_and(|current| {
-        value_is_all(current.value.as_ref()) || value_is_all(current.text.as_ref())
+    current.is_some_and(|current| match current.value.as_ref() {
+        None | Some(serde_json::Value::Null) => value_is_all(current.text.as_ref()),
+        Some(serde_json::Value::String(value)) if value.is_empty() => {
+            value_is_all(current.text.as_ref())
+        }
+        value => value_is_all(value),
     })
 }
 
@@ -220,14 +275,21 @@ fn import_layout_nodes(
     let mut items = Vec::new();
     for node in nodes {
         match node {
-            model::LayoutNode::Panel(panel) => {
+            model::LayoutNode::Panel(mut panel) => {
+                let repeat = ids.checked_repeat(panel.repeat.take(), &panel.source_path, out);
                 if let Some(index) = import_panel(panel, out)? {
+                    if let Some(repeat) = repeat {
+                        out.repeats.panels.insert(index, repeat);
+                    }
                     items.push(crate::dashboard::DashboardLayoutItem::Panel(index));
                 }
             }
             model::LayoutNode::Row(row) => {
                 let id = crate::dashboard::RowId::new(ids.next_row);
                 ids.next_row += 1;
+                if let Some(repeat) = ids.checked_repeat(row.repeat, &row.source_path, out) {
+                    out.repeats.rows.insert(id, repeat);
+                }
                 let children = import_layout_nodes(row.children, out, ids)?;
                 items.push(crate::dashboard::DashboardLayoutItem::Row(
                     crate::dashboard::DashboardRow::new(
@@ -243,7 +305,10 @@ fn import_layout_nodes(
                 let id = crate::dashboard::TabGroupId::new(ids.next_tabs);
                 ids.next_tabs += 1;
                 let mut tabs = Vec::with_capacity(group.tabs.len());
-                for tab in group.tabs {
+                for (index, tab) in group.tabs.into_iter().enumerate() {
+                    if let Some(repeat) = ids.checked_repeat(tab.repeat, &tab.source_path, out) {
+                        out.repeats.tabs.insert((id, index), repeat);
+                    }
                     tabs.push(crate::dashboard::DashboardTab {
                         title: tab.title,
                         children: import_layout_nodes(tab.children, out, ids)?,
@@ -255,8 +320,12 @@ fn import_layout_nodes(
             }
             model::LayoutNode::AutoGrid(grid) => {
                 let mut panels = Vec::with_capacity(grid.panels.len());
-                for panel in grid.panels {
+                for mut panel in grid.panels {
+                    let repeat = ids.checked_repeat(panel.repeat.take(), &panel.source_path, out);
                     if let Some(index) = import_panel(panel, out)? {
+                        if let Some(repeat) = repeat {
+                            out.repeats.panels.insert(index, repeat);
+                        }
                         panels.push(index);
                     }
                 }
@@ -301,6 +370,32 @@ fn auto_grid_row_units(height_px: f64) -> u16 {
 struct LayoutIds {
     next_row: usize,
     next_tabs: usize,
+    variable_names: std::collections::HashSet<String>,
+}
+
+impl LayoutIds {
+    /// Keeps a repeat whose variable the dashboard defines; otherwise the item is
+    /// shown once, as Grafana does, with a diagnostic.
+    fn checked_repeat(
+        &self,
+        repeat: Option<model::Repeat>,
+        source_path: &str,
+        out: &mut DashboardImport,
+    ) -> Option<model::Repeat> {
+        let repeat = repeat?;
+        if self.variable_names.contains(&repeat.variable) {
+            return Some(repeat);
+        }
+        out.diagnostics.push(ImportDiagnostic::new(
+            "unknown_repeat_variable",
+            source_path,
+            format!(
+                "repeat variable `{}` is not defined; the item is shown once",
+                repeat.variable
+            ),
+        ));
+        None
+    }
 }
 
 fn query_mode_for_target(

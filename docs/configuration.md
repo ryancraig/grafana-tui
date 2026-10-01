@@ -17,7 +17,7 @@ Grafatui can be configured with CLI options, a TOML configuration file, or both.
 | `--format <FORMAT>` | Output format for `--validate`: `text` or `json` | `text` |
 | `--range <DURATION>` | Time range window, such as `5m`, `1h`, or `24h` | `5m` |
 | `--step <DURATION>` | Query step resolution, such as `5s` or `30s` | `5s` |
-| `--var <KEY=VALUE>` | Override a dashboard variable | none |
+| `--var <KEY=VALUE>` | Override a dashboard variable; repeat a key to select several values | none |
 | `--theme <NAME>` | UI theme | `default` |
 | `--threshold-marker <MARKER>` | Marker for threshold lines | `dashed` |
 | `--autogrid-color <COLOR>` | Color for automatic graph grid lines and labels | `dark-gray` |

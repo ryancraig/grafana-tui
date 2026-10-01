@@ -15,6 +15,7 @@
  */
 
 use crate::app::data::{downsample, expand_expr, format_legend};
+use crate::app::template::{DashboardTemplate, Scope, Variables, scoped_vars};
 use crate::app::variables::refresh_query_variables;
 use crate::dashboard::{DashboardItemId, DashboardLayout, RowId, TabGroupId};
 use crate::export::{ExportOptions, RecordingState};
@@ -168,7 +169,7 @@ pub(crate) struct SeriesView {
 }
 
 /// Grid positioning unit (Grafana style).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct GridUnit {
     pub(crate) x: i32,
     pub(crate) y: i32,
@@ -297,8 +298,16 @@ pub(crate) struct AppState {
     pub(crate) title: String,
     /// Whether to show the debug bar.
     pub(crate) debug_bar: bool,
-    /// Template variables (key -> value).
+    /// Template variables (key -> value), formatted for queries.
     pub(crate) vars: HashMap<String, String>,
+    /// Raw selected values per variable, which repeats iterate.
+    pub(crate) var_values: HashMap<String, Vec<String>>,
+    /// Multi-value and include-all variables, whose values are regex-escaped.
+    pub(crate) regex_vars: HashSet<String>,
+    /// Imported layout from which `layout` and repeat copies are rebuilt.
+    pub(crate) template: Option<DashboardTemplate>,
+    /// Variable values bound by repeats, for panels inside repeated items.
+    pub(crate) panel_scopes: HashMap<usize, Scope>,
     /// Prometheus-backed template variables imported from Grafana.
     pub(crate) query_vars: Vec<TemplateQueryVar>,
     /// Count of panels skipped during import.
@@ -376,6 +385,10 @@ impl AppState {
             title,
             debug_bar: false,
             vars: HashMap::new(),
+            var_values: HashMap::new(),
+            regex_vars: HashSet::new(),
+            template: None,
+            panel_scopes: HashMap::new(),
             query_vars: Vec::new(),
             skipped_panels,
             layout,
@@ -436,10 +449,62 @@ impl AppState {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn apply_layout(&mut self, layout: DashboardLayout) {
         self.layout = layout;
         self.selected_item = self.layout.first_visible();
         self.scroll_to_selected_panel();
+    }
+
+    /// Shows an imported dashboard, expanding repeats for the current variables.
+    pub(crate) fn apply_template(&mut self, template: DashboardTemplate) {
+        self.template = Some(template);
+        self.materialize_layout();
+        self.selected_item = self.layout.first_visible();
+        self.scroll_to_selected_panel();
+    }
+
+    /// Rebuilds `layout` from the template for the current variable values.
+    ///
+    /// Repeat copies are appended to `panels` the first time they appear and keep
+    /// their index afterwards; rows and tab groups keep their open state, and the
+    /// selection moves to its nearest visible ancestor if it disappeared.
+    fn materialize_layout(&mut self) {
+        let Some(template) = self.template.as_mut() else {
+            return;
+        };
+        let materialized = template.materialize(&Variables {
+            formatted: &self.vars,
+            values: &self.var_values,
+        });
+
+        for instance in &materialized.panels {
+            while self.panels.len() <= instance.index {
+                let mut copy = self.panels[instance.source].clone();
+                copy.series.clear();
+                copy.last_error = None;
+                copy.last_url = None;
+                copy.last_samples = 0;
+                self.panels.push(copy);
+            }
+            let panel = &mut self.panels[instance.index];
+            panel.title.clone_from(&instance.title);
+            panel.grid = instance.grid;
+        }
+        self.panel_scopes = materialized
+            .panels
+            .into_iter()
+            .filter(|instance| !instance.scope.is_empty())
+            .map(|instance| (instance.index, instance.scope))
+            .collect();
+
+        let mut layout = materialized.layout;
+        layout.restore_state(&self.layout);
+        self.layout = layout;
+        self.selected_item = self
+            .selected_item
+            .and_then(|id| self.layout.nearest_visible_ancestor(id))
+            .or_else(|| self.layout.first_visible());
     }
 
     pub(crate) fn selected_panel_index(&self) -> Option<usize> {
@@ -680,6 +745,7 @@ impl AppState {
         let end_ts = chrono::Utc::now().timestamp() - self.time_offset.as_secs() as i64;
         let annotation_context =
             crate::annotations::AnnotationRefreshContext::from_unix_window(end_ts, range);
+        let selected_values = self.var_values.clone();
         let annotation_refresh = self.annotations.refresh(&annotation_context);
         let prometheus_refresh = Self::refresh_prometheus_data(
             &self.prometheus,
@@ -688,15 +754,26 @@ impl AppState {
             step,
             end_ts,
             &mut self.vars,
+            &mut self.var_values,
+            &self.regex_vars,
+            &self.panel_scopes,
             &mut self.panels,
             &visible_panel_indices,
             true,
         );
         let (_, ()) = tokio::join!(annotation_refresh, prometheus_refresh);
 
+        self.view_end_ts = end_ts;
+        if self.template.is_some() && self.var_values != selected_values {
+            // Resolved variables changed which items repeat and their scopes, so
+            // panels fetched with the previous layout are fetched again.
+            self.materialize_layout();
+            let visible_panel_indices = self.visible_panel_indices();
+            self.refresh_panel_indices(&visible_panel_indices, false).await;
+        }
+
         self.reconcile_visible_annotation_targets();
 
-        self.view_end_ts = end_ts;
         self.last_refresh = Instant::now();
         Ok(())
     }
@@ -728,6 +805,9 @@ impl AppState {
             step,
             end_ts,
             &mut self.vars,
+            &mut self.var_values,
+            &self.regex_vars,
+            &self.panel_scopes,
             &mut self.panels,
             indices,
             refresh_variables,
@@ -743,24 +823,39 @@ impl AppState {
         step: Duration,
         end_ts: i64,
         vars: &mut HashMap<String, String>,
+        var_values: &mut HashMap<String, Vec<String>>,
+        regex_vars: &HashSet<String>,
+        panel_scopes: &HashMap<usize, Scope>,
         panels: &mut [PanelState],
         indices: &[usize],
         refresh_variables: bool,
     ) {
         if refresh_variables {
-            let _ =
-                refresh_query_variables(prometheus, query_vars, range, step, end_ts, vars).await;
+            let _ = refresh_query_variables(
+                prometheus,
+                query_vars,
+                range,
+                step,
+                end_ts,
+                vars,
+                var_values,
+            )
+            .await;
         }
 
         // Create a stream of futures for fetching panel data
+        let vars = &*vars;
         let indices = indices.iter().copied().collect::<HashSet<_>>();
         let mut futures = futures::stream::iter(
             panels
                 .iter_mut()
                 .enumerate()
-                .filter_map(|(index, panel)| indices.contains(&index).then_some(panel)),
+                .filter(|(index, _)| indices.contains(index)),
         )
-        .map(|p| Self::fetch_single_panel_data(prometheus, p, range, step, vars, end_ts))
+        .map(|(index, p)| {
+            let vars = scoped_vars(vars, panel_scopes.get(&index), regex_vars);
+            Self::fetch_single_panel_data(prometheus, p, range, step, vars, end_ts)
+        })
         .buffer_unordered(4); // Max 4 concurrent panel refreshes
 
         while let Some((p, results, url, err)) = futures.next().await {
@@ -778,7 +873,7 @@ impl AppState {
         p: &'a mut PanelState,
         range: Duration,
         step: Duration,
-        vars: &'a HashMap<String, String>,
+        vars: std::borrow::Cow<'a, HashMap<String, String>>,
         end_ts: i64,
     ) -> (
         &'a mut PanelState,
@@ -791,7 +886,7 @@ impl AppState {
         let mut error = None;
 
         for (i, expr) in p.exprs.iter().enumerate() {
-            let expr_expanded = expand_expr(expr, range, step, vars);
+            let expr_expanded = expand_expr(expr, range, step, &vars);
             let legend_fmt = p.legends.get(i).and_then(|x| x.as_ref());
             let query_mode = p.query_mode(i);
 
@@ -1039,6 +1134,147 @@ mod tests {
         app.select_next_item();
 
         assert_eq!(app.selected_item, None);
+    }
+
+    /// Serves Prometheus API requests from `respond` until the test ends,
+    /// recording each request target.
+    async fn mock_prometheus(
+        respond: fn(&str) -> &'static str,
+    ) -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&requests);
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let recorded = Arc::clone(&recorded);
+                tokio::spawn(async move {
+                    let mut request = Vec::new();
+                    let mut chunk = [0_u8; 1024];
+                    while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                        let read = socket.read(&mut chunk).await.unwrap();
+                        if read == 0 {
+                            return;
+                        }
+                        request.extend_from_slice(&chunk[..read]);
+                    }
+                    let request = String::from_utf8_lossy(&request);
+                    let target = request.split_whitespace().nth(1).unwrap_or("").to_string();
+                    let body = respond(&target);
+                    recorded.lock().unwrap().push(target);
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body,
+                    );
+                    socket.write_all(response.as_bytes()).await.unwrap();
+                });
+            }
+        });
+        (format!("http://{address}"), requests)
+    }
+
+    #[tokio::test]
+    async fn refresh_expands_repeats_over_resolved_variable_values() {
+        let (url, requests) = mock_prometheus(|target| {
+            if target.starts_with("/api/v1/label/job/values") {
+                r#"{"status":"success","data":["api","web.1"]}"#
+            } else {
+                r#"{"status":"success","data":{"resultType":"matrix","result":[]}}"#
+            }
+        })
+        .await;
+        let mut app = create_test_app();
+        app.prometheus = prom::PromClient::new(url);
+        let mut panel = test_panel("Up $job", PanelType::Graph);
+        panel.exprs = vec![r#"up{job=~"$job"}"#.to_string()];
+        panel.legends = vec![None];
+        panel.query_modes = vec![QueryMode::Range];
+        app.panels = vec![panel];
+        app.vars.insert("job".to_string(), ".*".to_string());
+        app.regex_vars.insert("job".to_string());
+        app.query_vars = vec![TemplateQueryVar {
+            name: "job".to_string(),
+            query: "label_values(job)".to_string(),
+            regex: None,
+            query_path: "templating.list[0].query".to_string(),
+            select_all: true,
+            all_value: None,
+            regex_values: true,
+        }];
+        let mut repeats = crate::dashboard::Repeats::default();
+        repeats
+            .panels
+            .insert(0, crate::dashboard::Repeat::new("job"));
+        let template = DashboardTemplate::new(DashboardLayout::flat(1), repeats, &app.panels);
+        app.apply_template(template);
+        // Before variables resolve, `All` has no known values and shows the panel once.
+        assert_eq!(app.visible_panel_indices(), [0]);
+
+        app.refresh().await.unwrap();
+
+        assert_eq!(app.visible_panel_indices(), [0, 1]);
+        assert_eq!(app.panels[0].title, "Up api");
+        assert_eq!(app.panels[1].title, "Up web.1");
+        assert_eq!(
+            app.vars.get("job").map(String::as_str),
+            Some(r"(api|web\\.1)")
+        );
+        let queries: Vec<String> = requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|target| target.starts_with("/api/v1/query_range"))
+            .cloned()
+            .collect();
+        for expr in [r#"up{job=~"api"}"#, r#"up{job=~"web\\.1"}"#] {
+            let encoded = format!("query={}&", urlencoding::encode(expr));
+            assert!(
+                queries.iter().any(|query| query.contains(&encoded)),
+                "missing {expr} in {queries:?}"
+            );
+        }
+        for (index, panel) in app.panels.iter().enumerate() {
+            assert!(panel.last_error.is_none(), "panel {index}: {:?}", panel.last_error);
+        }
+    }
+
+    #[tokio::test]
+    async fn rematerializing_keeps_collapsed_rows_and_stable_copies() {
+        let mut app = create_test_app();
+        app.panels = vec![test_panel("CPU $dc", PanelType::Graph)];
+        app.var_values
+            .insert("dc".to_string(), vec!["eu".to_string(), "us".to_string()]);
+        let mut repeats = crate::dashboard::Repeats::default();
+        repeats
+            .rows
+            .insert(RowId::new(0), crate::dashboard::Repeat::new("dc"));
+        let layout = DashboardLayout::new(vec![DashboardLayoutItem::Row(DashboardRow::new(
+            RowId::new(0),
+            "Region $dc",
+            false,
+            false,
+            vec![DashboardLayoutItem::Panel(0)],
+        ))]);
+        app.apply_template(DashboardTemplate::new(layout, repeats, &app.panels));
+        assert_eq!(app.visible_panel_indices(), [0, 1]);
+        app.layout.set_row_collapsed(RowId::new(1), true);
+        app.panels[1].last_samples = 7;
+
+        app.var_values.insert(
+            "dc".to_string(),
+            vec!["eu".to_string(), "us".to_string(), "ap".to_string()],
+        );
+        app.materialize_layout();
+
+        assert_eq!(app.visible_panel_indices(), [0, 2]);
+        assert_eq!(app.panels[1].last_samples, 7, "the `us` copy keeps its state");
+        assert_eq!(app.panels[2].title, "CPU ap");
+        assert_eq!(
+            app.panel_scopes.get(&2),
+            Some(&vec![("dc".to_string(), "ap".to_string())])
+        );
     }
 
     #[tokio::test]

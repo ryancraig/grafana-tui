@@ -103,6 +103,16 @@ one at 80.
 cargo run -- --grafana-json examples/dashboards/grafana_v2_autogrid.json --prometheus-url http://localhost:19090
 ```
 
+### `grafana_v2_repeats.yaml`
+A Grafana V2 resource in YAML, as exported by Grafana 13. A request-rate panel
+repeats horizontally, two per row, over an `All` selection of HTTP handlers,
+pushing the panel below it down; a row repeats over every `job` that the
+`label_values(up, job)` query variable resolves.
+
+```bash
+cargo run -- --grafana-json examples/dashboards/grafana_v2_repeats.yaml --prometheus-url http://localhost:19090
+```
+
 ### `grafana_v2_tabs.json`
 An exact Grafana V2 `TabsLayout` resource with panels, a nested row, and an
 empty tab. Focus the tab bar and use Left/Right to switch tabs; Enter/Space

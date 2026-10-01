@@ -51,7 +51,8 @@ unsupported advanced V2 dashboards. See the
 | Top-level `spec.variables` | 🔶 Partial | Supported variable kinds map to Grafatui variables; unsupported kinds emit diagnostics |
 | `spec.timeSettings.autoRefresh` | ✅ Supported | Used as the dashboard refresh interval |
 | `vizConfig.spec.fieldConfig` | 🔶 Partial | The supported Classic-equivalent field configuration subset applies |
-| Repeated grid items, auto grid items, rows, and tabs | ❌ Not Implemented | Rejected as fatal import errors |
+| `repeat` on grid items, auto grid items, rows, and tabs | ✅ Supported | Expanded once per selected value of the variable, with each copy's title and queries using its value; see [repeats](grafana-dashboard-import.md#repeats) |
+| `GridLayoutItem` `repeat.direction` and `repeat.maxPerRow` | ✅ Supported | Horizontal copies share the full grid width, up to `maxPerRow` (default 4) per row; vertical copies stack; panels below move down |
 | Conditional rendering and non-empty nested variables | ❌ Not Implemented | Deferred V2 features |
 | `LibraryPanel` elements | ❌ Not Implemented | Exports reference library panels by uid only; they are skipped with a diagnostic. Export with **Share dashboard with another instance** enabled to inline them |
 
@@ -143,9 +144,9 @@ V2 dashboard outside this grid, auto grid, rows, and tabs subset.
 | `description` | ❌ Not Implemented | Not displayed |
 | `transparent` | ⛔ Not Applicable | TUI panels always have borders |
 | `links` | ⛔ Not Applicable | No browser navigation |
-| `repeat` | ❌ Not Implemented | Template repeat not supported |
-| `repeatDirection` | ❌ Not Implemented | |
-| `maxPerRow` | ❌ Not Implemented | |
+| `repeat` | ✅ Supported | Panels and rows repeat once per selected variable value; copies saved by older Grafana versions (`repeatPanelId`) are dropped |
+| `repeatDirection` | ✅ Supported | `h` (default) or `v` |
+| `maxPerRow` | ✅ Supported | Horizontal copies per row; defaults to 4 |
 | `collapsed` (row) | ✅ Supported | Initial collapsed state is preserved and interactive |
 | `panels` (nested in row) | ✅ Supported | Nested panels and rows retain their hierarchy |
 
@@ -197,12 +198,12 @@ V2 dashboard outside this grid, auto grid, rows, and tabs subset.
 | `templating.list[].datasource` | ❌ Not Implemented | |
 | `templating.list[].regex` | 🔶 Partial | Applied to dynamic query variable results |
 | `templating.list[].sort` | ❌ Not Implemented | |
-| `templating.list[].multi` | ❌ Not Implemented | Multi-value selection not supported |
-| `templating.list[].includeAll` | ❌ Not Implemented | |
+| `templating.list[].multi` | ✅ Supported | Several selected values are regex-escaped and joined as `(a\|b)`, as Grafana's Prometheus datasource does |
+| `templating.list[].includeAll` | ✅ Supported | `All` selects every option; it interpolates as `allValue` when set, otherwise as all values joined |
 | `templating.list[].refresh` | 🔶 Partial | Dynamic variables refresh before panel queries |
-| `templating.list[].options` | ❌ Not Implemented | No dropdown/picker UI |
+| `templating.list[].options` | 🔶 Partial | Supply the values `All` selects and the default selection; there is no picker UI |
 | `templating.list[].hide` | ❌ Not Implemented | |
-| CLI `--var KEY=VALUE` override | ✅ Supported | Overrides dashboard defaults from command line |
+| CLI `--var KEY=VALUE` override | ✅ Supported | Overrides dashboard defaults from command line; repeat `--var` for the same key to select several values |
 | Config file `vars` override | ✅ Supported | Overrides via TOML config |
 
 ### Variable Substitution
@@ -342,10 +343,10 @@ compatibility with Grafana annotation queries, APIs, `annotations`, or
 |---|---|---|---|---|
 | Dashboard Properties | 1 | 0 | 10 | 4 |
 | Panel Types | 8 | 0 | 14 | 5 |
-| Panel Common Fields | 9 | 0 | 5 | 2 |
+| Panel Common Fields | 12 | 0 | 2 | 2 |
 | Targets / Queries | 3 | 0 | 8 | 1 |
 | PromQL Variables | 7 | 0 | 0 | 0 |
-| Templating | 6 | 6 | 6 | 0 |
+| Templating | 8 | 7 | 3 | 0 |
 | Variable Substitution | 3 | 0 | 5 | 0 |
 | Field Config | 4 | 6 | 10 | 2 |
 | Thresholds | 5 | 0 | 0 | 0 |
@@ -354,7 +355,7 @@ compatibility with Grafana annotation queries, APIs, `annotations`, or
 | Data Links / Transforms | 0 | 0 | 2 | 1 |
 | Alert Rules | 0 | 0 | 3 | 0 |
 | Datasources | 3 | 0 | 5 | 0 |
-| **Total** | **49** | **12** | **84** | **15** |
+| **Total** | **54** | **13** | **78** | **15** |
 
 ---
 

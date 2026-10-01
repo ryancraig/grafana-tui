@@ -20,9 +20,9 @@ configuration, fixed-grid positions, auto grids, and nested `RowsLayout`/`TabsLa
 containers to the same Grafatui behavior as Classic JSON.
 
 Rows and tabs may recursively contain `GridLayout`, `AutoGridLayout`, `RowsLayout`,
-or `TabsLayout`. Repeat, conditional rendering, and nested non-empty layout
-variables remain unsupported; unsupported V2 layouts and fields are fatal import errors. Repeated grid items are also rejected rather than silently
-changing the dashboard.
+or `TabsLayout`. Grid items, auto grid items, rows, and tabs may repeat. Conditional
+rendering and nested non-empty layout variables remain unsupported; unsupported
+V2 layouts and fields are fatal import errors.
 
 Grafana's resource API writes empty lists and objects as `null` (for example
 `links`, `transformations`, `options`, and `variables`), and its exporter may
@@ -102,15 +102,66 @@ children remain visible.
 
 ## Variables
 
-Grafatui reads dashboard variables from `templating.list` and expands `$var` and `${var}` in PromQL expressions.
+Grafatui reads dashboard variables from `templating.list` (Classic) or
+`spec.variables` (V2) and expands `$var` and `${var}` in PromQL expressions and
+in panel, row, and tab titles. Names are matched whole, so `$job_name` never
+expands a variable called `job`.
 
-Defaults come from the dashboard JSON. Override them from the CLI:
+Defaults come from the dashboard's saved selection; a variable without one
+selects its first option, as Grafana does. Override them from the CLI:
 
 ```bash
 grafatui --grafana-json ./dash.json --var job=node --var instance=server-01
 ```
 
-Prometheus query variables such as `label_values(up, instance)` and `query_result(...)` are resolved before panel queries run.
+Prometheus query variables such as `label_values(up, instance)` and
+`query_result(...)` are resolved before panel queries run. A saved selection
+that Prometheus still offers is kept; otherwise the first value is selected.
+
+### Multi-Value and All Selections
+
+Multi-value and include-all variables follow Grafana's Prometheus datasource:
+
+- Each value is regex-escaped, so `web.1` becomes `web\\.1` in the query.
+- Several values become an alternation such as `(api|web\\.1)`, meant for
+  `=~` matchers.
+- `All` selects every option: a custom variable's options, or every value a
+  query variable resolves. It interpolates as the variable's `allValue` when
+  set, and otherwise as all values joined.
+
+In titles, several values are shown joined with ` + `, like Grafana's text
+format.
+
+Repeat `--var` for one name to select several values. A single `--var` value is
+used verbatim, so it can still be a regex such as `--var job='api|web'`:
+
+```bash
+grafatui --grafana-json ./dash.json --var instance=server-01 --var instance=server-02
+```
+
+## Repeats
+
+Panels, rows, and tabs that repeat over a variable are copied once per selected
+value, so `All` or a multi-value selection shows one copy per value. Each copy
+uses its own value: `$var` in its title and queries is that single value
+(regex-escaped for multi-value variables), and the copies of a repeated row or
+tab carry that value into every panel inside them. Nested repeats combine.
+
+| Repeat | Classic | V2 | Layout |
+|---|---|---|---|
+| Panel, horizontal | `repeat`, `repeatDirection: h` | `GridLayoutItem` `repeat.direction: h` | Spans the full grid width, in rows of up to `maxPerRow` equal columns (default 4) |
+| Panel, vertical | `repeatDirection: v` | `repeat.direction: v` | Copies stack at the panel's width |
+| Auto grid item | — | `AutoGridLayoutItem` `repeat` | Copies flow into the auto grid after the item |
+| Row | row `repeat` | `RowsLayoutRow` `repeat` | One row per value |
+| Tab | — | `TabsLayoutTab` `repeat` | One tab per value |
+
+When a repeated grid panel grows, panels that start below it move down by the
+height it adds, as in Grafana. If the variable has no selected values, the item
+is shown once; if the variable is not defined, the item is also shown once and
+an `unknown_repeat_variable` diagnostic is printed.
+
+Copies follow query variables as they resolve. A copy keeps its place, data,
+and collapsed state while its value stays selected.
 
 ## Import Diagnostics
 
@@ -130,8 +181,8 @@ Warnings do not make validation fail. A dashboard that can be parsed and
 imported exits successfully even if diagnostics are printed.
 
 Use `--strict` to make warnings fail validation, or `--format json` to emit a
-machine-readable summary. Fatal V2 layout and repeat errors fail validation in
-all modes; `--strict` additionally fails when import diagnostics are present:
+machine-readable summary. Fatal V2 layout errors fail validation in all modes;
+`--strict` additionally fails when import diagnostics are present:
 
 ```bash
 grafatui --validate --strict --grafana-json ./dash.json
