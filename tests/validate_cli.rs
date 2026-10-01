@@ -255,6 +255,27 @@ fn validate_strict_accepts_conditional_example_and_grafana13_fixture() {
 }
 
 #[test]
+fn validate_strict_accepts_sections_example_and_grafana13_fixture() {
+    for path in [
+        example_dashboard("grafana_v2_sections.json"),
+        fixture("v2_grafana13_sections.json"),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+            .args(["--validate", "--strict", "--grafana-json"])
+            .arg(&path)
+            .output()
+            .unwrap();
+
+        assert!(
+            output.status.success(),
+            "{}: {}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
 fn validate_accepts_live_grafana_v2_compatibility_example() {
     let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
         .args(["--validate", "--format", "json", "--grafana-json"])

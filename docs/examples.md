@@ -60,6 +60,12 @@ docker-compose down -v
   cargo run -- --grafana-json examples/dashboards/grafana_v2_conditional.json --prometheus-url http://localhost:19090 --range 1h
   ```
 
+- `examples/dashboards/grafana_v2_sections.json`: Grafana V2 resource with row variables: a row that overrides the dashboard's `quantile`, and a row whose own `handler` query variable repeats a panel for every `/api/v1/` handler. Run it with:
+
+  ```bash
+  cargo run -- --grafana-json examples/dashboards/grafana_v2_sections.json --prometheus-url http://localhost:19090
+  ```
+
 - `examples/dashboards/grafana_v2_tabs.json`: exact Grafana V2 resource with tab, row, and empty-content behavior. Focus a tab bar and use Left/Right to switch or Enter/Space to enter its content. Run it with:
 
   ```bash

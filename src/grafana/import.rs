@@ -1,6 +1,10 @@
 use anyhow::Result;
 
-use super::{DashboardImport, GridPos, ImportDiagnostic, QueryPanel, TemplateQueryVar, model};
+use super::{
+    DashboardImport, GridPos, ImportDiagnostic, QueryPanel, SectionVariable, TemplateQueryVar,
+    model,
+};
+use crate::dashboard::SectionId;
 
 pub(super) fn finish(dashboard: model::Dashboard) -> Result<DashboardImport> {
     let model::Dashboard {
@@ -89,6 +93,36 @@ fn import_variables(out: &mut DashboardImport, variables: Vec<model::Variable>) 
             });
         }
     }
+}
+
+/// Imports the variables a row or tab defines, with the same selection and
+/// formatting rules as dashboard variables.
+fn import_section_variables(variables: Vec<model::Variable>) -> Vec<SectionVariable> {
+    let names: Vec<String> = variables
+        .iter()
+        .map(|variable| variable.name.clone())
+        .collect();
+    let all_values: std::collections::HashMap<String, Option<String>> = variables
+        .iter()
+        .map(|variable| (variable.name.clone(), variable.all_value.clone()))
+        .collect();
+    let mut imported = DashboardImport::default();
+    import_variables(&mut imported, variables);
+    names
+        .into_iter()
+        .map(|name| SectionVariable {
+            values: imported.var_values.remove(&name).unwrap_or_default(),
+            regex: imported.regex_vars.contains(&name),
+            all: imported.all_vars.contains(&name),
+            all_value: all_values.get(&name).cloned().flatten(),
+            query: imported
+                .query_vars
+                .iter()
+                .find(|query_var| query_var.name == name)
+                .cloned(),
+            name,
+        })
+        .collect()
 }
 
 /// Non-empty values selected by a variable's `current` value, or its text as a
@@ -295,6 +329,14 @@ fn import_layout_nodes(
             model::LayoutNode::Row(row) => {
                 let id = crate::dashboard::RowId::new(ids.next_row);
                 ids.next_row += 1;
+                // A row's variables apply to the row itself, so they are known
+                // before its own repeat is checked.
+                if !row.variables.is_empty() {
+                    ids.variable_names
+                        .extend(row.variables.iter().map(|variable| variable.name.clone()));
+                    out.sections
+                        .insert(SectionId::Row(id), import_section_variables(row.variables));
+                }
                 if let Some(repeat) = ids.checked_repeat(row.repeat, &row.source_path, out) {
                     out.repeats.rows.insert(id, repeat);
                 }
@@ -317,6 +359,14 @@ fn import_layout_nodes(
                 ids.next_tabs += 1;
                 let mut tabs = Vec::with_capacity(group.tabs.len());
                 for (index, tab) in group.tabs.into_iter().enumerate() {
+                    if !tab.variables.is_empty() {
+                        ids.variable_names
+                            .extend(tab.variables.iter().map(|variable| variable.name.clone()));
+                        out.sections.insert(
+                            SectionId::Tab(id, index),
+                            import_section_variables(tab.variables),
+                        );
+                    }
                     if let Some(repeat) = ids.checked_repeat(tab.repeat, &tab.source_path, out) {
                         out.repeats.tabs.insert((id, index), repeat);
                     }

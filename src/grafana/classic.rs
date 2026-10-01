@@ -318,6 +318,7 @@ fn normalize_classic_row(
             title: panel.title.unwrap_or_default(),
             repeat,
             condition: None,
+            variables: Vec::new(),
             collapsed,
             hidden_header: false,
             source_path,

@@ -21,6 +21,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use crate::app::{ScopeBinding, find_binding};
 use crate::dashboard::{RowId, TabGroupId};
 
 /// A `ConditionalRenderingGroup`: conditions combined with `and` or `or`,
@@ -96,7 +97,7 @@ impl ConditionGroup {
     pub(crate) fn shows(
         &self,
         context: &ConditionContext,
-        scope: &[(String, String)],
+        scope: &[ScopeBinding],
         panel: Option<usize>,
     ) -> bool {
         let results: Vec<bool> = self
@@ -126,7 +127,7 @@ impl Condition {
     fn evaluate(
         &self,
         context: &ConditionContext,
-        scope: &[(String, String)],
+        scope: &[ScopeBinding],
         panel: Option<usize>,
     ) -> Option<bool> {
         match self {
@@ -147,24 +148,28 @@ impl Condition {
 
 fn evaluate_variable(
     context: &ConditionContext,
-    scope: &[(String, String)],
+    scope: &[ScopeBinding],
     name: &str,
     operator: VariableOperator,
     value: &str,
 ) -> Option<bool> {
-    // A repeat copy sees its own value, as Grafana's scene variable lookup does.
-    let scoped = scope.iter().rev().find(|(variable, _)| variable == name);
-    let values: Vec<&str> = match scoped {
-        Some((_, value)) => vec![value.as_str()],
+    // Variables bound by repeat copies and sections win, as Grafana's scene
+    // variable lookup walks up from the item.
+    let scoped = find_binding(scope, name);
+    let selected = match scoped {
+        Some(binding) => Some(&binding.values),
         None if !context.defined.contains(name) => return None,
-        None => match context.values.get(name) {
-            Some(values) if !values.is_empty() => values.iter().map(String::as_str).collect(),
-            _ => vec![""],
-        },
+        None => context.values.get(name),
     };
-    let all_selected = scoped.is_none()
-        && context.all_selected.contains(name)
-        && value.eq_ignore_ascii_case("all");
+    let values: Vec<&str> = match selected {
+        Some(values) if !values.is_empty() => values.iter().map(String::as_str).collect(),
+        _ => vec![""],
+    };
+    let all = match scoped {
+        Some(binding) => binding.all,
+        None => context.all_selected.contains(name),
+    };
+    let all_selected = all && value.eq_ignore_ascii_case("all");
 
     let hit = match operator {
         VariableOperator::Equals | VariableOperator::NotEquals => {
@@ -310,7 +315,7 @@ mod tests {
         );
 
         assert!(condition.shows(&context, &[], None));
-        let scope = [("env".to_string(), "prod".to_string())];
+        let scope = [ScopeBinding::repeat("env", "prod", false)];
         assert!(!condition.shows(&context, &scope, None));
         let prod_only = group(
             true,

@@ -28,6 +28,14 @@ impl TabGroupId {
     }
 }
 
+/// A row or tab that defines variables, by the ids it was imported with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum SectionId {
+    Row(RowId),
+    /// A tab by its group and position among the group's tabs.
+    Tab(TabGroupId, usize),
+}
+
 /// Direction in which a repeated panel's copies are laid out.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum RepeatDirection {

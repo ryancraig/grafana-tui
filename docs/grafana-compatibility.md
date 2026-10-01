@@ -54,7 +54,7 @@ unsupported advanced V2 dashboards. See the
 | `repeat` on grid items, auto grid items, rows, and tabs | ✅ Supported | Expanded once per selected value of the variable, with each copy's title and queries using its value; see [repeats](grafana-dashboard-import.md#repeats) |
 | `GridLayoutItem` `repeat.direction` and `repeat.maxPerRow` | ✅ Supported | Horizontal copies share the full grid width, up to `maxPerRow` (default 4) per row; vertical copies stack; panels below move down |
 | `conditionalRendering` on rows, tabs, and auto grid items | ✅ Supported | Variable, data, and time range conditions show or hide items as variables, data, and the range change; see [conditional rendering](grafana-dashboard-import.md#conditional-rendering) |
-| Non-empty row and tab `variables` | ❌ Not Implemented | Rejected as fatal import errors |
+| Row and tab `variables` | ✅ Supported | Apply to the row or tab and everything inside it, shadowing dashboard variables; query variables resolve per row or tab copy; see [row and tab variables](grafana-dashboard-import.md#row-and-tab-variables) |
 | `LibraryPanel` elements | ❌ Not Implemented | Exports reference library panels by uid only; they are skipped with a diagnostic. Export with **Share dashboard with another instance** enabled to inline them |
 
 V2 resources are accepted as JSON or YAML. Use a Classic export for any advanced

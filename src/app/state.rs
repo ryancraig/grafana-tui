@@ -16,7 +16,8 @@
 
 use crate::app::data::{downsample, expand_expr, format_legend};
 use crate::app::template::{
-    DashboardTemplate, MaterializedCondition, Scope, Variables, scoped_vars,
+    DashboardTemplate, MaterializedCondition, ResolvedSections, Scope, SectionInstance, Variables,
+    scoped_vars,
 };
 use crate::conditions::{ConditionContext, ConditionTarget};
 use crate::app::variables::refresh_query_variables;
@@ -322,6 +323,10 @@ pub(crate) struct AppState {
     conditions: Vec<MaterializedCondition>,
     /// Items conditional rendering currently hides.
     hidden_items: HashSet<ConditionTarget>,
+    /// Row and tab copies whose variables are resolved against Prometheus.
+    section_instances: Vec<SectionInstance>,
+    /// What those section query variables resolved to.
+    section_values: ResolvedSections,
     /// Prometheus-backed template variables imported from Grafana.
     pub(crate) query_vars: Vec<TemplateQueryVar>,
     /// Count of panels skipped during import.
@@ -408,6 +413,8 @@ impl AppState {
             unfiltered_layout: DashboardLayout::default(),
             conditions: Vec::new(),
             hidden_items: HashSet::new(),
+            section_instances: Vec::new(),
+            section_values: ResolvedSections::new(),
             query_vars: Vec::new(),
             skipped_panels,
             layout,
@@ -495,6 +502,8 @@ impl AppState {
         let materialized = template.materialize(&Variables {
             formatted: &self.vars,
             values: &self.var_values,
+            regex: &self.regex_vars,
+            sections: &self.section_values,
         });
 
         for instance in &materialized.panels {
@@ -523,7 +532,44 @@ impl AppState {
         layout.restore_state(&self.unfiltered_layout);
         self.unfiltered_layout = layout;
         self.conditions = materialized.conditions;
+        self.section_instances = materialized.sections;
         self.show_conditional_items();
+    }
+
+    /// Resolves the query variables of every row and tab copy that defines
+    /// them, expanded with the variables around that copy. Returns whether any
+    /// resolved values changed.
+    async fn resolve_section_variables(
+        &mut self,
+        range: Duration,
+        step: Duration,
+        end_ts: i64,
+    ) -> bool {
+        let mut changed = false;
+        for instance in self.section_instances.clone() {
+            let key = (instance.id, instance.scope.clone());
+            let mut vars = scoped_vars(&self.vars, Some(&instance.scope)).into_owned();
+            let mut values = self
+                .section_values
+                .get(&key)
+                .cloned()
+                .unwrap_or_else(|| instance.selected.clone());
+            let _ = refresh_query_variables(
+                &self.prometheus,
+                &instance.queries,
+                range,
+                step,
+                end_ts,
+                &mut vars,
+                &mut values,
+            )
+            .await;
+            if self.section_values.get(&key) != Some(&values) {
+                self.section_values.insert(key, values);
+                changed = true;
+            }
+        }
+        changed
     }
 
     /// Re-evaluates conditional rendering, for example after new data or a
@@ -849,7 +895,6 @@ impl AppState {
             end_ts,
             &mut self.vars,
             &mut self.var_values,
-            &self.regex_vars,
             &self.panel_scopes,
             &mut self.panels,
             &visible_panel_indices,
@@ -858,10 +903,19 @@ impl AppState {
         let (_, ()) = tokio::join!(annotation_refresh, prometheus_refresh);
 
         self.view_end_ts = end_ts;
-        if self.template.is_some() && self.var_values != selected_values {
+        let mut variables_changed = self.template.is_some() && self.var_values != selected_values;
+        if variables_changed {
+            self.materialize_layout();
+        }
+        if !self.section_instances.is_empty()
+            && self.resolve_section_variables(range, step, end_ts).await
+        {
+            self.materialize_layout();
+            variables_changed = true;
+        }
+        if variables_changed {
             // Resolved variables changed which items repeat and their scopes, so
             // panels fetched with the previous layout are fetched again.
-            self.materialize_layout();
             let panels = self.panels_to_fetch();
             self.refresh_panel_indices(&panels, false).await;
         } else {
@@ -911,7 +965,6 @@ impl AppState {
             end_ts,
             &mut self.vars,
             &mut self.var_values,
-            &self.regex_vars,
             &self.panel_scopes,
             &mut self.panels,
             indices,
@@ -930,7 +983,6 @@ impl AppState {
         end_ts: i64,
         vars: &mut HashMap<String, String>,
         var_values: &mut HashMap<String, Vec<String>>,
-        regex_vars: &HashSet<String>,
         panel_scopes: &HashMap<usize, Scope>,
         panels: &mut [PanelState],
         indices: &[usize],
@@ -959,7 +1011,7 @@ impl AppState {
                 .filter(|(index, _)| indices.contains(index)),
         )
         .map(|(index, p)| {
-            let vars = scoped_vars(vars, panel_scopes.get(&index), regex_vars);
+            let vars = scoped_vars(vars, panel_scopes.get(&index));
             Self::fetch_single_panel_data(prometheus, p, range, step, vars, end_ts)
         })
         .buffer_unordered(4); // Max 4 concurrent panel refreshes
@@ -1494,6 +1546,108 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn section_query_variables_resolve_per_repeated_row_copy() {
+        let (url, requests) = mock_prometheus(|target| {
+            if target.starts_with("/api/v1/series") && target.contains("dc%3D%22eu%22") {
+                r#"{"status":"success","data":[{"host":"eu-1"},{"host":"eu-2"}]}"#
+            } else if target.starts_with("/api/v1/series") {
+                r#"{"status":"success","data":[{"host":"us-1"}]}"#
+            } else {
+                r#"{"status":"success","data":{"resultType":"matrix","result":[]}}"#
+            }
+        })
+        .await;
+        let mut app = create_test_app();
+        app.prometheus = prom::PromClient::new(url);
+        let mut panel = test_panel("CPU $host", PanelType::Graph);
+        panel.exprs = vec![r#"up{host=~"$host"}"#.to_string()];
+        panel.legends = vec![None];
+        panel.query_modes = vec![QueryMode::Range];
+        app.panels = vec![panel];
+        app.vars.insert("dc".to_string(), "(eu|us)".to_string());
+        app.var_values
+            .insert("dc".to_string(), vec!["eu".to_string(), "us".to_string()]);
+        app.regex_vars.insert("dc".to_string());
+        app.variable_names.insert("dc".to_string());
+
+        let mut repeats = crate::dashboard::Repeats::default();
+        repeats
+            .rows
+            .insert(RowId::new(0), crate::dashboard::Repeat::new("dc"));
+        repeats
+            .panels
+            .insert(0, crate::dashboard::Repeat::new("host"));
+        let sections = HashMap::from([(
+            crate::dashboard::SectionId::Row(RowId::new(0)),
+            vec![crate::grafana::SectionVariable {
+                name: "host".to_string(),
+                values: Vec::new(),
+                regex: true,
+                all: true,
+                all_value: None,
+                query: Some(TemplateQueryVar {
+                    name: "host".to_string(),
+                    query: r#"label_values(up{dc="$dc"}, host)"#.to_string(),
+                    regex: None,
+                    query_path: "spec.layout.spec.rows[0].spec.variables[0]".to_string(),
+                    select_all: true,
+                    all_value: None,
+                    regex_values: true,
+                }),
+            }],
+        )]);
+        let layout = DashboardLayout::new(vec![DashboardLayoutItem::Row(DashboardRow::new(
+            RowId::new(0),
+            "DC $dc",
+            false,
+            false,
+            vec![DashboardLayoutItem::Panel(0)],
+        ))]);
+        app.apply_template(
+            DashboardTemplate::new(layout, repeats, &app.panels).with_sections(sections),
+        );
+
+        app.refresh().await.unwrap();
+
+        let rows: Vec<(String, Vec<String>)> = app
+            .layout
+            .items
+            .iter()
+            .map(|item| match item {
+                DashboardLayoutItem::Row(row) => (
+                    row.title.clone(),
+                    row.children
+                        .iter()
+                        .map(|child| match child {
+                            DashboardLayoutItem::Panel(index) => app.panels[*index].title.clone(),
+                            child => panic!("unexpected {child:?}"),
+                        })
+                        .collect(),
+                ),
+                item => panic!("unexpected {item:?}"),
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (
+                    "DC eu".to_string(),
+                    vec!["CPU eu-1".to_string(), "CPU eu-2".to_string()]
+                ),
+                ("DC us".to_string(), vec!["CPU us-1".to_string()]),
+            ]
+        );
+        let queries = requests.lock().unwrap().clone();
+        for host in ["eu-1", "eu-2", "us-1"] {
+            let encoded = urlencoding::encode(&format!(r#"up{{host=~"{host}"}}"#)).into_owned();
+            assert!(
+                queries.iter().any(|query| query.contains(&encoded)),
+                "missing query for {host} in {queries:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn rematerializing_keeps_collapsed_rows_and_stable_copies() {
         let mut app = create_test_app();
         app.panels = vec![test_panel("CPU $dc", PanelType::Graph)];
@@ -1526,7 +1680,9 @@ mod tests {
         assert_eq!(app.panels[2].title, "CPU ap");
         assert_eq!(
             app.panel_scopes.get(&2),
-            Some(&vec![("dc".to_string(), "ap".to_string())])
+            Some(&vec![crate::app::template::ScopeBinding::repeat(
+                "dc", "ap", false
+            )])
         );
     }
 

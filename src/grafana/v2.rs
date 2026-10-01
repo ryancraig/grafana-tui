@@ -63,7 +63,7 @@ pub(super) fn adapt(value: Value) -> Result<model::Dashboard> {
             "invalid Grafana V2 time settings at spec.timeSettings: expected an object"
         ),
     };
-    dashboard.variables = normalize_variables(spec, &mut dashboard.diagnostics)?;
+    dashboard.variables = normalize_variables(spec, "spec.variables", &mut dashboard.diagnostics)?;
     dashboard.layout = parse_layout(layout, elements, "spec.layout", &mut dashboard.diagnostics)?;
     dashboard.skipped_panels += dashboard
         .diagnostics
@@ -200,11 +200,8 @@ fn parse_tabs_layout(
         let title = optional_string_from(tab_spec, "title", &tab_spec_path)?.unwrap_or_default();
         let condition = parse_condition_group(tab_spec, &tab_spec_path, diagnostics)?;
         let repeat = parse_repeat(tab_spec, &tab_spec_path)?;
-        let variables_path = format!("{tab_spec_path}.variables");
-        ensure!(
-            optional_array_from(tab_spec, "variables", &variables_path)?.is_empty(),
-            "unsupported Grafana V2 tab variables at {variables_path}"
-        );
+        let variables =
+            normalize_variables(tab_spec, &format!("{tab_spec_path}.variables"), diagnostics)?;
         let child_path = format!("{tab_spec_path}.layout");
         let child_layout = require_object_from(tab_spec, "layout", &child_path)?;
         let children = parse_layout(child_layout, elements, &child_path, diagnostics)?;
@@ -212,6 +209,7 @@ fn parse_tabs_layout(
             title,
             repeat,
             condition,
+            variables,
             source_path: tab_path,
             children,
         });
@@ -273,11 +271,8 @@ fn parse_rows_layout(
         let condition = parse_condition_group(row_spec, &row_spec_path, diagnostics)?;
         let repeat = parse_repeat(row_spec, &row_spec_path)?;
 
-        let variables_path = format!("{row_spec_path}.variables");
-        ensure!(
-            optional_array_from(row_spec, "variables", &variables_path)?.is_empty(),
-            "unsupported Grafana V2 row variables at {variables_path}"
-        );
+        let variables =
+            normalize_variables(row_spec, &format!("{row_spec_path}.variables"), diagnostics)?;
 
         // `fillScreen` stretches a row to the browser viewport; terminal rows already
         // size to their content, so the flag is validated and otherwise ignored.
@@ -290,6 +285,7 @@ fn parse_rows_layout(
             title,
             repeat,
             condition,
+            variables,
             collapsed,
             hidden_header,
             source_path: row_path,
@@ -299,27 +295,30 @@ fn parse_rows_layout(
     Ok(nodes)
 }
 
+/// Reads the `variables` of the dashboard spec, or of a row or tab spec, whose
+/// list is at `variables_path`.
 fn normalize_variables(
-    dashboard_spec: &JsonObject,
+    spec: &JsonObject,
+    variables_path: &str,
     diagnostics: &mut Vec<super::ImportDiagnostic>,
 ) -> Result<Vec<model::Variable>> {
-    let variables = optional_array_from(dashboard_spec, "variables", "spec.variables")?;
+    let variables = optional_array_from(spec, "variables", variables_path)?;
 
     let mut normalized = Vec::new();
     for (index, variable) in variables.iter().enumerate() {
-        let path = format!("spec.variables[{index}]");
+        let path = format!("{variables_path}[{index}]");
         let variable = variable
             .as_object()
             .ok_or_else(|| anyhow!("invalid Grafana V2 variable at {path}: expected an object"))?;
         let kind = require_string_from(variable, "kind", &format!("{path}.kind"))?;
         let spec = require_object_from(variable, "spec", &format!("{path}.spec"))?;
         let variable = match kind {
-            "QueryVariable" => normalize_query_variable(spec, index, diagnostics)?,
+            "QueryVariable" => normalize_query_variable(spec, &path, diagnostics)?,
             "TextVariable" | "ConstantVariable" | "DatasourceVariable" | "IntervalVariable"
             | "CustomVariable" | "GroupByVariable" => {
-                Some(normalize_option_variable(kind, spec, index)?)
+                Some(normalize_option_variable(kind, spec, &path)?)
             }
-            "SwitchVariable" => Some(normalize_switch_variable(spec, index)?),
+            "SwitchVariable" => Some(normalize_switch_variable(spec, &path)?),
             "AdhocVariable" => {
                 diagnostics.push(super::ImportDiagnostic::new(
                     "unsupported_variable",
@@ -346,10 +345,10 @@ fn normalize_variables(
 
 fn normalize_query_variable(
     spec: &JsonObject,
-    index: usize,
+    source_path: &str,
     diagnostics: &mut Vec<super::ImportDiagnostic>,
 ) -> Result<Option<model::Variable>> {
-    let source_path = format!("spec.variables[{index}]");
+    let source_path = source_path.to_string();
     let name = require_string_from(spec, "name", &format!("{source_path}.spec.name"))?.to_string();
     let query_path = format!("{source_path}.spec.query");
     let query = require_object_from(spec, "query", &query_path)?;
@@ -407,9 +406,9 @@ fn normalize_query_variable(
 fn normalize_option_variable(
     kind: &str,
     spec: &JsonObject,
-    index: usize,
+    source_path: &str,
 ) -> Result<model::Variable> {
-    let source_path = format!("spec.variables[{index}]");
+    let source_path = source_path.to_string();
     let mut options = option_values(spec);
     if options.is_empty()
         && matches!(kind, "CustomVariable" | "IntervalVariable")
@@ -448,8 +447,8 @@ fn option_values(spec: &JsonObject) -> Vec<String> {
         .collect()
 }
 
-fn normalize_switch_variable(spec: &JsonObject, index: usize) -> Result<model::Variable> {
-    let source_path = format!("spec.variables[{index}]");
+fn normalize_switch_variable(spec: &JsonObject, source_path: &str) -> Result<model::Variable> {
+    let source_path = source_path.to_string();
     Ok(model::Variable {
         name: require_string_from(spec, "name", &format!("{source_path}.spec.name"))?.to_string(),
         kind: None,

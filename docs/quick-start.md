@@ -24,10 +24,10 @@ containers:
 grafatui --prometheus-url http://localhost:9090 --grafana-json ./dashboard.json
 ```
 
-For V2 dashboards that use nested non-empty layout variables or library panels,
-use the Classic export fallback: open **Export as code → Advanced options**, set
-**Model** to **Classic**, then download or copy the JSON. V2 resources can be imported as
-JSON or YAML; V1 Resource files are unsupported.
+Grafana 13 exports V2 resources as JSON or YAML, and both import directly.
+Exports reference library panels by uid only, so enable **Share dashboard with
+another instance** when exporting a dashboard that uses them. V1 Resource files
+are unsupported.
 See [Grafana Dashboard Import](grafana-dashboard-import.md) for the full format
 requirements.
 
