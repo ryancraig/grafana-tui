@@ -123,7 +123,7 @@ endpoints keep working unchanged.
 
 | Item | Why it blocks production | Complexity | Status |
 |---|---|---|---|
-| **Adaptive query step** | The fixed `--step` (default 5s) exceeds Prometheus's 11,000-point limit above about 15h, so long ranges and zoom-out fail; `$__interval` doesn't match the real step | 🟡 | 🔜 |
+| **Adaptive query step** | The fixed `--step` (default 5s) exceeded Prometheus's 11,000-point limit above about 15h, so long ranges and zoom-out failed; steps now scale with the range, honoring `maxDataPoints` and min intervals | 🟡 | ✅ |
 | **Non-blocking refresh** | Refresh runs inline in the event loop, so a slow or unreachable backend freezes input and delays startup | 🔴 | 🔜 |
 | **Variable refresh policy** | Query variables are re-queried every refresh tick and their errors are swallowed; Grafana's `refresh` setting is ignored | 🟡 | 📋 |
 | **Error and warning surfacing** | Last good data is dropped on error, only one error per panel survives, Prometheus `warnings` are discarded, and 4xx errors are retried | 🟡 | 📋 |
@@ -196,7 +196,7 @@ This is the main backlog, ordered by Grafana parity domain.
 |---|---|---|---|---|
 | **Hidden targets** | `targets[].hide` | Helper queries do not clutter imported panels | 🟢 | ✅ |
 | **Instant query defaults** | Panel-specific fallback behavior when `targets[].instant` is omitted | Keeps summary panels fast while preserving range queries for charts | 🟢 | ✅ |
-| **Target interval** | `targets[].interval` / `intervalFactor` | Panel-specific resolution is respected | 🟡 | 📋 |
+| **Target interval** | `targets[].interval` / `intervalFactor` | Panel-specific resolution is respected; `interval` is supported, `intervalFactor` is not | 🟡 | 🔶 |
 | **Target ref IDs** | `targets[].refId` | Better diagnostics and future transformation support | 🟢 | 📋 |
 | **Format handling** | `targets[].format` | Tables and heatmaps can choose more appropriate handling | 🟡 | 📋 |
 | **Exemplar awareness** | `targets[].exemplar` | Document ignored behavior or expose limited metadata later | 🔴 | 💡 |
@@ -295,7 +295,7 @@ expectations.
 | Display names | Imported labels become clearer without changing queries | 🟢 | 📋 |
 | Legend display modes and placement | Dense dashboards need predictable legend behavior | 🟡 | 📋 |
 | Legend calculations | Adds useful table-like summaries without a new panel type | 🟡 | 📋 |
-| Target interval support | Respects panel-specific query resolution | 🟡 | 📋 |
+| Target interval support | Respects panel-specific query resolution | 🟡 | ✅ |
 
 ### v0.4 - Graph & Timeseries Fidelity
 
@@ -354,8 +354,8 @@ These are valuable, but they should not outrank core Grafana import fidelity.
 Recommended order for the next focused development cycle:
 
 1. **Fix the data path**
-   - Adaptive query step, non-blocking refresh, variable refresh policy, and
-     error and warning surfacing.
+   - Non-blocking refresh, variable refresh policy, and error and warning
+     surfacing.
    - Unit, display, key binding, config, and Classic import diagnostic fixes.
 
 2. **Reach secured backends**

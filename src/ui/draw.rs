@@ -47,7 +47,7 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
         "{} — range={} step={}  panels={}  ",
         app.title,
         format_duration(app.range),
-        format_duration(app.step),
+        format_duration(app.default_intervals().step),
         normal_panel_count(app),
     ))];
     if !app.is_live() {
@@ -176,7 +176,7 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
         " | Prom: {} | range={} step={:?} refresh={} | grid={} | panels={} (skipped {}) ",
         app.prometheus.base,
         format_duration(app.range),
-        app.step,
+        app.default_intervals().step,
         format_duration(app.refresh_every),
         if app.autogrid_enabled { "on" } else { "off" },
         panel_count_display,
@@ -406,6 +406,7 @@ mod tests {
             autogrid: None,
             display: crate::ui::DisplayFormat::default(),
             options: crate::app::PanelOptions::None,
+            resolution: Default::default(),
         }
     }
 
@@ -796,6 +797,7 @@ mod tests {
                     autogrid: panel.autogrid,
                     display: panel.display,
                     options: panel.options,
+                    resolution: panel.resolution,
                 }
             })
             .collect();

@@ -212,6 +212,7 @@ fn import_panel(panel: model::Panel, out: &mut DashboardImport) -> Result<Option
     let mut expr_paths = Vec::new();
     let mut legends = Vec::new();
     let mut query_modes = Vec::new();
+    let mut target_min_intervals = Vec::new();
     for target in panel.targets {
         if target.hidden {
             continue;
@@ -221,8 +222,14 @@ fn import_panel(panel: model::Panel, out: &mut DashboardImport) -> Result<Option
             expr_paths.push(target.expr_path);
             legends.push(target.legend_format);
             query_modes.push(query_mode_for_target(target.instant, panel_type));
+            target_min_intervals.push(checked_min_interval(target.min_interval, out));
         }
     }
+    let resolution = crate::app::QueryResolution {
+        min_interval: checked_min_interval(panel.min_interval, out),
+        max_data_points: panel.max_data_points,
+        target_min_intervals,
+    };
 
     let mut thresholds = None;
     let mut min = None;
@@ -295,6 +302,7 @@ fn import_panel(panel: model::Panel, out: &mut DashboardImport) -> Result<Option
             autogrid,
             display,
             options,
+            resolution,
         });
         Ok(Some(index))
     } else {
@@ -464,6 +472,27 @@ impl LayoutIds {
         ));
         None
     }
+}
+
+/// Keeps a min interval that is a duration or references a variable, which
+/// resolves when queries run; anything else is dropped with a diagnostic.
+fn checked_min_interval(
+    interval: Option<model::MinInterval>,
+    out: &mut DashboardImport,
+) -> Option<String> {
+    let interval = interval?;
+    if interval.text.contains('$') || crate::app::parse_min_interval(&interval.text).is_some() {
+        return Some(interval.text);
+    }
+    out.diagnostics.push(ImportDiagnostic::new(
+        "ignored_field",
+        interval.path,
+        format!(
+            "min interval `{}` is not a duration; the default query step is used",
+            interval.text
+        ),
+    ));
+    None
 }
 
 fn query_mode_for_target(

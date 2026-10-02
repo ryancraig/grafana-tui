@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-use super::data::expand_expr;
+use super::data::{QueryIntervals, expand_expr};
 use crate::grafana::TemplateQueryVar;
 use crate::prom;
 use anyhow::{Result, anyhow};
@@ -168,13 +168,13 @@ pub(crate) async fn refresh_query_variables(
     prometheus: &prom::PromClient,
     query_vars: &[TemplateQueryVar],
     range: Duration,
-    step: Duration,
+    intervals: QueryIntervals,
     end_ts: i64,
     vars: &mut HashMap<String, String>,
     var_values: &mut HashMap<String, Vec<String>>,
 ) -> Result<()> {
     for query_var in query_vars {
-        let values = resolve_query_variable(prometheus, query_var, range, step, end_ts, vars)
+        let values = resolve_query_variable(prometheus, query_var, range, intervals, end_ts, vars)
             .await?
             .into_iter()
             .filter(|value| !value.is_empty())
@@ -213,11 +213,11 @@ async fn resolve_query_variable(
     prometheus: &prom::PromClient,
     query_var: &TemplateQueryVar,
     range: Duration,
-    step: Duration,
+    intervals: QueryIntervals,
     end_ts: i64,
     vars: &HashMap<String, String>,
 ) -> Result<Vec<String>> {
-    let expanded_query = expand_expr(&query_var.query, range, step, vars);
+    let expanded_query = expand_expr(&query_var.query, range, intervals, vars);
     let query = parse_prometheus_variable_query(&expanded_query)?;
     let start_ts = end_ts - range.as_secs() as i64;
     let values = match query {

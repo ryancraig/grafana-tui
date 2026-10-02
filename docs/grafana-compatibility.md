@@ -51,6 +51,7 @@ after this section apply to V2 panels, queries, and variables too. See the
 | Row and tab `variables` | ✅ Supported | Apply to the row or tab and everything inside it, shadowing dashboard variables; query variables resolve per row or tab copy; see [row and tab variables](grafana-dashboard-import.md#row-and-tab-variables) |
 | Top-level `spec.variables` | 🔶 Partial | Query, custom, constant, text, interval, datasource, group-by, and switch variables map to Grafatui variables; ad hoc filters emit diagnostics |
 | `spec.timeSettings.autoRefresh` | ✅ Supported | Used as the dashboard refresh interval |
+| `data.spec.queryOptions` `interval`, `maxDataPoints` | ✅ Supported | As for Classic panel `interval` and `maxDataPoints`; a query's `interval` sets its min step |
 | `spec.timeSettings` `from`, `to`, `timezone` | ❌ Not Implemented | As for Classic `time` and `timezone`: use `--range`; times display in UTC |
 | Inline `Panel` elements | ✅ Supported | Supported panel visualization groups map through the Classic-equivalent importer |
 | Prometheus `PanelQuery` queries | ✅ Supported | `prometheus`, `grafana-amazonprometheus-datasource`, and `grafana-azureprometheus-datasource` query groups are imported; other datasources emit import diagnostics and are skipped |
@@ -146,7 +147,8 @@ dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
 | `id` | ❌ Not Implemented | Not used |
 | `description` | ❌ Not Implemented | Not displayed |
 | `timeFrom` / `timeShift` / `hideTimeOverride` | ❌ Not Implemented | Ignored without a diagnostic; panels use the dashboard range |
-| `interval` / `maxDataPoints` | ❌ Not Implemented | Ignored without a diagnostic; queries use the global `--step` |
+| `interval` | ✅ Supported | Panel min interval, including `>` prefixes and variables; invalid values emit a diagnostic. See [query resolution](configuration.md#query-resolution) |
+| `maxDataPoints` | ✅ Supported | Sets how many steps a range query divides the time range into; defaults to 1000 |
 | `transparent` | ⛔ Not Applicable | TUI panels always have borders |
 | `links` | ⛔ Not Applicable | No browser navigation |
 | `repeat` | ✅ Supported | Panels and rows repeat once per selected variable value; copies saved by older Grafana versions (`repeatPanelId`) are dropped |
@@ -166,7 +168,7 @@ dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
 | `targets[].legendFormat` | 🔶 Partial | Exact `{{label}}` placeholders are substituted; `__auto` renders literally, and `{{ label }}` with inner spaces is not substituted |
 | `targets[].refId` | ❌ Not Implemented | Not used |
 | `targets[].datasource` | ❌ Not Implemented | Classic targets' `datasource` is not read, so any target with an `expr` (including Loki) is sent to the configured Prometheus without a diagnostic. V2 queries are filtered by datasource group |
-| `targets[].interval` | ❌ Not Implemented | Every range query uses the fixed global `--step` (default 5s); long ranges can exceed Prometheus's 11,000-point limit |
+| `targets[].interval` | ✅ Supported | Per-query min step; overrides the panel `interval` |
 | `targets[].intervalFactor` | ❌ Not Implemented | |
 | `targets[].instant` | ✅ Supported | Uses Prometheus instant `query` when true; Gauge, BarGauge, and Table default to instant |
 | `targets[].format` | ❌ Not Implemented | Always treated as time_series |
@@ -178,10 +180,10 @@ dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
 
 | Variable | Status | Notes |
 |---|---|---|
-| `$__rate_interval` | 🔶 Partial | Computed as `max(step × 4, 60s)`; Grafana uses `max($__interval + scrape interval, 4 × scrape interval)` |
-| `$__rate_interval_ms` | 🔶 Partial | Millisecond form of `$__rate_interval` |
-| `$__interval` | 🔶 Partial | Computed as `max(range / 200, --step)`, but range queries are still sent with the fixed `--step`, so the value can differ from the actual query resolution |
-| `$__interval_ms` | 🔶 Partial | Millisecond form of `$__interval` |
+| `$__rate_interval` | ✅ Supported | `max($__interval + scrape interval, 4 × scrape interval)`, as in Grafana; the scrape interval is the query's min interval or `--scrape-interval` (default 15s) |
+| `$__rate_interval_ms` | ✅ Supported | Millisecond form of `$__rate_interval` |
+| `$__interval` | ✅ Supported | The query's step: the range divided by `maxDataPoints` (default 1000), rounded as Grafana does, no finer than the min interval or `--step`, and within Prometheus's 11,000-point limit |
+| `$__interval_ms` | ✅ Supported | Millisecond form of `$__interval` |
 | `$__range` | ✅ Supported | Current dashboard time range |
 | `$__range_s` | ✅ Supported | Current dashboard time range in seconds |
 | `$__range_ms` | ✅ Supported | Current dashboard time range in milliseconds |
@@ -348,9 +350,9 @@ compatibility with Grafana annotation queries, APIs, `annotations`, or
 |---|---|---|---|---|
 | Dashboard Properties | 2 | 0 | 9 | 4 |
 | Panel Types | 8 | 0 | 14 | 5 |
-| Panel Common Fields | 12 | 0 | 4 | 2 |
-| Targets / Queries | 4 | 1 | 6 | 1 |
-| PromQL Variables | 3 | 4 | 0 | 0 |
+| Panel Common Fields | 14 | 0 | 3 | 2 |
+| Targets / Queries | 5 | 1 | 5 | 1 |
+| PromQL Variables | 7 | 0 | 0 | 0 |
 | Templating | 8 | 7 | 3 | 0 |
 | Variable Substitution | 3 | 0 | 5 | 0 |
 | Field Config | 4 | 7 | 7 | 1 |
@@ -360,7 +362,7 @@ compatibility with Grafana annotation queries, APIs, `annotations`, or
 | Data Links / Transforms | 0 | 0 | 2 | 1 |
 | Alert Rules | 0 | 0 | 3 | 0 |
 | Datasources | 3 | 0 | 5 | 0 |
-| **Total** | **52** | **19** | **74** | **14** |
+| **Total** | **59** | **15** | **72** | **14** |
 
 ---
 

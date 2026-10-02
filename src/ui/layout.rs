@@ -675,6 +675,7 @@ mod tests {
             autogrid: None,
             display: DisplayFormat::default(),
             options: PanelOptions::None,
+            resolution: Default::default(),
         }
     }
 
