@@ -172,12 +172,32 @@ fn format_prom_duration(duration: Duration) -> String {
     }
 }
 
+/// Expands `{{label}}` placeholders, which may have spaces inside the braces,
+/// with the series' labels. A label the series lacks expands to nothing, as in
+/// Grafana.
 pub(crate) fn format_legend(fmt: &str, metric: &HashMap<String, String>) -> String {
-    let mut out = fmt.to_string();
-    for (k, v) in metric {
-        out = out.replace(&format!("{{{{{}}}}}", k), v);
+    let mut out = String::with_capacity(fmt.len());
+    let mut rest = fmt;
+    while let Some(start) = rest.find("{{") {
+        let Some(end) = rest[start + 2..].find("}}") else {
+            break;
+        };
+        out.push_str(&rest[..start]);
+        let label = rest[start + 2..start + 2 + end].trim();
+        if let Some(value) = metric.get(label) {
+            out.push_str(value);
+        }
+        rest = &rest[start + 2 + end + 2..];
     }
+    out.push_str(rest);
     out
+}
+
+/// A target's legend format, or `None` for Grafana's automatic naming, which
+/// `__auto` and an empty format ask for.
+pub(crate) fn custom_legend(fmt: Option<&String>) -> Option<&str> {
+    fmt.map(|fmt| fmt.as_str())
+        .filter(|fmt| !fmt.trim().is_empty() && fmt.trim() != "__auto")
 }
 
 /// Downsamples data points to a maximum number of points using max-pooling.
@@ -368,6 +388,22 @@ mod tests {
         let expr = "sum_over_time(up[${__range_s}s]) / $__interval_ms / $__range_ms";
         let expanded = expand_expr(expr, range, intervals, &vars);
         assert_eq!(expanded, "sum_over_time(up[86400s]) / 60000 / 86400000");
+    }
+
+    #[test]
+    fn legend_placeholders_allow_spaces_and_drop_missing_labels() {
+        let metric = HashMap::from([("job".to_string(), "node".to_string())]);
+        assert_eq!(format_legend("{{ job }}/{{instance}}", &metric), "node/");
+        assert_eq!(format_legend("{{job}} {{ unterminated", &metric), "node {{ unterminated");
+    }
+
+    #[test]
+    fn auto_and_empty_legends_use_automatic_naming() {
+        for fmt in ["__auto", "", "  "] {
+            assert_eq!(custom_legend(Some(&fmt.to_string())), None);
+        }
+        assert_eq!(custom_legend(Some(&"{{job}}".to_string())), Some("{{job}}"));
+        assert_eq!(custom_legend(None), None);
     }
 
     #[test]

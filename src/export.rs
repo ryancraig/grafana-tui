@@ -2709,7 +2709,7 @@ mod tests {
         stat_app.panels[0].series[0].value = Some(1536.0);
 
         let stat_svg = render_svg(&stat_app, Rect::new(0, 0, 100, 40));
-        assert!(stat_svg.contains("1.5KB"));
+        assert!(stat_svg.contains("1.5KiB"));
 
         stat_app.panels[0].display.no_value = Some("n/a".to_string());
         stat_app.panels[0].series[0].value = None;

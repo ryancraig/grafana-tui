@@ -49,11 +49,58 @@ pub(super) fn render_stat(frame: &mut Frame, area: Rect, p: &PanelState, app: &A
 
     // Render Sparkline
     if let Some(s) = visible_series {
-        let data: Vec<u64> = s.points.iter().map(|(_, v)| *v as u64).collect();
+        let data = sparkline_heights(&s.points);
         let sparkline = Sparkline::default()
             .block(Block::default().borders(Borders::NONE))
             .data(&data)
+            .max(SPARKLINE_MAX)
             .style(Style::default().fg(color));
         frame.render_widget(sparkline, chunks[1]);
+    }
+}
+
+const SPARKLINE_MAX: u64 = 100;
+
+/// Bar heights for a sparkline, scaled between the series' minimum and
+/// maximum. `Sparkline` takes unsigned integers, so casting the values would
+/// flatten fractions and negatives.
+fn sparkline_heights(points: &[(f64, f64)]) -> Vec<u64> {
+    let (min, max) = points
+        .iter()
+        .map(|(_, value)| *value)
+        .filter(|value| value.is_finite())
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), value| {
+            (min.min(value), max.max(value))
+        });
+    points
+        .iter()
+        .map(|(_, value)| {
+            if !value.is_finite() {
+                0
+            } else if max > min {
+                // The lowest point keeps a sliver, so the line stays visible.
+                1 + ((value - min) / (max - min) * (SPARKLINE_MAX - 1) as f64).round() as u64
+            } else {
+                SPARKLINE_MAX / 2
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sparklines_scale_fractional_and_negative_values() {
+        let points = [(0.0, -0.5), (1.0, 0.25), (2.0, 1.0)];
+        assert_eq!(sparkline_heights(&points), [1, 51, 100]);
+    }
+
+    #[test]
+    fn flat_sparklines_sit_in_the_middle() {
+        let points = [(0.0, 0.3), (1.0, 0.3)];
+        assert_eq!(sparkline_heights(&points), [50, 50]);
+        assert!(sparkline_heights(&[]).is_empty());
     }
 }

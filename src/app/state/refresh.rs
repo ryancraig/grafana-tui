@@ -11,7 +11,7 @@
 
 use super::{AppState, PanelState, SeriesView};
 use crate::annotations::{AnnotationProvider, AnnotationRefreshContext, ProviderPoll};
-use crate::app::data::{QueryIntervals, downsample, expand_expr, format_legend};
+use crate::app::data::{QueryIntervals, custom_legend, downsample, expand_expr, format_legend};
 use crate::app::template::{ResolvedSections, Scope, SectionInstance, scoped_vars};
 use crate::app::variables::{VariableReport, VariableUpdate, refresh_query_variables};
 use crate::app::QueryMode;
@@ -766,7 +766,7 @@ async fn fetch_panel(
         let intervals = p.query_intervals(i, range, min_step, scrape_interval, vars);
         let step = intervals.step;
         let expr_expanded = expand_expr(expr, range, intervals, vars);
-        let legend_fmt = p.legends.get(i).and_then(|x| x.as_ref());
+        let legend_fmt = custom_legend(p.legends.get(i).and_then(Option::as_ref));
         let query_mode = p.query_mode(i);
 
         // Calculate start/end for URL display purposes

@@ -165,7 +165,7 @@ dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
 |---|---|---|
 | `targets` (array) | ✅ Supported | Multiple targets per panel supported |
 | `targets[].expr` | ✅ Supported | PromQL expression |
-| `targets[].legendFormat` | 🔶 Partial | Exact `{{label}}` placeholders are substituted; `__auto` renders literally, and `{{ label }}` with inner spaces is not substituted |
+| `targets[].legendFormat` | ✅ Supported | `{{label}}` placeholders are substituted, with or without spaces inside the braces, and labels a series lacks expand to nothing; `__auto` and empty formats use automatic series names |
 | `targets[].refId` | ❌ Not Implemented | Not used |
 | `targets[].datasource` | ❌ Not Implemented | Classic targets' `datasource` is not read, so any target with an `expr` (including Loki) is sent to the configured Prometheus without a diagnostic. V2 queries are filtered by datasource group |
 | `targets[].interval` | ✅ Supported | Per-query min step; overrides the panel `interval` |
@@ -239,7 +239,7 @@ major gaps.
 |---|---|---|
 | `fieldConfig` | 🔶 Partial | Parsed for supported defaults/custom fields below |
 | `fieldConfig.defaults` | 🔶 Partial | Parsed for min/max, thresholds, and selected custom fields |
-| `fieldConfig.defaults.unit` | 🔶 Partial | Common units such as bytes, bits, seconds, milliseconds, percent, percentunit, ops, request rate, and byte rate are formatted; unknown units fall back to Grafatui's compact SI formatter. Known differences: `bytes` scales by 1000 where Grafana uses 1024, and unit names are matched case-insensitively, so `bps` (bits/s) displays as bytes/s |
+| `fieldConfig.defaults.unit` | 🔶 Partial | Common units are formatted as Grafana does: data (`bytes`/`bits` and `kbytes`–`gbytes` in IEC 1024 steps, their `dec*` forms in SI 1000 steps), data rate (`bps` bits/s and `Bps` bytes/s, which differ only by case, plus `binbps`/`binBps`), time (`ns` through `d`, scaled up or down to fit), `percent`, `percentunit`, `ops`, and request rate. Unknown units fall back to Grafatui's compact SI formatter |
 | `fieldConfig.defaults.min` | ✅ Supported | Used for Graph y-axis lower bounds, percentage thresholds, and Gauge limits |
 | `fieldConfig.defaults.max` | ✅ Supported | Used for Graph y-axis upper bounds, gauge scaling, and threshold boundaries |
 | `fieldConfig.defaults.decimals` | ✅ Supported | Controls numeric precision in panel values, graph axes, legends, and exports |
@@ -285,7 +285,7 @@ tooltips.
 | `options.tooltip` | ❌ Not Implemented | Inspect mode serves as tooltip substitute |
 | `options.tooltip.mode` | ❌ Not Implemented | |
 | `options.orientation` | ❌ Not Implemented | |
-| `options.reduceOptions` | ❌ Not Implemented | Stat/Gauge always use last value; import diagnostics warn when reduce options are present, including Grafana's default `lastNotNull` |
+| `options.reduceOptions` | ❌ Not Implemented | Stat/Gauge always use last value; import diagnostics warn only when reduce options ask for something else, so Grafana's default `lastNotNull` is not reported |
 | `options.reduceOptions.calcs` | ❌ Not Implemented | |
 | `options.reduceOptions.fields` | ❌ Not Implemented | |
 | `options.textMode` | ❌ Not Implemented | |
@@ -351,7 +351,7 @@ compatibility with Grafana annotation queries, APIs, `annotations`, or
 | Dashboard Properties | 2 | 0 | 9 | 4 |
 | Panel Types | 8 | 0 | 14 | 5 |
 | Panel Common Fields | 14 | 0 | 3 | 2 |
-| Targets / Queries | 5 | 1 | 5 | 1 |
+| Targets / Queries | 6 | 0 | 5 | 1 |
 | PromQL Variables | 7 | 0 | 0 | 0 |
 | Templating | 9 | 6 | 3 | 0 |
 | Variable Substitution | 3 | 0 | 5 | 0 |
@@ -362,7 +362,7 @@ compatibility with Grafana annotation queries, APIs, `annotations`, or
 | Data Links / Transforms | 0 | 0 | 2 | 1 |
 | Alert Rules | 0 | 0 | 3 | 0 |
 | Datasources | 3 | 0 | 5 | 0 |
-| **Total** | **60** | **14** | **72** | **14** |
+| **Total** | **61** | **13** | **72** | **14** |
 
 ---
 
