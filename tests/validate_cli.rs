@@ -28,6 +28,13 @@ fn example_dashboard(name: &str) -> PathBuf {
         .join(name)
 }
 
+fn demo_dir(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("demo")
+        .join(name)
+}
+
 #[test]
 fn validate_strict_exits_nonzero_when_warnings_exist() {
     let path = write_dashboard(
@@ -417,4 +424,56 @@ fn validate_strict_rejects_v2_unsupported_datasource_warning() {
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("warning[grafana.import.unsupported_datasource]"));
     assert!(stderr.contains("validation failed with 1 warning(s)"));
+}
+
+#[test]
+fn validate_strict_accepts_every_hashistack_rdw_dashboard() {
+    let mut paths: Vec<PathBuf> = fs::read_dir(demo_dir("hashistack-rdw"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    paths.sort();
+    assert_eq!(paths.len(), 8, "{paths:?}");
+
+    for path in paths {
+        let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+            .args([
+                "--validate",
+                "--strict",
+                "--format",
+                "json",
+                "--grafana-json",
+            ])
+            .arg(&path)
+            .output()
+            .unwrap();
+
+        assert!(
+            output.status.success(),
+            "{}: {}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(
+            summary["title"]
+                .as_str()
+                .unwrap()
+                .starts_with("HashiStack / "),
+            "{}",
+            path.display()
+        );
+        assert!(
+            summary["panel_count"].as_u64().unwrap() >= 20,
+            "{}",
+            path.display()
+        );
+        assert_eq!(
+            summary["diagnostics"],
+            serde_json::json!([]),
+            "{}",
+            path.display()
+        );
+    }
 }
