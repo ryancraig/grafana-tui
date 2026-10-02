@@ -2,6 +2,20 @@
 
 ## Prometheus Connection Refused
 
+Grafatui keeps responding to keys while Prometheus is slow or down, and the
+title bar shows the connection state:
+
+| Title bar | Meaning |
+|---|---|
+| `◌ connecting` | The first refresh has not finished yet; panels show `Loading…` |
+| `⟳ refreshing` | A refresh has been running for more than a second |
+| `✗ Prometheus unreachable` | Every query in the last refresh failed to connect |
+
+While Prometheus is unreachable, Grafatui retries with a growing delay, up to 30
+seconds between attempts, and recovers on its own when Prometheus answers again.
+Press `r` to retry immediately. Queries that Prometheus rejects, such as invalid
+PromQL, show as panel errors rather than as unreachable.
+
 Check that Prometheus is running and reachable:
 
 ```bash

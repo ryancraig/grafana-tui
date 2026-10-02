@@ -117,6 +117,24 @@ impl std::fmt::Display for ResponseTooLarge {
 
 impl std::error::Error for ResponseTooLarge {}
 
+/// Prometheus could not be reached, or the connection failed mid-response, as
+/// opposed to Prometheus answering with an error.
+#[derive(Debug)]
+struct TransportError(String);
+
+impl std::fmt::Display for TransportError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for TransportError {}
+
+/// Whether `error` means Prometheus could not be reached.
+pub(crate) fn is_transport_error(error: &anyhow::Error) -> bool {
+    error.is::<TransportError>()
+}
+
 /// The start of a response body, for error messages.
 fn excerpt(text: &str) -> String {
     match text.char_indices().nth(ERROR_EXCERPT_CHARS) {
@@ -350,7 +368,7 @@ impl PromClient {
             .get(url)
             .send()
             .await
-            .map_err(|e| anyhow!("request failed: {}", e))?;
+            .map_err(|e| TransportError(format!("request failed: {e}")))?;
         let status = resp.status();
         let limit = self.max_response_bytes;
         let too_large = || anyhow::Error::new(ResponseTooLarge(limit));
@@ -364,7 +382,7 @@ impl PromClient {
         while let Some(chunk) = resp
             .chunk()
             .await
-            .map_err(|e| anyhow!("reading text: {}", e))?
+            .map_err(|e| TransportError(format!("reading text: {e}")))?
         {
             if body.len() + chunk.len() > limit {
                 return Err(too_large());

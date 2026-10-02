@@ -14,13 +14,11 @@
  * limitations under the License.
  */
 
-use crate::app::data::{QueryIntervals, downsample, expand_expr, format_legend, parse_min_interval};
+use crate::app::data::{QueryIntervals, parse_min_interval};
 use crate::app::template::{
     DashboardTemplate, MaterializedCondition, ResolvedSections, Scope, SectionInstance, Variables,
-    scoped_vars,
 };
 use crate::conditions::{ConditionContext, ConditionTarget};
-use crate::app::variables::refresh_query_variables;
 use crate::dashboard::{DashboardItemId, DashboardLayout, RowId, TabGroupId};
 use crate::export::{ExportOptions, RecordingState};
 use crate::grafana::TemplateQueryVar;
@@ -28,11 +26,14 @@ use crate::prom;
 use crate::theme::Theme;
 use crate::ui::DisplayFormat;
 use anyhow::Result;
-use futures::StreamExt;
 use ratatui::style::Color;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
+
+mod refresh;
+
+pub(crate) use refresh::{BackendIndicator, BackendStatus};
 
 /// Represents the state of a single dashboard panel.
 #[derive(Debug, Clone)]
@@ -230,6 +231,11 @@ impl PanelState {
         }
     }
 
+    /// Whether a fetch has finished for the panel, successfully or not.
+    pub(crate) fn has_loaded(&self) -> bool {
+        self.last_url.is_some() || self.last_error.is_some() || !self.series.is_empty()
+    }
+
     pub(crate) fn query_mode(&self, index: usize) -> QueryMode {
         self.query_modes
             .get(index)
@@ -356,8 +362,10 @@ pub(crate) struct AppState {
     pub(crate) refresh_every: Duration,
     /// List of panels.
     pub(crate) panels: Vec<PanelState>,
-    /// Timestamp of the last successful refresh.
+    /// When the last refresh finished.
     pub(crate) last_refresh: Instant,
+    /// Refresh work running in the background.
+    refreshes: refresh::RefreshTasks,
     /// Query end timestamp used by the currently rendered data.
     pub(crate) view_end_ts: i64,
     /// Vertical scroll offset.
@@ -471,6 +479,7 @@ impl AppState {
             refresh_every,
             panels,
             last_refresh: Instant::now() - refresh_every,
+            refreshes: refresh::RefreshTasks::default(),
             view_end_ts: chrono::Utc::now().timestamp(),
             vertical_scroll: 0,
             title,
@@ -629,6 +638,7 @@ impl AppState {
             sections: &self.section_values,
         });
 
+        self.refreshes.layout_changed();
         for &index in &materialized.reclaimed {
             if let Some(panel) = self.panels.get_mut(index) {
                 clear_panel_data(panel);
@@ -674,42 +684,6 @@ impl AppState {
         self.show_conditional_items();
     }
 
-    /// Resolves the query variables of every row and tab copy that defines
-    /// them, expanded with the variables around that copy. Returns whether any
-    /// resolved values changed.
-    async fn resolve_section_variables(
-        &mut self,
-        range: Duration,
-        intervals: QueryIntervals,
-        end_ts: i64,
-    ) -> bool {
-        let mut changed = false;
-        for instance in self.section_instances.clone() {
-            let key = (instance.id, instance.scope.clone());
-            let mut vars = scoped_vars(&self.vars, Some(&instance.scope)).into_owned();
-            let mut values = self
-                .section_values
-                .get(&key)
-                .cloned()
-                .unwrap_or_else(|| instance.selected.clone());
-            let _ = refresh_query_variables(
-                &self.prometheus,
-                &instance.queries,
-                range,
-                intervals,
-                end_ts,
-                &mut vars,
-                &mut values,
-            )
-            .await;
-            if self.section_values.get(&key) != Some(&values) {
-                self.section_values.insert(key, values);
-                changed = true;
-            }
-        }
-        changed
-    }
-
     /// Re-evaluates conditional rendering, for example after new data or a
     /// time range change.
     fn apply_conditions(&mut self) {
@@ -734,9 +708,7 @@ impl AppState {
     fn evaluate_hidden_items(&self) -> HashSet<ConditionTarget> {
         let panel_has_data = |index: usize| {
             let panel = self.panels.get(index)?;
-            let loaded =
-                panel.last_url.is_some() || panel.last_error.is_some() || !panel.series.is_empty();
-            loaded.then(|| {
+            panel.has_loaded().then(|| {
                 panel
                     .series
                     .iter()
@@ -900,7 +872,7 @@ impl AppState {
         self.scroll_to_selected_panel();
     }
 
-    pub(crate) async fn set_selected_row_collapsed(&mut self, collapsed: bool) -> Result<()> {
+    pub(crate) fn set_selected_row_collapsed(&mut self, collapsed: bool) -> Result<()> {
         let Some(row_id) = self.selected_row_id() else {
             return Ok(());
         };
@@ -908,15 +880,14 @@ impl AppState {
             return Ok(());
         };
         if !change.newly_visible_panels.is_empty() {
-            self.refresh_panel_indices(&change.newly_visible_panels, false)
-                .await;
+            self.fetch_panels(&change.newly_visible_panels);
         }
         self.reconcile_visible_annotation_targets();
         self.ensure_selection_visible();
         Ok(())
     }
 
-    pub(crate) async fn toggle_selected_row(&mut self) -> Result<()> {
+    pub(crate) fn toggle_selected_row(&mut self) -> Result<()> {
         let Some(row_id) = self.selected_row_id() else {
             return Ok(());
         };
@@ -924,29 +895,27 @@ impl AppState {
             return Ok(());
         };
         if !change.newly_visible_panels.is_empty() {
-            self.refresh_panel_indices(&change.newly_visible_panels, false)
-                .await;
+            self.fetch_panels(&change.newly_visible_panels);
         }
         self.reconcile_visible_annotation_targets();
         self.ensure_selection_visible();
         Ok(())
     }
 
-    pub(crate) async fn activate_tab(&mut self, id: TabGroupId, index: usize) -> Result<()> {
+    pub(crate) fn activate_tab(&mut self, id: TabGroupId, index: usize) -> Result<()> {
         let Some(change) = self.layout.set_active_tab(id, index) else {
             return Ok(());
         };
         self.selected_item = Some(DashboardItemId::Tabs(id));
         if !change.newly_visible_panels.is_empty() {
-            self.refresh_panel_indices(&change.newly_visible_panels, false)
-                .await;
+            self.fetch_panels(&change.newly_visible_panels);
         }
         self.reconcile_visible_annotation_targets();
         self.ensure_selection_visible();
         Ok(())
     }
 
-    pub(crate) async fn move_selected_tab(&mut self, direction: isize) -> Result<()> {
+    pub(crate) fn move_selected_tab(&mut self, direction: isize) -> Result<()> {
         let Some(id) = self.selected_tab_group_id() else {
             return Ok(());
         };
@@ -959,7 +928,7 @@ impl AppState {
         let next = active
             .saturating_add_signed(direction)
             .min(group.tabs.len().saturating_sub(1));
-        self.activate_tab(id, next).await
+        self.activate_tab(id, next)
     }
 
     pub(crate) fn enter_selected_tab(&mut self) {
@@ -1068,72 +1037,6 @@ impl AppState {
         QueryIntervals::new(self.range, self.min_step, self.scrape_interval, None)
     }
 
-    pub(crate) async fn refresh(&mut self) -> Result<()> {
-        let range = self.range;
-        let min_step = self.min_step;
-        let scrape_interval = self.scrape_interval;
-        let default_intervals = self.default_intervals();
-        let visible_panel_indices = self.panels_to_fetch();
-
-        // Calculate end timestamp: "now" minus time_offset
-        let end_ts = chrono::Utc::now().timestamp() - self.time_offset.as_secs() as i64;
-        let annotation_context =
-            crate::annotations::AnnotationRefreshContext::from_unix_window(end_ts, range);
-        let selected_values = self.var_values.clone();
-        let annotation_refresh = self.annotations.refresh(&annotation_context);
-        let prometheus_refresh = Self::refresh_prometheus_data(
-            &self.prometheus,
-            &self.query_vars,
-            range,
-            min_step,
-            scrape_interval,
-            end_ts,
-            &mut self.vars,
-            &mut self.var_values,
-            &self.panel_scopes,
-            &mut self.panels,
-            &visible_panel_indices,
-            true,
-        );
-        let (_, ()) = tokio::join!(annotation_refresh, prometheus_refresh);
-
-        self.view_end_ts = end_ts;
-        let mut variables_changed = self.template.is_some() && self.var_values != selected_values;
-        if variables_changed {
-            self.materialize_layout();
-        }
-        if !self.section_instances.is_empty()
-            && self
-                .resolve_section_variables(range, default_intervals, end_ts)
-                .await
-        {
-            self.materialize_layout();
-            variables_changed = true;
-        }
-        if variables_changed {
-            // Resolved variables changed which items repeat and their scopes, so
-            // panels fetched with the previous layout are fetched again.
-            let panels = self.panels_to_fetch();
-            self.refresh_panel_indices(&panels, false).await;
-        } else {
-            // New data or a new time range can reveal conditionally hidden items.
-            self.apply_conditions();
-            let revealed: Vec<usize> = self
-                .panels_to_fetch()
-                .into_iter()
-                .filter(|index| !visible_panel_indices.contains(index))
-                .collect();
-            if !revealed.is_empty() {
-                self.refresh_panel_indices(&revealed, false).await;
-            }
-        }
-
-        self.reconcile_visible_annotation_targets();
-
-        self.last_refresh = Instant::now();
-        Ok(())
-    }
-
     fn reconcile_visible_annotation_targets(&mut self) {
         let visible_panels = self
             .visible_panel_indices()
@@ -1148,195 +1051,6 @@ impl AppState {
             .map(|(_, panel)| panel.title.clone())
             .collect::<Vec<_>>();
         self.annotations.reconcile_targets(&titles);
-    }
-
-    async fn refresh_panel_indices(&mut self, indices: &[usize], refresh_variables: bool) {
-        let end_ts = self.view_end_ts;
-        Self::refresh_prometheus_data(
-            &self.prometheus,
-            &self.query_vars,
-            self.range,
-            self.min_step,
-            self.scrape_interval,
-            end_ts,
-            &mut self.vars,
-            &mut self.var_values,
-            &self.panel_scopes,
-            &mut self.panels,
-            indices,
-            refresh_variables,
-        )
-        .await;
-        self.apply_conditions();
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn refresh_prometheus_data(
-        prometheus: &prom::PromClient,
-        query_vars: &[TemplateQueryVar],
-        range: Duration,
-        min_step: Duration,
-        scrape_interval: Duration,
-        end_ts: i64,
-        vars: &mut HashMap<String, String>,
-        var_values: &mut HashMap<String, Vec<String>>,
-        panel_scopes: &HashMap<usize, Scope>,
-        panels: &mut [PanelState],
-        indices: &[usize],
-        refresh_variables: bool,
-    ) {
-        if refresh_variables {
-            let _ = refresh_query_variables(
-                prometheus,
-                query_vars,
-                range,
-                QueryIntervals::new(range, min_step, scrape_interval, None),
-                end_ts,
-                vars,
-                var_values,
-            )
-            .await;
-        }
-
-        // Create a stream of futures for fetching panel data
-        let vars = &*vars;
-        let indices = indices.iter().copied().collect::<HashSet<_>>();
-        let mut futures = futures::stream::iter(
-            panels
-                .iter_mut()
-                .enumerate()
-                .filter(|(index, _)| indices.contains(index)),
-        )
-        .map(|(index, p)| {
-            let vars = scoped_vars(vars, panel_scopes.get(&index));
-            Self::fetch_single_panel_data(
-                prometheus,
-                p,
-                range,
-                min_step,
-                scrape_interval,
-                vars,
-                end_ts,
-            )
-        })
-        .buffer_unordered(4); // Max 4 concurrent panel refreshes
-
-        while let Some((p, mut results, url, err)) = futures.next().await {
-            // Series the user hid stay hidden across refreshes.
-            let hidden: HashSet<&str> = p
-                .series
-                .iter()
-                .filter(|series| !series.visible)
-                .map(|series| series.name.as_str())
-                .collect();
-            for series in &mut results {
-                series.visible = !hidden.contains(series.name.as_str());
-            }
-            p.series = results;
-            p.last_samples = p.series.iter().map(|s| s.points.len()).sum();
-            if let Some(u) = url {
-                p.last_url = Some(u);
-            }
-            p.last_error = err;
-        }
-    }
-
-    async fn fetch_single_panel_data<'a>(
-        prometheus: &'a prom::PromClient,
-        p: &'a mut PanelState,
-        range: Duration,
-        min_step: Duration,
-        scrape_interval: Duration,
-        vars: std::borrow::Cow<'a, HashMap<String, String>>,
-        end_ts: i64,
-    ) -> (
-        &'a mut PanelState,
-        Vec<SeriesView>,
-        Option<String>,
-        Option<String>,
-    ) {
-        let mut panel_results = Vec::new();
-        let mut last_url = None;
-        let mut error = None;
-
-        for (i, expr) in p.exprs.iter().enumerate() {
-            let intervals = p.query_intervals(i, range, min_step, scrape_interval, &vars);
-            let step = intervals.step;
-            let expr_expanded = expand_expr(expr, range, intervals, &vars);
-            let legend_fmt = p.legends.get(i).and_then(|x| x.as_ref());
-            let query_mode = p.query_mode(i);
-
-            // Calculate start/end for URL display purposes
-            let start_ts = end_ts - (range.as_secs() as i64);
-
-            let url = match query_mode {
-                QueryMode::Range => {
-                    prometheus.build_query_range_url(&expr_expanded, start_ts, end_ts, step)
-                }
-                QueryMode::Instant => prometheus.build_query_url(&expr_expanded, end_ts),
-            };
-            last_url = Some(url);
-
-            let query_result = match query_mode {
-                QueryMode::Range => {
-                    prometheus
-                        .query_range(&expr_expanded, start_ts, end_ts, step)
-                        .await
-                }
-                QueryMode::Instant => {
-                    prometheus
-                        .query_instant_series(&expr_expanded, end_ts)
-                        .await
-                }
-            };
-
-            match query_result {
-                Ok(res) => {
-                    for s in res {
-                        let latest_val = s.values.last().and_then(|(_, v)| v.parse::<f64>().ok());
-                        let legend_base = if let Some(fmt) = legend_fmt {
-                            format_legend(fmt, &s.metric)
-                        } else if s.metric.is_empty() {
-                            expr_expanded.clone()
-                        } else {
-                            let mut labels: Vec<_> = s
-                                .metric
-                                .iter()
-                                .map(|(k, v)| format!("{}=\"{}\"", k, v))
-                                .collect();
-                            labels.sort();
-                            format!("{} {{{}}}", expr_expanded, labels.join(", "))
-                        };
-
-                        let mut pts = Vec::with_capacity(s.values.len());
-                        for (ts, val) in s.values {
-                            if let Ok(y) = val.parse::<f64>()
-                                && y.is_finite()
-                            {
-                                pts.push((ts, y));
-                            }
-                        }
-                        panel_results.push(SeriesView {
-                            name: legend_base,
-                            value: latest_val,
-                            points: downsample(pts, 200),
-                            visible: true,
-                        });
-                    }
-                }
-                Err(e) => {
-                    let query_name = match query_mode {
-                        QueryMode::Range => "query_range",
-                        QueryMode::Instant => "query",
-                    };
-                    error = Some(format!(
-                        "{} failed for `{}`: {}",
-                        query_name, expr_expanded, e
-                    ));
-                }
-            }
-        }
-        (p, panel_results, last_url, error)
     }
 }
 
@@ -1457,12 +1171,12 @@ mod tests {
         app.select_next_item();
         assert_eq!(app.selected_panel_index(), Some(0));
         app.select_previous_item();
-        app.toggle_selected_row().await.unwrap();
+        app.toggle_selected_row().unwrap();
 
         assert!(app.visible_panel_indices().is_empty());
         assert_eq!(app.selected_item, Some(DashboardItemId::Row(RowId::new(0))));
 
-        app.toggle_selected_row().await.unwrap();
+        app.toggle_selected_row().unwrap();
         assert!(app.layout.row(RowId::new(1)).unwrap().collapsed);
         assert_eq!(app.visible_panel_indices(), vec![0]);
     }
@@ -2068,7 +1782,8 @@ mod tests {
         assert!(app.panels[0].last_error.is_none());
         assert!(app.panels[1].last_error.is_none());
 
-        app.toggle_selected_row().await.unwrap();
+        app.toggle_selected_row().unwrap();
+        app.settle_refreshes().await;
         assert!(app.panels[0].last_error.is_some());
         assert!(app.panels[1].last_error.is_none());
     }
@@ -2080,7 +1795,8 @@ mod tests {
         app.last_refresh = Instant::now() - Duration::from_secs(30);
         let last_refresh = app.last_refresh;
 
-        app.toggle_selected_row().await.unwrap();
+        app.toggle_selected_row().unwrap();
+        app.settle_refreshes().await;
 
         assert_eq!(app.view_end_ts, 1_700_000_000);
         assert_eq!(app.last_refresh, last_refresh);
@@ -2152,7 +1868,7 @@ mod tests {
         assert!(app.annotations.footer_status().is_some());
         app.selected_item = Some(DashboardItemId::Row(RowId::new(0)));
 
-        app.set_selected_row_collapsed(true).await.unwrap();
+        app.set_selected_row_collapsed(true).unwrap();
 
         assert_eq!(app.annotations.footer_status(), None);
     }

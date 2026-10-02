@@ -263,13 +263,10 @@ async fn main() -> Result<()> {
     if let Some(template) = template {
         state.apply_template(template);
     }
-    // Signals are handled from here on, so stopping during the first refresh,
-    // which may be waiting on an annotation provider, still cleans up.
+    // The first refresh starts once the dashboard is drawn. Stopping on a
+    // signal drops the app, which aborts refreshes and kills annotation
+    // provider processes.
     let mut shutdown = ShutdownSignals::register();
-    tokio::select! {
-        res = state.refresh() => res?,
-        () = shutdown.recv() => return Ok(()),
-    }
 
     install_terminal_panic_hook();
     let guard = TerminalGuard::enter()?;
