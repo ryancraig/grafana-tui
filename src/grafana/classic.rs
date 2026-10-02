@@ -435,7 +435,7 @@ fn normalize_classic_panel(
         reduce_options_path: panel
             .options
             .and_then(|options| options.reduce_options)
-            .is_some()
+            .is_some_and(|options| model::reduce_options_are_custom(&options))
             .then(|| format!("{source_path}.options.reduceOptions")),
         transformations_path: None,
         min_interval: model::MinInterval::new(panel.interval, format!("{source_path}.interval")),

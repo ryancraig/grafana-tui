@@ -31,47 +31,55 @@ impl DisplayFormat {
     }
 
     pub(crate) fn format_number(&self, value: f64) -> String {
-        // Keep this first pass intentionally small: these common Grafana units
-        // unlock most imported dashboard readability while unknown units retain
-        // Grafatui's previous compact SI behavior instead of rendering worse.
+        // Grafana's common units; unknown units keep the compact SI format.
+        let decimals = self.decimals;
         match self.unit_key().as_deref() {
-            Some("bytes" | "decbytes") => format_scaled(
-                value,
-                &["B", "KB", "MB", "GB", "TB", "PB"],
-                self.decimals,
-                "",
-            ),
-            Some("bits" | "decbits") => format_scaled(
-                value,
-                &["b", "Kb", "Mb", "Gb", "Tb", "Pb"],
-                self.decimals,
-                "",
-            ),
-            Some("s" | "seconds") => format_duration_seconds(value, self.decimals),
-            Some("ms") => format_suffix(value, self.decimals, "ms"),
-            Some("percent") => format_suffix(value, self.decimals, "%"),
+            Some("bytes") => format_scaled(value, &BYTES_IEC, KIB, decimals),
+            Some("decbytes") => format_scaled(value, &BYTES_SI, 1000.0, decimals),
+            Some("kbytes") => format_scaled(value * KIB, &BYTES_IEC, KIB, decimals),
+            Some("deckbytes") => format_scaled(value * 1e3, &BYTES_SI, 1000.0, decimals),
+            Some("mbytes") => format_scaled(value * KIB * KIB, &BYTES_IEC, KIB, decimals),
+            Some("decmbytes") => format_scaled(value * 1e6, &BYTES_SI, 1000.0, decimals),
+            Some("gbytes") => format_scaled(value * KIB * KIB * KIB, &BYTES_IEC, KIB, decimals),
+            Some("decgbytes") => format_scaled(value * 1e9, &BYTES_SI, 1000.0, decimals),
+            Some("bits") => format_scaled(value, &BITS_IEC, KIB, decimals),
+            Some("decbits") => format_scaled(value, &BITS_SI, 1000.0, decimals),
+            Some("bps") => format_scaled(value, &BIT_RATE_SI, 1000.0, decimals),
+            Some("Bps" | "bytes/sec" | "bytes/s") => {
+                format_scaled(value, &BYTE_RATE_SI, 1000.0, decimals)
+            }
+            Some("binbps") => format_scaled(value, &BIT_RATE_IEC, KIB, decimals),
+            Some("binBps") => format_scaled(value, &BYTE_RATE_IEC, KIB, decimals),
+            Some("ns") => format_duration_seconds(value / 1e9, decimals),
+            Some("µs" | "us") => format_duration_seconds(value / 1e6, decimals),
+            Some("ms") => format_duration_seconds(value / 1e3, decimals),
+            Some("s" | "seconds") => format_duration_seconds(value, decimals),
+            Some("m") => format_duration_seconds(value * 60.0, decimals),
+            Some("h") => format_duration_seconds(value * 3_600.0, decimals),
+            Some("d") => format_duration_seconds(value * 86_400.0, decimals),
+            Some("percent") => format_suffix(value, decimals, "%"),
             // Grafana's percentunit stores ratios as 0.0-1.0, so scale to the
             // user-facing percent text dashboards expect.
-            Some("percentunit") => format_suffix(value * 100.0, self.decimals, "%"),
-            Some("ops") => format_rate(value, self.decimals, " ops/s"),
-            Some("reqps" | "rps") => format_rate(value, self.decimals, " req/s"),
-            Some("bps" | "bytes/sec" | "bytes/s") => format_scaled(
-                value,
-                &["B/s", "KB/s", "MB/s", "GB/s", "TB/s", "PB/s"],
-                self.decimals,
-                "",
-            ),
-            Some("short" | "none") | None => format_si_with_decimals(value, self.decimals),
-            Some(_) => format_si_with_decimals(value, self.decimals),
+            Some("percentunit") => format_suffix(value * 100.0, decimals, "%"),
+            Some("ops") => format_rate(value, decimals, " ops/s"),
+            Some("reqps" | "rps") => format_rate(value, decimals, " req/s"),
+            Some("short" | "none") | None => format_si_with_decimals(value, decimals),
+            Some(_) => format_si_with_decimals(value, decimals),
         }
     }
 
+    /// The unit, ignoring case except where Grafana units differ only by
+    /// case: `bps` is bits and `Bps` bytes per second.
     fn unit_key(&self) -> Option<String> {
-        self.unit
+        let unit = self
+            .unit
             .as_deref()
             .map(str::trim)
-            .filter(|unit| !unit.is_empty())
-            .map(|unit| unit.to_ascii_lowercase())
+            .filter(|unit| !unit.is_empty())?;
+        Some(match unit {
+            "Bps" | "binBps" | "binbps" => unit.to_string(),
+            _ => unit.to_lowercase(),
+        })
     }
 }
 
@@ -108,39 +116,51 @@ fn format_rate(value: f64, decimals: Option<usize>, suffix: &str) -> String {
     format!("{}{suffix}", format_si_with_decimals(value, decimals))
 }
 
-fn format_scaled(
-    value: f64,
-    suffixes: &[&str],
-    decimals: Option<usize>,
-    separator: &str,
-) -> String {
+const KIB: f64 = 1024.0;
+const BYTES_IEC: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+const BYTES_SI: [&str; 6] = ["B", "kB", "MB", "GB", "TB", "PB"];
+const BITS_IEC: [&str; 6] = ["b", "Kib", "Mib", "Gib", "Tib", "Pib"];
+const BITS_SI: [&str; 6] = ["b", "kb", "Mb", "Gb", "Tb", "Pb"];
+const BIT_RATE_SI: [&str; 6] = ["bps", "kbps", "Mbps", "Gbps", "Tbps", "Pbps"];
+const BYTE_RATE_SI: [&str; 6] = ["B/s", "kB/s", "MB/s", "GB/s", "TB/s", "PB/s"];
+const BIT_RATE_IEC: [&str; 6] = ["b/s", "Kib/s", "Mib/s", "Gib/s", "Tib/s", "Pib/s"];
+const BYTE_RATE_IEC: [&str; 6] = ["B/s", "KiB/s", "MiB/s", "GiB/s", "TiB/s", "PiB/s"];
+
+/// Scales `value` by `base` until it fits the largest suffix it reaches.
+fn format_scaled(value: f64, suffixes: &[&str], base: f64, decimals: Option<usize>) -> String {
     let mut scaled = value;
     let mut suffix_index = 0;
 
-    while scaled.abs() >= 1000.0 && suffix_index + 1 < suffixes.len() {
-        scaled /= 1000.0;
+    while scaled.abs() >= base && suffix_index + 1 < suffixes.len() {
+        scaled /= base;
         suffix_index += 1;
     }
 
-    format!(
-        "{:.*}{separator}{}",
-        decimals.unwrap_or(2),
-        scaled,
-        suffixes[suffix_index]
-    )
+    format!("{:.*}{}", decimals.unwrap_or(2), scaled, suffixes[suffix_index])
 }
 
+/// Formats seconds in the largest unit that keeps the value at least 1, from
+/// microseconds to years, as Grafana's time units do.
 fn format_duration_seconds(value: f64, decimals: Option<usize>) -> String {
+    const UNITS: [(f64, &str); 8] = [
+        (31_536_000.0, "y"),
+        (604_800.0, "w"),
+        (86_400.0, "d"),
+        (3_600.0, "h"),
+        (60.0, "m"),
+        (1.0, "s"),
+        (1e-3, "ms"),
+        (1e-6, "µs"),
+    ];
     let abs = value.abs();
-    if abs >= 86_400.0 {
-        format_suffix(value / 86_400.0, decimals, "d")
-    } else if abs >= 3_600.0 {
-        format_suffix(value / 3_600.0, decimals, "h")
-    } else if abs >= 60.0 {
-        format_suffix(value / 60.0, decimals, "m")
-    } else {
-        format_suffix(value, decimals, "s")
+    if abs == 0.0 {
+        return format_suffix(0.0, decimals, "s");
     }
+    let (size, suffix) = UNITS
+        .into_iter()
+        .find(|(size, _)| abs >= *size)
+        .unwrap_or((1e-9, "ns"));
+    format_suffix(value / size, decimals, suffix)
 }
 
 pub(crate) fn format_time(ts: f64) -> String {
@@ -256,14 +276,60 @@ mod tests {
             decimals: None,
             no_value: None,
         };
-        assert_eq!(bytes.format_number(1_536.0), "1.54KB");
+        assert_eq!(bytes.format_number(1_536.0), "1.50KiB");
 
         let bits = DisplayFormat {
             unit: Some("bits".to_string()),
             decimals: Some(1),
             no_value: None,
         };
-        assert_eq!(bits.format_number(1_536.0), "1.5Kb");
+        assert_eq!(bits.format_number(1_536.0), "1.5Kib");
+    }
+
+    fn unit(unit: &str) -> DisplayFormat {
+        DisplayFormat {
+            unit: Some(unit.to_string()),
+            decimals: Some(1),
+            no_value: None,
+        }
+    }
+
+    #[test]
+    fn data_units_follow_grafana_si_and_iec_prefixes() {
+        assert_eq!(unit("bytes").format_number(1_048_576.0), "1.0MiB");
+        assert_eq!(unit("decbytes").format_number(1_500_000.0), "1.5MB");
+        assert_eq!(unit("decbytes").format_number(1_500.0), "1.5kB");
+        assert_eq!(unit("decbits").format_number(1_500.0), "1.5kb");
+        assert_eq!(unit("kbytes").format_number(2_048.0), "2.0MiB");
+        assert_eq!(unit("decgbytes").format_number(1.5), "1.5GB");
+        assert_eq!(unit("bytes").format_number(-2_048.0), "-2.0KiB");
+    }
+
+    #[test]
+    fn rate_units_tell_bits_from_bytes_by_case() {
+        assert_eq!(unit("bps").format_number(1_500_000.0), "1.5Mbps");
+        assert_eq!(unit("Bps").format_number(1_500_000.0), "1.5MB/s");
+        assert_eq!(unit("binbps").format_number(2_048.0), "2.0Kib/s");
+        assert_eq!(unit("binBps").format_number(2_048.0), "2.0KiB/s");
+        // Units that differ only by case elsewhere are matched case-insensitively.
+        assert_eq!(unit("Bytes").format_number(2_048.0), "2.0KiB");
+        assert_eq!(unit("bytes/sec").format_number(1_500.0), "1.5kB/s");
+    }
+
+    #[test]
+    fn time_units_scale_up_and_down() {
+        assert_eq!(unit("ms").format_number(250.0), "250.0ms");
+        assert_eq!(unit("ms").format_number(1_500.0), "1.5s");
+        assert_eq!(unit("ms").format_number(90_000.0), "1.5m");
+        assert_eq!(unit("s").format_number(0.25), "250.0ms");
+        assert_eq!(unit("s").format_number(0.000_5), "500.0µs");
+        assert_eq!(unit("s").format_number(7_200.0), "2.0h");
+        assert_eq!(unit("s").format_number(1_209_600.0), "2.0w");
+        assert_eq!(unit("s").format_number(0.0), "0.0s");
+        assert_eq!(unit("µs").format_number(1_500.0), "1.5ms");
+        assert_eq!(unit("ns").format_number(1_500.0), "1.5µs");
+        assert_eq!(unit("m").format_number(90.0), "1.5h");
+        assert_eq!(unit("d").format_number(14.0), "2.0w");
     }
 
     #[test]

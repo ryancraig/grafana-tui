@@ -2142,6 +2142,32 @@ mod tests {
     }
 
     #[test]
+    fn default_reduce_options_are_not_reported() {
+        let panel = |options: &str| {
+            format!(
+                r#"{{"title": "Reduce", "panels": [{{"type": "stat", "title": "Panel",
+                    "targets": [{{"expr": "up"}}], "options": {{"reduceOptions": {options}}}}}]}}"#
+            )
+        };
+        for default in [
+            r#"{"values": false, "calcs": ["lastNotNull"], "fields": ""}"#,
+            r#"{"calcs": ["last"]}"#,
+            r#"{"calcs": []}"#,
+        ] {
+            let dashboard = parse_grafana_dashboard(&panel(default)).unwrap();
+            assert!(dashboard.diagnostics.is_empty(), "{default}");
+        }
+        for custom in [
+            r#"{"calcs": ["mean"]}"#,
+            r#"{"values": true, "calcs": ["lastNotNull"]}"#,
+            r#"{"calcs": ["lastNotNull"], "fields": "/^cpu$/"}"#,
+        ] {
+            let dashboard = parse_grafana_dashboard(&panel(custom)).unwrap();
+            assert_eq!(dashboard.diagnostics.len(), 1, "{custom}");
+        }
+    }
+
+    #[test]
     fn v2_diagnostics_mappings_and_reduce_options_reuse_classic_messages() {
         let classic = parse_grafana_dashboard(
             r#"{
@@ -2151,7 +2177,7 @@ mod tests {
                     "title": "Panel",
                     "targets": [{"expr": "up"}],
                     "fieldConfig": {"defaults": {"mappings": [{"type": "value"}]}},
-                    "options": {"reduceOptions": {"calcs": ["lastNotNull"]}}
+                    "options": {"reduceOptions": {"calcs": ["mean"]}}
                 }]
             }"#,
         )
@@ -2160,7 +2186,7 @@ mod tests {
         json["spec"]["elements"]["panel-1"]["spec"]["vizConfig"]["spec"]["fieldConfig"]["defaults"]
             ["mappings"] = serde_json::json!([{"type": "value"}]);
         json["spec"]["elements"]["panel-1"]["spec"]["vizConfig"]["spec"]["options"]["reduceOptions"] =
-            serde_json::json!({"calcs": ["lastNotNull"]});
+            serde_json::json!({"calcs": ["mean"]});
 
         let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
 
@@ -2659,7 +2685,7 @@ mod tests {
               {"expr":"rate(requests_total{job=\"$job\"}[5m])","legendFormat":"{{instance}}","instant":false}
             ],
             "fieldConfig":{"defaults":{"unit":"reqps","decimals":1,"min":0,"max":100}},
-            "options":{"reduceOptions":{"calcs":["lastNotNull"]}}
+            "options":{"reduceOptions":{"calcs":["max"]}}
           }]
         }"#,
         )

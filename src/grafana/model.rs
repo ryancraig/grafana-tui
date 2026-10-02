@@ -130,6 +130,26 @@ impl MinInterval {
     }
 }
 
+/// Whether `reduceOptions` asks for something other than the last value,
+/// which Grafatui always shows. Grafana's default is `lastNotNull`, and
+/// Prometheus results have no nulls, so `last` and `lastNotNull` match it.
+pub(super) fn reduce_options_are_custom(options: &Value) -> bool {
+    let all_values = options.get("values").and_then(Value::as_bool) == Some(true);
+    let fields = options
+        .get("fields")
+        .and_then(Value::as_str)
+        .is_some_and(|fields| !fields.is_empty());
+    let calcs = options
+        .get("calcs")
+        .and_then(Value::as_array)
+        .is_some_and(|calcs| {
+            calcs
+                .iter()
+                .any(|calc| !matches!(calc.as_str(), Some("last" | "lastNotNull")))
+        });
+    all_values || fields || calcs
+}
+
 /// Reads `maxDataPoints`, which Grafana saves as a number or a numeric string.
 pub(super) fn max_data_points(value: Option<&Value>) -> Option<u32> {
     let points = match value? {

@@ -903,7 +903,7 @@ fn parse_panel(
         reduce_options_path: viz_spec
             .options
             .reduce_options
-            .is_some()
+            .is_some_and(|options| model::reduce_options_are_custom(&options))
             .then(|| format!("{panel_path}.vizConfig.spec.options.reduceOptions")),
         transformations_path: (!raw.spec.data.spec.transformations.is_empty())
             .then(|| format!("{panel_path}.data.spec.transformations")),
