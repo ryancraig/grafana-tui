@@ -194,6 +194,7 @@ mod tests {
                 autogrid: None,
                 display: crate::ui::DisplayFormat::default(),
                 options: PanelOptions::Graph(GraphOptions::default()),
+                resolution: Default::default(),
             }],
             0,
             Theme::default(),
