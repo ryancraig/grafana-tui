@@ -15,7 +15,7 @@
  */
 
 use super::data::{QueryIntervals, expand_expr};
-use crate::grafana::TemplateQueryVar;
+use crate::grafana::{TemplateQueryVar, VariableRefresh};
 use crate::prom;
 use anyhow::{Result, anyhow};
 use regex::Regex;
@@ -164,18 +164,66 @@ enum PrometheusVariableQuery {
     QueryResult(String),
 }
 
+/// Why query variables are being resolved, which decides which are queried.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum VariableUpdate {
+    /// The dashboard, or a row or tab copy, is shown for the first time.
+    Load,
+    /// The time range changed, or the user asked for a refresh.
+    TimeRangeChange,
+    /// A periodic refresh, which re-queries only dependent variables.
+    Tick,
+}
+
+/// Which variables a resolution queried, and why any of them failed.
+#[derive(Debug, Default)]
+pub(crate) struct VariableReport {
+    pub(crate) queried: Vec<String>,
+    /// Variable name and error, for variables that keep their previous value.
+    pub(crate) errors: Vec<(String, String)>,
+}
+
+/// Resolves the query variables `update` calls for, in dashboard order, and
+/// any variable whose query references one that changed. A variable that
+/// fails keeps its value, and the rest still resolve.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn refresh_query_variables(
     prometheus: &prom::PromClient,
     query_vars: &[TemplateQueryVar],
+    update: VariableUpdate,
     range: Duration,
     intervals: QueryIntervals,
     end_ts: i64,
     vars: &mut HashMap<String, String>,
     var_values: &mut HashMap<String, Vec<String>>,
-) -> Result<()> {
+) -> VariableReport {
+    let mut report = VariableReport::default();
+    let mut changed: Vec<&str> = Vec::new();
     for query_var in query_vars {
-        let values = resolve_query_variable(prometheus, query_var, range, intervals, end_ts, vars)
-            .await?
+        let due = match update {
+            VariableUpdate::Load => true,
+            VariableUpdate::TimeRangeChange => {
+                query_var.refresh == VariableRefresh::OnTimeRangeChange
+            }
+            VariableUpdate::Tick => false,
+        };
+        if !due && !references_any(&query_var.query, &changed) {
+            continue;
+        }
+        report.queried.push(query_var.name.clone());
+        let values =
+            match resolve_query_variable(prometheus, query_var, range, intervals, end_ts, vars)
+                .await
+            {
+                Ok(values) => values,
+                Err(error) => {
+                    report
+                        .errors
+                        .push((query_var.name.clone(), format!("{error:#}")));
+                    continue;
+                }
+            };
+        let values = values
             .into_iter()
             .filter(|value| !value.is_empty())
             .collect::<Vec<_>>();
@@ -202,11 +250,25 @@ pub(crate) async fn refresh_query_variables(
             Some(all_value) if query_var.select_all => all_value.clone(),
             _ => format_prometheus_values(&selected, query_var.regex_values),
         };
+        if var_values.get(&query_var.name) != Some(&selected) {
+            changed.push(&query_var.name);
+        }
         vars.insert(query_var.name.clone(), formatted);
         var_values.insert(query_var.name.clone(), selected);
     }
+    report
+}
 
-    Ok(())
+/// Whether `query` references any of `names`.
+fn references_any(query: &str, names: &[&str]) -> bool {
+    let mut found = false;
+    if !names.is_empty() {
+        substitute_variables(query, |name| {
+            found |= names.contains(&name);
+            None
+        });
+    }
+    found
 }
 
 async fn resolve_query_variable(
@@ -222,13 +284,9 @@ async fn resolve_query_variable(
     let start_ts = end_ts - range.as_secs() as i64;
     let values = match query {
         PrometheusVariableQuery::LabelValues { metric, label } => {
-            if let Some(metric) = metric {
-                prometheus
-                    .series_label_values(&metric, &label, start_ts, end_ts)
-                    .await?
-            } else {
-                prometheus.label_values(&label).await?
-            }
+            prometheus
+                .label_values(&label, metric.as_deref(), start_ts, end_ts)
+                .await?
         }
         PrometheusVariableQuery::QueryResult(query) => {
             prometheus

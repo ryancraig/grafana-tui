@@ -13,12 +13,12 @@ use super::{AppState, PanelState, SeriesView};
 use crate::annotations::{AnnotationProvider, AnnotationRefreshContext, ProviderPoll};
 use crate::app::data::{QueryIntervals, downsample, expand_expr, format_legend};
 use crate::app::template::{ResolvedSections, Scope, SectionInstance, scoped_vars};
-use crate::app::variables::refresh_query_variables;
+use crate::app::variables::{VariableReport, VariableUpdate, refresh_query_variables};
 use crate::app::QueryMode;
 use crate::grafana::TemplateQueryVar;
 use crate::prom;
 use futures::StreamExt;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::{Duration, Instant};
 use tokio::task::{AbortHandle, JoinError, JoinSet};
 
@@ -68,6 +68,13 @@ pub(crate) struct RefreshTasks {
     /// The window to load annotations for once the running load finishes.
     annotations_queued: Option<AnnotationRefreshContext>,
     status: BackendStatus,
+    /// The range and offset query variables last resolved for; `None` until
+    /// they first resolve.
+    variables_window: Option<(Duration, Duration)>,
+    /// The user asked for a refresh, which re-queries time range variables.
+    reload_requested: bool,
+    /// Why each query variable last failed, by name.
+    variable_errors: BTreeMap<String, String>,
 }
 
 impl RefreshTasks {
@@ -80,6 +87,13 @@ impl RefreshTasks {
     fn next_seq(&mut self) -> u64 {
         self.next_seq += 1;
         self.next_seq
+    }
+
+    fn apply_variable_report(&mut self, report: VariableReport) {
+        for name in &report.queried {
+            self.variable_errors.remove(name);
+        }
+        self.variable_errors.extend(report.errors);
     }
 
     fn is_current(&self, generation: u64) -> bool {
@@ -102,6 +116,9 @@ struct Pipeline {
     fetched: Vec<usize>,
     /// Variable selections before the refresh, to detect changes.
     selected_values: HashMap<String, Vec<String>>,
+    /// Why variables resolve in this refresh.
+    variable_update: VariableUpdate,
+    variables_window: (Duration, Duration),
     variables_changed: bool,
     counts: FetchCounts,
 }
@@ -114,6 +131,7 @@ pub(crate) enum RefreshMessage {
         generation: u64,
         vars: HashMap<String, String>,
         var_values: HashMap<String, Vec<String>>,
+        report: VariableReport,
         batch: PanelBatch,
     },
     /// Resolved row and tab variables.
@@ -121,6 +139,7 @@ pub(crate) enum RefreshMessage {
         generation: u64,
         epoch: u64,
         values: ResolvedSections,
+        report: VariableReport,
     },
     /// Data for panels that became visible.
     Panels(PanelBatch),
@@ -192,6 +211,14 @@ impl AppState {
         }
         self.refreshes.generation += 1;
         let generation = self.refreshes.generation;
+        let variables_window = (self.range, self.time_offset);
+        let variable_update = match self.refreshes.variables_window {
+            None => VariableUpdate::Load,
+            Some(window) if window != variables_window || self.refreshes.reload_requested => {
+                VariableUpdate::TimeRangeChange
+            }
+            Some(_) => VariableUpdate::Tick,
+        };
         let end_ts = chrono::Utc::now().timestamp() - self.time_offset.as_secs() as i64;
         let window = self.query_window(end_ts);
         let fetched = self.panels_to_fetch();
@@ -203,12 +230,21 @@ impl AppState {
         let mut vars = self.vars.clone();
         let mut var_values = self.var_values.clone();
         let abort = self.refreshes.tasks.spawn(async move {
-            refresh_variables(&prometheus, &query_vars, window, &mut vars, &mut var_values).await;
+            let report = refresh_variables(
+                &prometheus,
+                &query_vars,
+                variable_update,
+                window,
+                &mut vars,
+                &mut var_values,
+            )
+            .await;
             let (fetches, counts) = fetch_panels(&prometheus, window, &vars, jobs).await;
             RefreshMessage::Data {
                 generation,
                 vars,
                 var_values,
+                report,
                 batch: PanelBatch {
                     seq,
                     epoch,
@@ -226,12 +262,29 @@ impl AppState {
             end_ts,
             fetched,
             selected_values: self.var_values.clone(),
+            variable_update,
+            variables_window,
             variables_changed: false,
             counts: FetchCounts::default(),
         });
         self.start_annotation_refresh(AnnotationRefreshContext::from_unix_window(
             end_ts, self.range,
         ));
+    }
+
+    /// Refreshes at the user's request, re-querying variables that refresh
+    /// when the time range changes, as Grafana's refresh button does.
+    pub(crate) fn reload(&mut self) {
+        self.refreshes.reload_requested = true;
+        self.start_refresh();
+    }
+
+    /// Query variables that failed when they last resolved, with the error.
+    pub(crate) fn variable_errors(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.refreshes
+            .variable_errors
+            .iter()
+            .map(|(name, error)| (name.as_str(), error.as_str()))
     }
 
     /// Fetches panels that became visible, for the displayed window.
@@ -309,13 +362,15 @@ impl AppState {
                 generation,
                 vars,
                 var_values,
+                report,
                 batch,
-            } => self.finish_data(generation, vars, var_values, batch),
+            } => self.finish_data(generation, vars, var_values, report, batch),
             RefreshMessage::Sections {
                 generation,
                 epoch,
                 values,
-            } => self.finish_sections(generation, epoch, values),
+                report,
+            } => self.finish_sections(generation, epoch, values, report),
             RefreshMessage::Panels(batch) => self.finish_panels(batch),
             RefreshMessage::Annotations { provider, poll } => {
                 self.refreshes.annotations_running = false;
@@ -350,6 +405,7 @@ impl AppState {
         generation: u64,
         vars: HashMap<String, String>,
         var_values: HashMap<String, Vec<String>>,
+        report: VariableReport,
         batch: PanelBatch,
     ) -> bool {
         if !self.refreshes.is_current(generation) {
@@ -360,6 +416,9 @@ impl AppState {
         };
         self.vars = vars;
         self.var_values = var_values;
+        self.refreshes.apply_variable_report(report);
+        self.refreshes.variables_window = Some(pipeline.variables_window);
+        self.refreshes.reload_requested = false;
         pipeline.counts.add(batch.counts);
         self.apply_panel_batch(batch);
         self.view_end_ts = pipeline.end_ts;
@@ -372,19 +431,27 @@ impl AppState {
         if self.section_instances.is_empty() {
             self.continue_refresh(pipeline);
         } else {
-            pipeline.abort = self.spawn_section_refresh(generation, pipeline.end_ts);
+            pipeline.abort =
+                self.spawn_section_refresh(generation, pipeline.end_ts, pipeline.variable_update);
             self.refreshes.pipeline = Some(pipeline);
         }
         true
     }
 
-    fn finish_sections(&mut self, generation: u64, epoch: u64, values: ResolvedSections) -> bool {
+    fn finish_sections(
+        &mut self,
+        generation: u64,
+        epoch: u64,
+        values: ResolvedSections,
+        report: VariableReport,
+    ) -> bool {
         if !self.refreshes.is_current(generation) {
             return false;
         }
         let Some(mut pipeline) = self.refreshes.pipeline.take() else {
             return false;
         };
+        self.refreshes.apply_variable_report(report);
         if epoch == self.refreshes.layout_epoch && values != self.section_values {
             self.section_values = values;
             self.materialize_layout();
@@ -461,7 +528,12 @@ impl AppState {
         });
     }
 
-    fn spawn_section_refresh(&mut self, generation: u64, end_ts: i64) -> AbortHandle {
+    fn spawn_section_refresh(
+        &mut self,
+        generation: u64,
+        end_ts: i64,
+        update: VariableUpdate,
+    ) -> AbortHandle {
         let prometheus = self.prometheus.clone();
         let instances = self.section_instances.clone();
         let vars = self.vars.clone();
@@ -469,11 +541,14 @@ impl AppState {
         let window = self.query_window(end_ts);
         let epoch = self.refreshes.layout_epoch;
         self.refreshes.tasks.spawn(async move {
-            resolve_sections(&prometheus, &instances, &vars, &mut values, window).await;
+            let report =
+                resolve_sections(&prometheus, &instances, update, &vars, &mut values, window)
+                    .await;
             RefreshMessage::Sections {
                 generation,
                 epoch,
                 values,
+                report,
             }
         })
     }
@@ -576,37 +651,42 @@ impl AppState {
 async fn refresh_variables(
     prometheus: &prom::PromClient,
     query_vars: &[TemplateQueryVar],
+    update: VariableUpdate,
     window: QueryWindow,
     vars: &mut HashMap<String, String>,
     var_values: &mut HashMap<String, Vec<String>>,
-) {
+) -> VariableReport {
     let intervals = QueryIntervals::new(
         window.range,
         window.min_step,
         window.scrape_interval,
         None,
     );
-    let _ = refresh_query_variables(
+    refresh_query_variables(
         prometheus,
         query_vars,
+        update,
         window.range,
         intervals,
         window.end_ts,
         vars,
         var_values,
     )
-    .await;
+    .await
 }
 
 /// Resolves the query variables of every row and tab copy that defines
-/// them, expanded with the variables around that copy.
+/// them, expanded with the variables around that copy. Copies shown for the
+/// first time resolve as on load.
 async fn resolve_sections(
     prometheus: &prom::PromClient,
     instances: &[SectionInstance],
+    update: VariableUpdate,
     vars: &HashMap<String, String>,
     values: &mut ResolvedSections,
     window: QueryWindow,
-) {
+) -> VariableReport {
+    let mut report = VariableReport::default();
     let intervals = QueryIntervals::new(
         window.range,
         window.min_step,
@@ -616,13 +696,14 @@ async fn resolve_sections(
     for instance in instances {
         let key = (instance.id, instance.scope.clone());
         let mut vars = scoped_vars(vars, Some(&instance.scope)).into_owned();
-        let mut selected = values
-            .get(&key)
-            .cloned()
-            .unwrap_or_else(|| instance.selected.clone());
-        let _ = refresh_query_variables(
+        let (update, mut selected) = match values.get(&key) {
+            Some(selected) => (update, selected.clone()),
+            None => (VariableUpdate::Load, instance.selected.clone()),
+        };
+        let instance_report = refresh_query_variables(
             prometheus,
             &instance.queries,
+            update,
             window.range,
             intervals,
             window.end_ts,
@@ -630,8 +711,11 @@ async fn resolve_sections(
             &mut selected,
         )
         .await;
+        report.queried.extend(instance_report.queried);
+        report.errors.extend(instance_report.errors);
         values.insert(key, selected);
     }
+    report
 }
 
 async fn fetch_panels(
@@ -785,6 +869,7 @@ async fn fetch_panel(
 mod tests {
     use super::*;
     use crate::annotations::ProviderFuture;
+    use crate::grafana::VariableRefresh;
     use crate::app::{PanelOptions, PanelType, YAxisMode};
     use crate::export::ExportOptions;
     use crate::theme::Theme;
@@ -996,6 +1081,197 @@ mod tests {
         assert!(panel.last_error.is_none());
     }
 
+    /// Answers with `respond(path)`'s status and body, recording each path.
+    async fn recording_prometheus(
+        respond: fn(&str) -> (&'static str, &'static str),
+    ) -> (String, Arc<Mutex<Vec<String>>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let recorded = Arc::clone(&requests);
+        tokio::spawn(async move {
+            loop {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let recorded = Arc::clone(&recorded);
+                tokio::spawn(async move {
+                    let mut request = Vec::new();
+                    let mut chunk = [0_u8; 1024];
+                    while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                        let read = socket.read(&mut chunk).await.unwrap();
+                        if read == 0 {
+                            return;
+                        }
+                        request.extend_from_slice(&chunk[..read]);
+                    }
+                    let request = String::from_utf8_lossy(&request);
+                    let path = request.split_whitespace().nth(1).unwrap_or("").to_string();
+                    let (status, body) = respond(&path);
+                    recorded
+                        .lock()
+                        .unwrap()
+                        .push(urlencoding::decode(&path).unwrap().into_owned());
+                    let response = format!(
+                        "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len(),
+                    );
+                    socket.write_all(response.as_bytes()).await.unwrap();
+                });
+            }
+        });
+        (format!("http://{address}"), requests)
+    }
+
+    fn query_var(name: &str, query: &str, refresh: VariableRefresh) -> TemplateQueryVar {
+        TemplateQueryVar {
+            name: name.to_string(),
+            query: query.to_string(),
+            regex: None,
+            query_path: format!("templating.list[{name}].query"),
+            select_all: false,
+            all_value: None,
+            regex_values: false,
+            refresh,
+        }
+    }
+
+    fn requests_to(requests: &Mutex<Vec<String>>, prefix: &str) -> Vec<String> {
+        requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|path| path.starts_with(prefix))
+            .cloned()
+            .collect()
+    }
+
+    fn label_values(path: &str) -> (&'static str, &'static str) {
+        let body = if path.contains("job=\"web\"") || path.contains("job%3D%22web%22") {
+            r#"{"status":"success","data":["web-1"]}"#
+        } else if path.starts_with("/api/v1/label/job/") {
+            r#"{"status":"success","data":["api","web"]}"#
+        } else if path.starts_with("/api/v1/label/instance/") {
+            r#"{"status":"success","data":["api-1"]}"#
+        } else if path.starts_with("/api/v1/label/broken/") {
+            return (
+                "400 Bad Request",
+                r#"{"status":"error","errorType":"bad_data","error":"invalid label"}"#,
+            );
+        } else {
+            EMPTY_VECTOR
+        };
+        ("200 OK", body)
+    }
+
+    #[tokio::test]
+    async fn on_load_variables_resolve_once() {
+        let (url, requests) = recording_prometheus(label_values).await;
+        let mut app = app_with_panels(&url, 1);
+        app.query_vars = vec![query_var("job", "label_values(job)", VariableRefresh::OnLoad)];
+
+        app.refresh().await.unwrap();
+        app.refresh().await.unwrap();
+        app.zoom_out();
+        app.refresh().await.unwrap();
+        app.reload();
+        app.settle_refreshes().await;
+
+        let job = requests_to(&requests, "/api/v1/label/job/");
+        assert_eq!(job.len(), 1, "{job:?}");
+        assert!(job[0].contains("start=") && job[0].contains("end="), "{job:?}");
+        assert_eq!(app.vars["job"], "api");
+    }
+
+    #[tokio::test]
+    async fn time_range_variables_resolve_when_the_range_changes() {
+        let (url, requests) = recording_prometheus(label_values).await;
+        let mut app = app_with_panels(&url, 1);
+        app.query_vars = vec![query_var(
+            "job",
+            "label_values(job)",
+            VariableRefresh::OnTimeRangeChange,
+        )];
+
+        app.refresh().await.unwrap();
+        // Periodic refreshes of the same window leave variables alone.
+        app.refresh().await.unwrap();
+        assert_eq!(requests_to(&requests, "/api/v1/label/job/").len(), 1);
+
+        app.zoom_out();
+        app.refresh().await.unwrap();
+        assert_eq!(requests_to(&requests, "/api/v1/label/job/").len(), 2);
+
+        // A refresh the user asks for counts as a time range change.
+        app.reload();
+        app.settle_refreshes().await;
+        assert_eq!(requests_to(&requests, "/api/v1/label/job/").len(), 3);
+    }
+
+    #[tokio::test]
+    async fn dependent_variables_follow_a_changed_variable() {
+        let (url, requests) = recording_prometheus(label_values).await;
+        let mut app = app_with_panels(&url, 1);
+        app.query_vars = vec![
+            query_var("job", "label_values(job)", VariableRefresh::OnTimeRangeChange),
+            query_var(
+                "instance",
+                r#"label_values(up{job="$job"}, instance)"#,
+                VariableRefresh::OnLoad,
+            ),
+        ];
+        app.vars.insert("job".to_string(), "web".to_string());
+        app.var_values
+            .insert("job".to_string(), vec!["web".to_string()]);
+
+        app.refresh().await.unwrap();
+        let instance = requests_to(&requests, "/api/v1/label/instance/");
+        assert!(instance[0].contains(r#"match[]=up{job="web"}"#), "{instance:?}");
+        assert_eq!(app.vars["instance"], "web-1");
+
+        // `job` resolves to a new value, so `instance`, which references it,
+        // resolves again even though it only refreshes on load.
+        app.var_values
+            .insert("job".to_string(), vec!["retired".to_string()]);
+        app.zoom_out();
+        app.refresh().await.unwrap();
+        let instance = requests_to(&requests, "/api/v1/label/instance/");
+        assert_eq!(instance.len(), 2, "{instance:?}");
+        assert!(instance[1].contains(r#"match[]=up{job="api"}"#), "{instance:?}");
+
+        // Unchanged, it does not.
+        app.zoom_out();
+        app.refresh().await.unwrap();
+        assert_eq!(requests_to(&requests, "/api/v1/label/instance/").len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_failing_variable_keeps_its_value_and_the_rest_resolve() {
+        let (url, _) = recording_prometheus(label_values).await;
+        let mut app = app_with_panels(&url, 1);
+        app.query_vars = vec![
+            query_var("broken", "label_values(broken)", VariableRefresh::OnTimeRangeChange),
+            query_var("job", "label_values(job)", VariableRefresh::OnLoad),
+        ];
+        app.vars.insert("broken".to_string(), "saved".to_string());
+
+        app.refresh().await.unwrap();
+
+        assert_eq!(app.vars["broken"], "saved");
+        assert_eq!(app.vars["job"], "api");
+        let errors: Vec<_> = app.variable_errors().collect();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].0, "broken");
+        assert!(errors[0].1.contains("bad_data: invalid label"), "{errors:?}");
+
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(160, 30)).unwrap();
+        terminal
+            .draw(|frame| crate::ui::draw_ui(frame, &mut app))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let text: String = buffer.content().iter().map(|cell| cell.symbol()).collect();
+        assert!(text.contains("Variable broken failed: prometheus 400 Bad Request"));
+    }
+
     #[tokio::test]
     async fn input_is_handled_while_prometheus_hangs() {
         let mut app = app_with_panels(&hung_prometheus().await, 1);
@@ -1090,6 +1366,7 @@ mod tests {
             generation: 1,
             vars: HashMap::from([("job".to_string(), "stale".to_string())]),
             var_values: HashMap::new(),
+            report: VariableReport::default(),
             batch: panel_batch(99, 0, "stale"),
         };
 

@@ -402,6 +402,12 @@ fn normalize_query_variable(
         options: option_values(spec),
         source_path,
         query_path: query.map(|(_, path)| path),
+        refresh: match spec.get("refresh").and_then(Value::as_str) {
+            Some("never") => Some(model::VariableRefresh::Never),
+            Some("onDashboardLoad") => Some(model::VariableRefresh::OnDashboardLoad),
+            Some("onTimeRangeChanged") => Some(model::VariableRefresh::OnTimeRangeChange),
+            _ => None,
+        },
     }))
 }
 
@@ -431,6 +437,7 @@ fn normalize_option_variable(
         options,
         source_path,
         query_path: None,
+        refresh: None,
     })
 }
 
@@ -468,6 +475,7 @@ fn normalize_switch_variable(spec: &JsonObject, source_path: &str) -> Result<mod
         options: Vec::new(),
         source_path,
         query_path: None,
+        refresh: None,
     })
 }
 

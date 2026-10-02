@@ -32,6 +32,7 @@ struct RawVar {
     #[serde(rename = "includeAll")]
     include_all: Option<bool>,
     options: Option<Vec<RawVarOption>>,
+    refresh: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -255,6 +256,16 @@ impl RawVar {
             regex: self.regex,
             all_value: self.all_value,
             source_path: format!("templating.list[{index}]"),
+            refresh: match self.refresh {
+                Some(Value::Number(refresh)) => match refresh.as_u64() {
+                    Some(0) => Some(model::VariableRefresh::Never),
+                    Some(2) => Some(model::VariableRefresh::OnTimeRangeChange),
+                    _ => Some(model::VariableRefresh::OnDashboardLoad),
+                },
+                // Dashboards from before Grafana 5 saved a boolean.
+                Some(Value::Bool(false)) => Some(model::VariableRefresh::Never),
+                _ => None,
+            },
         }
     }
 }

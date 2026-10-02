@@ -77,6 +77,16 @@ pub(super) struct Variable {
     #[allow(dead_code)]
     pub(super) source_path: String,
     pub(super) query_path: Option<String>,
+    /// When Grafana re-runs a query variable's query; unset means on load.
+    pub(super) refresh: Option<VariableRefresh>,
+}
+
+/// Grafana's query variable `refresh` setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum VariableRefresh {
+    Never,
+    OnDashboardLoad,
+    OnTimeRangeChange,
 }
 
 #[derive(Debug)]

@@ -200,14 +200,14 @@ dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
 | `templating.list[].current.text` | 🔶 Partial | Used as fallback if `value` is missing |
 | `templating.list[].allValue` | ✅ Supported | Used when value is `$__all`, falls back to `.*` |
 | `templating.list[].type` | 🔶 Partial | `query` variables are resolved for Prometheus |
-| `templating.list[].query` | 🔶 Partial | Supports Prometheus `label_values(...)` and `query_result(...)` |
+| `templating.list[].query` | 🔶 Partial | Supports Prometheus `label_values(...)`, limited to the time range, and `query_result(...)` |
 | `templating.list[].definition` | 🔶 Partial | Used as a fallback query expression for dynamic query variables |
 | `templating.list[].datasource` | ❌ Not Implemented | |
 | `templating.list[].regex` | 🔶 Partial | Applied to dynamic query variable results |
 | `templating.list[].sort` | ❌ Not Implemented | |
 | `templating.list[].multi` | ✅ Supported | Several selected values are regex-escaped and joined as `(a\|b)`, as Grafana's Prometheus datasource does |
 | `templating.list[].includeAll` | ✅ Supported | `All` selects every option; it interpolates as `allValue` when set, otherwise as all values joined |
-| `templating.list[].refresh` | 🔶 Partial | The setting is not read; query variables are re-queried before every data refresh |
+| `templating.list[].refresh` | ✅ Supported | On load, on time range change (zoom, pan, return to live, `r`), or never; periodic refreshes do not re-query, and dependent variables follow the variables they reference. V2 `refresh` maps the same way |
 | `templating.list[].options` | 🔶 Partial | Supply the values `All` selects and the default selection; there is no picker UI |
 | `templating.list[].hide` | ❌ Not Implemented | |
 | CLI `--var KEY=VALUE` override | ✅ Supported | Overrides dashboard defaults from command line; repeat `--var` for the same key to select several values |
@@ -353,7 +353,7 @@ compatibility with Grafana annotation queries, APIs, `annotations`, or
 | Panel Common Fields | 14 | 0 | 3 | 2 |
 | Targets / Queries | 5 | 1 | 5 | 1 |
 | PromQL Variables | 7 | 0 | 0 | 0 |
-| Templating | 8 | 7 | 3 | 0 |
+| Templating | 9 | 6 | 3 | 0 |
 | Variable Substitution | 3 | 0 | 5 | 0 |
 | Field Config | 4 | 7 | 7 | 1 |
 | Thresholds | 5 | 0 | 0 | 0 |
@@ -362,7 +362,7 @@ compatibility with Grafana annotation queries, APIs, `annotations`, or
 | Data Links / Transforms | 0 | 0 | 2 | 1 |
 | Alert Rules | 0 | 0 | 3 | 0 |
 | Datasources | 3 | 0 | 5 | 0 |
-| **Total** | **59** | **15** | **72** | **14** |
+| **Total** | **60** | **14** | **72** | **14** |
 
 ---
 

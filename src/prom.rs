@@ -363,38 +363,29 @@ impl PromClient {
         })
     }
 
-    pub(crate) async fn label_values(&self, label: &str) -> Result<Vec<String>> {
-        let url = format!(
-            "{}/api/v1/label/{}/values",
-            self.base.trim_end_matches('/'),
-            urlencoding::encode(label)
-        );
-        let body: PromResponse<Vec<String>> = self.get_json(&url).await?;
-        ensure_success(&body.status)?;
-        Ok(body.data)
-    }
-
-    pub(crate) async fn series_label_values(
+    /// Values of `label` on series in `start..=end`, only those matching
+    /// `selector` when given, as Grafana's `label_values` queries.
+    pub(crate) async fn label_values(
         &self,
-        metric: &str,
         label: &str,
+        selector: Option<&str>,
         start: i64,
         end: i64,
     ) -> Result<Vec<String>> {
-        let url = format!(
-            "{}/api/v1/series?match[]={}&start={}&end={}",
+        let mut url = format!(
+            "{}/api/v1/label/{}/values?start={}&end={}",
             self.base.trim_end_matches('/'),
-            urlencoding::encode(metric),
+            urlencoding::encode(label),
             start,
             end
         );
-        let body: PromResponse<Vec<HashMap<String, String>>> = self.get_json(&url).await?;
+        if let Some(selector) = selector {
+            url.push_str("&match[]=");
+            url.push_str(&urlencoding::encode(selector));
+        }
+        let body: PromResponse<Vec<String>> = self.get_json(&url).await?;
         ensure_success(&body.status)?;
-        Ok(body
-            .data
-            .into_iter()
-            .filter_map(|series| series.get(label).cloned())
-            .collect())
+        Ok(body.data)
     }
 
     pub(crate) async fn query_instant_result_strings(
