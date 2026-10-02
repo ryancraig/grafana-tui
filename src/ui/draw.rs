@@ -374,6 +374,15 @@ fn build_footer_detail(app: &AppState) -> String {
         parts.push(notice);
     }
 
+    let mut variable_errors = app.variable_errors();
+    if let Some((name, error)) = variable_errors.next() {
+        let more = match variable_errors.count() {
+            0 => String::new(),
+            count => format!(" (+{count} more)"),
+        };
+        parts.push(format!("Variable {name} failed: {error}{more}"));
+    }
+
     if let Some(status) = &app.export_status {
         parts.push(status.clone());
     }

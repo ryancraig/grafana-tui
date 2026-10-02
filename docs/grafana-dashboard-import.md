@@ -172,6 +172,20 @@ grafatui --grafana-json ./dash.json --var job=node --var instance=server-01
 Prometheus query variables such as `label_values(up, instance)` and
 `query_result(...)` are resolved before panel queries run. A saved selection
 that Prometheus still offers is kept; otherwise the first value is selected.
+`label_values` only lists values from series in the current time range.
+
+A query variable's **Refresh** setting decides when its query runs again:
+
+| Grafana setting | Grafatui |
+|---|---|
+| On dashboard load | Once, when the dashboard opens |
+| On time range change | When the dashboard opens, and again after zooming, panning, returning to live, or pressing `r` |
+| Never | Not queried; the saved selection is used. A variable saved without a selection is resolved once |
+
+Periodic refreshes do not re-query variables. A variable whose query references
+another variable is queried again whenever that variable's value changes. When
+a variable query fails, the variable keeps its value, the other variables still
+resolve, and the footer shows the error.
 
 ### Multi-Value and All Selections
 

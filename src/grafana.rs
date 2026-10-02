@@ -98,6 +98,18 @@ pub(crate) struct TemplateQueryVar {
     pub(crate) all_value: Option<String>,
     /// Whether values are regex-escaped, as for multi-value or include-all variables.
     pub(crate) regex_values: bool,
+    /// When the query runs again after the dashboard loads.
+    pub(crate) refresh: VariableRefresh,
+}
+
+/// When a query variable resolves again after the dashboard loads.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum VariableRefresh {
+    /// Only on load, and when a variable its query references changes.
+    #[default]
+    OnLoad,
+    /// Also whenever the time range changes.
+    OnTimeRangeChange,
 }
 
 /// A variable that a V2 row or tab defines for itself and its contents,
@@ -1314,6 +1326,87 @@ mod tests {
             assert!(error.contains(replacement));
             assert!(error.contains(expected_path));
         }
+    }
+
+    #[test]
+    fn classic_variable_refresh_settings_decide_when_queries_run() {
+        let variable = |name: &str, refresh: serde_json::Value, current: &str| {
+            serde_json::json!({
+                "name": name,
+                "type": "query",
+                "query": format!("label_values({name})"),
+                "refresh": refresh,
+                "current": {"text": current, "value": current},
+            })
+        };
+        let json = serde_json::json!({
+            "title": "Refresh",
+            "panels": [],
+            "templating": {"list": [
+                variable("saved", serde_json::json!(0), "api"),
+                variable("cleared", serde_json::json!(0), ""),
+                variable("legacy", serde_json::json!(false), "api"),
+                variable("loaded", serde_json::json!(1), "api"),
+                variable("ranged", serde_json::json!(2), "api"),
+                variable("unset", serde_json::Value::Null, "api"),
+            ]},
+        });
+
+        let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
+
+        let refreshes: Vec<_> = dashboard
+            .query_vars
+            .iter()
+            .map(|variable| (variable.name.as_str(), variable.refresh))
+            .collect();
+        // `Never` keeps a saved value, and resolves only a cleared one.
+        assert_eq!(
+            refreshes,
+            [
+                ("cleared", VariableRefresh::OnLoad),
+                ("loaded", VariableRefresh::OnLoad),
+                ("ranged", VariableRefresh::OnTimeRangeChange),
+                ("unset", VariableRefresh::OnLoad),
+            ]
+        );
+        assert_eq!(dashboard.vars["saved"], "api");
+    }
+
+    #[test]
+    fn v2_variable_refresh_settings_decide_when_queries_run() {
+        let mut json = valid_v2_resource();
+        let variable = |name: &str, refresh: &str| {
+            serde_json::json!({
+                "kind": "QueryVariable",
+                "spec": {
+                    "name": name,
+                    "current": {"text": "api", "value": "api"},
+                    "refresh": refresh,
+                    "query": {"kind": "DataQuery", "group": "prometheus", "version": "v0",
+                        "spec": {"query": format!("label_values({name})")}}
+                }
+            })
+        };
+        json["spec"]["variables"] = serde_json::json!([
+            variable("saved", "never"),
+            variable("loaded", "onDashboardLoad"),
+            variable("ranged", "onTimeRangeChanged"),
+        ]);
+
+        let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
+
+        let refreshes: Vec<_> = dashboard
+            .query_vars
+            .iter()
+            .map(|variable| (variable.name.as_str(), variable.refresh))
+            .collect();
+        assert_eq!(
+            refreshes,
+            [
+                ("loaded", VariableRefresh::OnLoad),
+                ("ranged", VariableRefresh::OnTimeRangeChange),
+            ]
+        );
     }
 
     #[test]

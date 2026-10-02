@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use super::{
     DashboardImport, GridPos, ImportDiagnostic, QueryPanel, SectionVariable, TemplateQueryVar,
-    model,
+    VariableRefresh, model,
 };
 use crate::dashboard::SectionId;
 
@@ -76,9 +76,21 @@ fn import_variables(out: &mut DashboardImport, variables: Vec<model::Variable>) 
             );
         }
 
+        // A `Never` refresh keeps the saved options, as Grafana does; only a
+        // variable saved without any is resolved once so the dashboard works.
+        let saved = if select_all {
+            !variable.options.is_empty()
+        } else {
+            !selected.is_empty()
+        };
+        let resolves = match variable.refresh {
+            Some(model::VariableRefresh::Never) => !saved,
+            _ => true,
+        };
         // An explicit multi-value selection is kept as chosen; otherwise query
         // variables resolve against Prometheus like Grafana does on load.
         if variable.kind.as_deref() == Some("query")
+            && resolves
             && selected.len() <= 1
             && let (Some(query), Some(query_path)) = (variable.query, variable.query_path)
         {
@@ -90,6 +102,12 @@ fn import_variables(out: &mut DashboardImport, variables: Vec<model::Variable>) 
                 select_all,
                 all_value: variable.all_value,
                 regex_values,
+                refresh: match variable.refresh {
+                    Some(model::VariableRefresh::OnTimeRangeChange) => {
+                        VariableRefresh::OnTimeRangeChange
+                    }
+                    _ => VariableRefresh::OnLoad,
+                },
             });
         }
     }

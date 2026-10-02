@@ -1307,6 +1307,7 @@ mod tests {
             select_all: true,
             all_value: None,
             regex_values: true,
+            refresh: Default::default(),
         }];
         let mut repeats = crate::dashboard::Repeats::default();
         repeats
@@ -1495,10 +1496,10 @@ mod tests {
     #[tokio::test]
     async fn section_query_variables_resolve_per_repeated_row_copy() {
         let (url, requests) = mock_prometheus(|target| {
-            if target.starts_with("/api/v1/series") && target.contains("dc%3D%22eu%22") {
-                r#"{"status":"success","data":[{"host":"eu-1"},{"host":"eu-2"}]}"#
-            } else if target.starts_with("/api/v1/series") {
-                r#"{"status":"success","data":[{"host":"us-1"}]}"#
+            if target.starts_with("/api/v1/label/host/values") && target.contains("dc%3D%22eu%22") {
+                r#"{"status":"success","data":["eu-1","eu-2"]}"#
+            } else if target.starts_with("/api/v1/label/host/values") {
+                r#"{"status":"success","data":["us-1"]}"#
             } else {
                 r#"{"status":"success","data":{"resultType":"matrix","result":[]}}"#
             }
@@ -1540,6 +1541,7 @@ mod tests {
                     select_all: true,
                     all_value: None,
                     regex_values: true,
+                    refresh: Default::default(),
                 }),
             }],
         )]);
@@ -1628,6 +1630,7 @@ mod tests {
                     select_all: true,
                     all_value: None,
                     regex_values: false,
+                    refresh: Default::default(),
                 }),
             }],
         )]);

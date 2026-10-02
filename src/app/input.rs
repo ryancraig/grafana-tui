@@ -452,7 +452,7 @@ async fn handle_shared_keys(key: KeyEvent, app: &mut AppState) -> Result<SharedK
     match key.code {
         KeyCode::Char('q') => Ok(SharedKeyResult::Quit),
         KeyCode::Char('r') | KeyCode::Char('R') => {
-            app.start_refresh();
+            app.reload();
             Ok(SharedKeyResult::Handled)
         }
         KeyCode::Char('+') => {
