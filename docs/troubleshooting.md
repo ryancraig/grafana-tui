@@ -10,11 +10,57 @@ title bar shows the connection state:
 | `◌ connecting` | The first refresh has not finished yet; panels show `Loading…` |
 | `⟳ refreshing` | A refresh has been running for more than a second |
 | `✗ Prometheus unreachable` | Every query in the last refresh failed to connect |
+| `✗ Prometheus unreachable (TLS: …)` | The connection failed during TLS; see [TLS Errors](#tls-errors) |
 
 While Prometheus is unreachable, Grafatui retries with a growing delay, up to 30
 seconds between attempts, and recovers on its own when Prometheus answers again.
 Press `r` to retry immediately. Queries that Prometheus rejects, such as invalid
 PromQL, show as panel errors rather than as unreachable.
+
+## TLS Errors
+
+When an `https://` connection fails during TLS, the title bar names the cause.
+The panel error repeats it, with what to check and the underlying error.
+Grafatui retries with the same growing delay as for an unreachable server, so
+it recovers once the certificates are fixed. Settings are described in
+[Connecting to an mTLS Prometheus](configuration.md#connecting-to-an-mtls-prometheus).
+
+### `TLS: unknown issuer`
+
+The server's certificate isn't signed by a CA Grafatui trusts. With `ca_cert`
+unset, only the built-in web PKI roots are trusted, so a server with a private
+CA always fails this way. Set `ca_cert` to the CA bundle. If it is already set,
+check that the bundle has the CA that signed the server's certificate. During
+a CA rotation, include both CAs:
+
+```bash
+openssl s_client -connect 10.60.1.21:9090 -showcerts </dev/null  # the server's chain
+openssl x509 -in ca.pem -noout -subject                            # the first CA in the bundle
+```
+
+### `TLS: client certificate required`
+
+The server requires a client certificate, and none was sent. Set `client_cert`
+and `client_key`.
+
+### `TLS: client certificate rejected (…)`
+
+The server received the client certificate but didn't accept it. The alert in
+parentheses comes from the server: `UnknownCA` or `BadCertificate` usually
+means a CA the server doesn't trust issued the certificate, and
+`CertificateExpired` that it has expired. Check the certificate against the
+server's client CA:
+
+```bash
+openssl verify -CAfile client-ca.pem client.pem
+openssl x509 -in client.pem -noout -subject -issuer -enddate
+```
+
+### `TLS: certificate not valid for this host`
+
+The server's certificate doesn't list the host or IP address in
+`prometheus_url` among its subject alternative names. Use the name the
+certificate was issued for, or reissue it with an IP SAN.
 
 ## Panel Markers
 

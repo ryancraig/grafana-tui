@@ -7,6 +7,9 @@ Grafatui can be configured with CLI options, a TOML configuration file, or both.
 | Option | Description | Default |
 |---|---|---|
 | `--prometheus-url <URL>` | Prometheus server URL | `http://localhost:9090` |
+| `--ca-cert <FILE>` | PEM CA certificates to trust instead of the built-in roots (see [TLS](#connecting-to-an-mtls-prometheus)) | built-in roots |
+| `--client-cert <FILE>` | PEM client certificate for mutual TLS, followed by any intermediate CAs; needs `--client-key` | none |
+| `--client-key <FILE>` | PEM private key for `--client-cert` | none |
 | `--grafana-json <FILE>` | Grafana dashboard file: Classic JSON, or V2 resource JSON or YAML (alias `--grafana-dashboard`) | none |
 | `--annotations-file <FILE>` | Read-only external JSONL point-event file | none |
 | `--annotations-command <PROGRAM>` | Read-only executable annotation provider | none |
@@ -61,6 +64,60 @@ annotations_file = "./events.jsonl"
 job = "node"
 instance = "server-01"
 ```
+
+## Connecting to an mTLS Prometheus
+
+TLS settings are optional. Without them, an `https://` URL is verified against
+the built-in web PKI roots, and a plain `http://` URL works as it always has.
+
+To reach a Prometheus that uses a private CA and requires client
+certificates, set the `[tls]` table:
+
+```toml
+prometheus_url = "https://10.60.1.21:9090"
+
+[tls]
+ca_cert     = "~/.config/grafatui/tls/ca.pem"
+client_cert = "~/.config/grafatui/tls/client.pem"
+client_key  = "~/.config/grafatui/tls/client.key"
+```
+
+The CLI flags do the same. Each one overrides only its own `[tls]` key:
+
+```bash
+grafatui --prometheus-url https://10.60.1.21:9090 \
+  --ca-cert ca.pem --client-cert client.pem --client-key client.key
+```
+
+| Key | Flag | Contents |
+|---|---|---|
+| `ca_cert` | `--ca-cert` | One or more PEM CA certificates. Only these CAs are trusted: the built-in roots are turned off. List both CAs during a CA rotation, and a server signed by either one verifies. |
+| `client_cert` | `--client-cert` | The PEM client certificate, followed by any intermediate CAs that issued it. |
+| `client_key` | `--client-key` | The client certificate's unencrypted PEM private key: PKCS#8 (`BEGIN PRIVATE KEY`), SEC1 (`BEGIN EC PRIVATE KEY`), or PKCS#1 (`BEGIN RSA PRIVATE KEY`). |
+
+- Paths may start with `~`.
+- `client_cert` and `client_key` must be set together.
+- The options are independent: use `ca_cert` alone for a private-CA server
+  that doesn't ask for client certificates, or `client_cert` and `client_key`
+  alone for a publicly trusted one that does.
+- Servers addressed by IP need the IP in their certificate's subject
+  alternative names. TLS 1.2 and 1.3 are supported.
+- `[tls]` rejects unknown keys, so a misspelled option is an error rather than
+  silently ignored.
+
+Grafatui checks the files at startup and exits with an error that names the
+file and the problem when:
+
+- a TLS option is set but `prometheus_url` isn't `https://`;
+- a file is missing or unreadable, or isn't valid PEM;
+- `ca_cert` or `client_cert` holds no certificate, or `client_key` holds no key
+  or an encrypted one;
+- `client_key` isn't the key of `client_cert`.
+
+Errors show file paths, never key contents. Failures during the connection,
+such as an unknown issuer or a rejected client certificate, show in the title
+bar instead; see
+[TLS Errors](troubleshooting.md#tls-errors).
 
 ## Query Resolution
 

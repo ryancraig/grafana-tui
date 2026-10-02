@@ -29,6 +29,18 @@ pub(crate) struct Args {
     #[arg(long)]
     pub(crate) prometheus_url: Option<String>,
 
+    /// PEM CA certificates to trust for an https:// Prometheus URL, instead of the built-in roots
+    #[arg(long, value_name = "FILE")]
+    pub(crate) ca_cert: Option<PathBuf>,
+
+    /// PEM client certificate for mutual TLS, followed by any intermediate CAs; needs --client-key
+    #[arg(long, value_name = "FILE")]
+    pub(crate) client_cert: Option<PathBuf>,
+
+    /// PEM private key for --client-cert (PKCS#8, or SEC1/PKCS#1)
+    #[arg(long, value_name = "FILE")]
+    pub(crate) client_key: Option<PathBuf>,
+
     /// Time range to query (e.g., 5m, 1h, 3d) (default: 5m)
     #[arg(long, value_name = "DURATION")]
     pub(crate) range: Option<String>,
@@ -181,6 +193,25 @@ where
 mod tests {
     use super::*;
     use clap::Parser;
+
+    #[test]
+    fn parses_tls_files() {
+        let args = Args::parse_from([
+            "grafatui",
+            "--prometheus-url",
+            "https://10.60.1.21:9090",
+            "--ca-cert",
+            "ca.pem",
+            "--client-cert",
+            "client.pem",
+            "--client-key",
+            "client.key",
+        ]);
+
+        assert_eq!(args.ca_cert, Some(PathBuf::from("ca.pem")));
+        assert_eq!(args.client_cert, Some(PathBuf::from("client.pem")));
+        assert_eq!(args.client_key, Some(PathBuf::from("client.key")));
+    }
 
     #[test]
     fn test_parse_validate_with_grafana_json() {

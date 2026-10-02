@@ -70,6 +70,9 @@ pub(crate) struct RefreshTasks {
     /// The window to load annotations for once the running load finishes.
     annotations_queued: Option<AnnotationRefreshContext>,
     status: BackendStatus,
+    /// Why the latest refresh could not reach Prometheus, when it was a TLS
+    /// failure such as an unknown issuer.
+    unreachable_cause: Option<String>,
     /// The range and offset query variables last resolved for; `None` until
     /// they first resolve.
     variables_window: Option<(Duration, Duration)>,
@@ -175,16 +178,21 @@ struct PanelFetch {
 }
 
 /// Query outcomes, to tell an unreachable backend from failing queries.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone)]
 struct FetchCounts {
     succeeded: usize,
     unreachable: usize,
+    /// The first TLS failure among the unreachable queries.
+    tls_failure: Option<String>,
 }
 
 impl FetchCounts {
     fn add(&mut self, other: Self) {
         self.succeeded += other.succeeded;
         self.unreachable += other.unreachable;
+        if self.tls_failure.is_none() {
+            self.tls_failure = other.tls_failure;
+        }
     }
 }
 
@@ -330,6 +338,11 @@ impl AppState {
         self.refreshes.status
     }
 
+    /// Why Prometheus is unreachable, when a TLS failure is the reason.
+    pub(crate) fn unreachable_cause(&self) -> Option<&str> {
+        self.refreshes.unreachable_cause.as_deref()
+    }
+
     pub(crate) fn backend_indicator(&self) -> Option<BackendIndicator> {
         match self.refreshes.status {
             BackendStatus::Connecting => Some(BackendIndicator::Connecting),
@@ -408,7 +421,7 @@ impl AppState {
         vars: HashMap<String, String>,
         var_values: HashMap<String, Vec<String>>,
         report: VariableReport,
-        batch: PanelBatch,
+        mut batch: PanelBatch,
     ) -> bool {
         if !self.refreshes.is_current(generation) {
             return false;
@@ -421,7 +434,7 @@ impl AppState {
         self.refreshes.apply_variable_report(report);
         self.refreshes.variables_window = Some(pipeline.variables_window);
         self.refreshes.reload_requested = false;
-        pipeline.counts.add(batch.counts);
+        pipeline.counts.add(std::mem::take(&mut batch.counts));
         self.apply_panel_batch(batch);
         self.view_end_ts = pipeline.end_ts;
 
@@ -463,9 +476,9 @@ impl AppState {
         true
     }
 
-    fn finish_panels(&mut self, batch: PanelBatch) -> bool {
+    fn finish_panels(&mut self, mut batch: PanelBatch) -> bool {
         let finishes = batch.pipeline;
-        let counts = batch.counts;
+        let counts = std::mem::take(&mut batch.counts);
         self.apply_panel_batch(batch);
         self.apply_conditions();
         if let Some(generation) = finishes
@@ -504,7 +517,8 @@ impl AppState {
         self.reconcile_visible_annotation_targets();
         self.last_refresh = Instant::now();
         let counts = pipeline.counts;
-        self.refreshes.status = if counts.unreachable > 0 && counts.succeeded == 0 {
+        let unreachable = counts.unreachable > 0 && counts.succeeded == 0;
+        self.refreshes.status = if unreachable {
             let failures = match self.refreshes.status {
                 BackendStatus::Unreachable { failures } => failures.saturating_add(1),
                 BackendStatus::Connecting | BackendStatus::Live => 1,
@@ -513,6 +527,7 @@ impl AppState {
         } else {
             BackendStatus::Live
         };
+        self.refreshes.unreachable_cause = counts.tls_failure.filter(|_| unreachable);
     }
 
     fn start_annotation_refresh(&mut self, context: AnnotationRefreshContext) {
@@ -835,6 +850,9 @@ async fn fetch_panel(
             Err(e) => {
                 if prom::is_transport_error(&e) {
                     counts.unreachable += 1;
+                    if counts.tls_failure.is_none() {
+                        counts.tls_failure = prom::tls_failure_cause(&e).map(str::to_string);
+                    }
                 }
                 let query_name = match query_mode {
                     QueryMode::Range => "query_range",
@@ -1360,6 +1378,37 @@ mod tests {
         assert!(app.panels[0].last_error.is_none());
         let next = app.next_refresh_at().unwrap();
         assert_eq!(next - app.last_refresh, app.refresh_every);
+    }
+
+    #[tokio::test]
+    async fn tls_failures_say_why_prometheus_is_unreachable() {
+        use prom::tls_tests::{TestCa, mtls_prometheus, test_dir, tls_files};
+        let (server_ca, client_ca) = (TestCa::new("server CA"), TestCa::new("client CA"));
+        let (url, _) = mtls_prometheus(&server_ca.server_cert(), &client_ca).await;
+        let dir = test_dir("refresh-cause");
+        let mut app = app_with_panels(&url, 1);
+        app.prometheus =
+            prom::PromClient::with_tls(url.clone(), &tls_files(&dir, &server_ca.pem(), None))
+                .unwrap();
+
+        app.refresh().await.unwrap();
+
+        assert_eq!(
+            app.backend_status(),
+            BackendStatus::Unreachable { failures: 1 }
+        );
+        assert_eq!(
+            app.unreachable_cause(),
+            Some("TLS: client certificate required")
+        );
+        let next = app.next_refresh_at().unwrap();
+        assert_eq!(next - app.last_refresh, Duration::from_secs(2));
+
+        let files = tls_files(&dir, &server_ca.pem(), Some(&client_ca.client_cert()));
+        app.prometheus = prom::PromClient::with_tls(url, &files).unwrap();
+        app.refresh().await.unwrap();
+        assert_eq!(app.backend_status(), BackendStatus::Live);
+        assert_eq!(app.unreachable_cause(), None);
     }
 
     #[tokio::test]
