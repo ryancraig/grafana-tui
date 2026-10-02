@@ -68,14 +68,34 @@ impl AnnotationState {
         Self::from_source(path.map(AnnotationSourceConfig::File))
     }
 
+    #[cfg(test)]
     pub(crate) async fn refresh(&mut self, context: &AnnotationRefreshContext) -> bool {
-        let poll = match self {
-            Self::Active {
-                provider: Some(provider),
-                ..
-            } => provider.refresh(context).await,
-            Self::Disabled | Self::Active { provider: None, .. } => return false,
+        let Some(mut provider) = self.take_provider() else {
+            return false;
         };
+        let poll = provider.refresh(context).await;
+        self.finish_refresh(provider, poll)
+    }
+
+    /// Takes the provider out so a refresh can run in the background. Returns
+    /// `None` when annotations are disabled or a refresh already holds it.
+    pub(crate) fn take_provider(&mut self) -> Option<Box<dyn AnnotationProvider>> {
+        match self {
+            Self::Active { provider, .. } => provider.take(),
+            Self::Disabled => None,
+        }
+    }
+
+    /// Returns the provider taken by `take_provider` and applies its result.
+    /// Returns whether a new snapshot was loaded.
+    pub(crate) fn finish_refresh(
+        &mut self,
+        returned: Box<dyn AnnotationProvider>,
+        poll: ProviderPoll,
+    ) -> bool {
+        if let Self::Active { provider, .. } = self {
+            *provider = Some(returned);
+        }
 
         match (self, poll) {
             (

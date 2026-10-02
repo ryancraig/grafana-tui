@@ -16,7 +16,7 @@
 
 use super::layout::{DashboardRectKind, centered_rect, visible_dashboard_rects};
 use super::panels::render_panel;
-use crate::app::{AppMode, AppState, PanelState};
+use crate::app::{AppMode, AppState, BackendIndicator, BackendStatus, PanelState};
 use crate::{dashboard::DashboardRow, theme::Theme};
 use humantime::format_duration;
 use ratatui::{
@@ -52,6 +52,21 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
     ))];
     if !app.is_live() {
         title_spans.push(Span::styled("⏸ PAUSED ", Style::default().fg(theme.warning)));
+    }
+    match app.backend_indicator() {
+        Some(BackendIndicator::Connecting) => {
+            title_spans.push(Span::styled("◌ connecting ", Style::default().fg(theme.warning)));
+        }
+        Some(BackendIndicator::Refreshing) => {
+            title_spans.push(Span::styled("⟳ refreshing ", Style::default().fg(theme.warning)));
+        }
+        Some(BackendIndicator::Unreachable) => {
+            title_spans.push(Span::styled(
+                "✗ Prometheus unreachable ",
+                Style::default().fg(theme.error),
+            ));
+        }
+        None => {}
     }
     title_spans.push(Span::raw("(r to refresh, +/- range, [] pan, 0 live, q quit)"));
     let title_block = Block::default()
@@ -173,8 +188,9 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
         summary.push(Span::styled(" REC", Style::default().fg(theme.error)));
     }
     summary.push(Span::raw(format!(
-        " | Prom: {} | range={} step={:?} refresh={} | grid={} | panels={} (skipped {}) ",
+        " | Prom: {} ({}) | range={} step={:?} refresh={} | grid={} | panels={} (skipped {}) ",
         app.prometheus.base,
+        backend_status_label(app.backend_status()),
         format_duration(app.range),
         app.default_intervals().step,
         format_duration(app.refresh_every),
@@ -307,6 +323,15 @@ pub(crate) fn render_row_header(
             Modifier::empty()
         });
     frame.render_widget(Paragraph::new(text).style(style), rect);
+}
+
+fn backend_status_label(status: BackendStatus) -> String {
+    match status {
+        BackendStatus::Connecting => "connecting".to_string(),
+        BackendStatus::Live => "live".to_string(),
+        BackendStatus::Unreachable { failures: 1 } => "unreachable".to_string(),
+        BackendStatus::Unreachable { failures } => format!("unreachable for {failures} refreshes"),
+    }
 }
 
 fn build_footer_detail(app: &AppState) -> String {
@@ -841,6 +866,26 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn panels_show_loading_until_their_first_fetch_finishes() {
+        let mut app = test_app();
+        let mut panel = graph_panel("Requests");
+        panel.exprs = vec!["up".to_string()];
+        app.panels = vec![panel];
+        app.apply_layout(crate::dashboard::DashboardLayout::flat(1));
+        let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
+
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+        let text = terminal_text(&terminal);
+        assert!(text.contains("Loading…"), "{text}");
+        assert!(text.contains("◌ connecting"));
+        assert!(text.contains("Prom: http://localhost:9090 (connecting)"));
+
+        app.panels[0].last_url = Some("http://localhost:9090/api/v1/query".to_string());
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+        assert!(!terminal_text(&terminal).contains("Loading…"));
     }
 
     #[test]

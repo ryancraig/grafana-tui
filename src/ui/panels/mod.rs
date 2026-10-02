@@ -75,6 +75,21 @@ pub(crate) fn render_panel(
         return None;
     }
 
+    if !p.has_loaded() && !p.exprs.is_empty() {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(border_style)
+            .title(Span::styled(
+                p.title.clone(),
+                Style::default().fg(theme.title),
+            ));
+        let para = Paragraph::new("Loading…")
+            .block(block)
+            .style(Style::default().fg(theme.text));
+        frame.render_widget(para, area);
+        return None;
+    }
+
     // Render the outer block (Panel container)
     let block = Block::default()
         .borders(Borders::ALL)

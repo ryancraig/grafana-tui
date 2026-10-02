@@ -210,10 +210,10 @@ pub(super) async fn handle_mouse(
                         });
                 app.selected_item = Some(item.id);
                 if clicked_disclosure {
-                    app.toggle_selected_row().await?;
+                    app.toggle_selected_row()?;
                 }
                 if let Some((group_id, index)) = tab_target {
-                    app.activate_tab(group_id, index).await?;
+                    app.activate_tab(group_id, index)?;
                 }
 
                 match app.mode {
@@ -385,25 +385,25 @@ async fn handle_normal_key(
             if app.selected_tab_group_id().is_some() {
                 app.enter_selected_tab();
             } else {
-                app.toggle_selected_row().await?;
+                app.toggle_selected_row()?;
             }
             ensure_selected_item_visible(terminal_size, app);
             InputAction::Redraw
         }
         KeyCode::Left if key.modifiers.is_empty() => {
             if app.selected_tab_group_id().is_some() {
-                app.move_selected_tab(-1).await?;
+                app.move_selected_tab(-1)?;
             } else {
-                app.set_selected_row_collapsed(true).await?;
+                app.set_selected_row_collapsed(true)?;
             }
             ensure_selected_item_visible(terminal_size, app);
             InputAction::Redraw
         }
         KeyCode::Right if key.modifiers.is_empty() => {
             if app.selected_tab_group_id().is_some() {
-                app.move_selected_tab(1).await?;
+                app.move_selected_tab(1)?;
             } else {
-                app.set_selected_row_collapsed(false).await?;
+                app.set_selected_row_collapsed(false)?;
             }
             ensure_selected_item_visible(terminal_size, app);
             InputAction::Redraw
@@ -452,42 +452,42 @@ async fn handle_shared_keys(key: KeyEvent, app: &mut AppState) -> Result<SharedK
     match key.code {
         KeyCode::Char('q') => Ok(SharedKeyResult::Quit),
         KeyCode::Char('r') | KeyCode::Char('R') => {
-            app.refresh().await?;
+            app.start_refresh();
             Ok(SharedKeyResult::Handled)
         }
         KeyCode::Char('+') => {
             app.zoom_out();
-            app.refresh().await?;
+            app.start_refresh();
             Ok(SharedKeyResult::Handled)
         }
         KeyCode::Char('-') => {
             app.zoom_in();
-            app.refresh().await?;
+            app.start_refresh();
             Ok(SharedKeyResult::Handled)
         }
         KeyCode::Char('[') if key.modifiers.contains(KeyModifiers::SHIFT) => {
             app.pan_left();
-            app.refresh().await?;
+            app.start_refresh();
             Ok(SharedKeyResult::Handled)
         }
         KeyCode::Left if key.modifiers.contains(KeyModifiers::SHIFT) => {
             app.pan_left();
-            app.refresh().await?;
+            app.start_refresh();
             Ok(SharedKeyResult::Handled)
         }
         KeyCode::Char(']') if key.modifiers.contains(KeyModifiers::SHIFT) => {
             app.pan_right();
-            app.refresh().await?;
+            app.start_refresh();
             Ok(SharedKeyResult::Handled)
         }
         KeyCode::Right if key.modifiers.contains(KeyModifiers::SHIFT) => {
             app.pan_right();
-            app.refresh().await?;
+            app.start_refresh();
             Ok(SharedKeyResult::Handled)
         }
         KeyCode::Char('0') => {
             app.reset_to_live();
-            app.refresh().await?;
+            app.start_refresh();
             Ok(SharedKeyResult::Handled)
         }
         KeyCode::Char('y') => {

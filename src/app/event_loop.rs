@@ -19,10 +19,11 @@ use super::state::AppState;
 use crate::export::{self, RecordingCompletionReason};
 use crate::ui;
 use anyhow::Result;
-use crossterm::event::{self, Event};
+use crossterm::event::{Event, EventStream};
+use futures::StreamExt;
 use ratatui::Terminal;
 use ratatui::layout::Rect;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub(crate) async fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
@@ -32,6 +33,7 @@ pub(crate) async fn run_app<B: ratatui::backend::Backend>(
 where
     <B as ratatui::backend::Backend>::Error: Send + Sync + 'static,
 {
+    let mut events = EventStream::new();
     let mut needs_draw = true;
 
     loop {
@@ -40,68 +42,78 @@ where
             needs_draw = false;
         }
 
-        // `event::poll` blocks this task, so it is kept short and the loop
-        // yields below; otherwise shutdown signals, which `main` selects on
-        // alongside this loop, would wait for the next refresh.
-        let timeout = app
-            .refresh_every
-            .saturating_sub(app.last_refresh.elapsed())
-            .min(MAX_INPUT_WAIT);
-
-        if event::poll(timeout)? {
-            let action = match event::read()? {
-                Event::Key(key) => {
-                    let size = terminal.size()?;
-                    input::handle_key(key, size, app).await?
-                }
-                Event::Mouse(mouse) => {
-                    let size = terminal.size()?;
-                    input::handle_mouse(mouse, size, app).await?
-                }
-                Event::Resize(width, height) => {
-                    ui::scroll_selected_into_view(Rect::new(0, 0, width, height), app);
-                    InputAction::Redraw
-                }
-                _ => InputAction::Redraw,
-            };
-
-            match action {
-                InputAction::Quit => {
-                    finalize_recording_before_quit(app)?;
+        // Refreshes run in the background, so input is handled while
+        // Prometheus is slow or unreachable.
+        let refresh_at = app.next_refresh_at();
+        let slow_refresh_at = app.slow_refresh_at();
+        tokio::select! {
+            event = events.next() => {
+                let Some(event) = event else {
                     return Ok(());
+                };
+                let action = match event? {
+                    Event::Key(key) => {
+                        let size = terminal.size()?;
+                        input::handle_key(key, size, app).await?
+                    }
+                    Event::Mouse(mouse) => {
+                        let size = terminal.size()?;
+                        input::handle_mouse(mouse, size, app).await?
+                    }
+                    Event::Resize(width, height) => {
+                        ui::scroll_selected_into_view(Rect::new(0, 0, width, height), app);
+                        InputAction::Redraw
+                    }
+                    _ => InputAction::Redraw,
+                };
+
+                match action {
+                    InputAction::Quit => {
+                        finalize_recording_before_quit(app)?;
+                        return Ok(());
+                    }
+                    InputAction::ExportCurrent => {
+                        let viewport = terminal_viewport(terminal)?;
+                        let exported = export::export_current(app, viewport);
+                        report_export_error(app, "Export", exported);
+                        needs_draw = true;
+                        capture_recording_after_change(terminal, app)?;
+                    }
+                    InputAction::ToggleRecording => {
+                        let viewport = terminal_viewport(terminal)?;
+                        let toggled = export::toggle_recording(app, viewport);
+                        report_export_error(app, "Recording", toggled);
+                        needs_draw = true;
+                        capture_recording_after_change(terminal, app)?;
+                    }
+                    InputAction::Redraw => {
+                        needs_draw = true;
+                        capture_recording_after_change(terminal, app)?;
+                    }
                 }
-                InputAction::ExportCurrent => {
-                    let viewport = terminal_viewport(terminal)?;
-                    let exported = export::export_current(app, viewport);
-                    report_export_error(app, "Export", exported);
-                    needs_draw = true;
-                    capture_recording_after_change(terminal, app)?;
-                }
-                InputAction::ToggleRecording => {
-                    let viewport = terminal_viewport(terminal)?;
-                    let toggled = export::toggle_recording(app, viewport);
-                    report_export_error(app, "Recording", toggled);
-                    needs_draw = true;
-                    capture_recording_after_change(terminal, app)?;
-                }
-                InputAction::Redraw => {
+            }
+            Some(finished) = app.join_refresh_task() => {
+                if app.finish_refresh_task(finished) {
                     needs_draw = true;
                     capture_recording_after_change(terminal, app)?;
                 }
             }
+            () = sleep_until(refresh_at) => app.start_refresh(),
+            () = sleep_until(slow_refresh_at) => {
+                app.mark_slow_refresh_drawn();
+                needs_draw = true;
+            }
         }
-
-        if app.last_refresh.elapsed() >= app.refresh_every {
-            app.refresh().await?;
-            needs_draw = true;
-            capture_recording_after_change(terminal, app)?;
-        }
-        tokio::task::yield_now().await;
     }
 }
 
-/// Longest the event loop blocks waiting for input before yielding.
-const MAX_INPUT_WAIT: Duration = Duration::from_millis(250);
+/// Sleeps until `deadline`, or forever without one.
+async fn sleep_until(deadline: Option<Instant>) {
+    match deadline {
+        Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
+        None => std::future::pending().await,
+    }
+}
 
 fn terminal_viewport<B: ratatui::backend::Backend>(terminal: &Terminal<B>) -> Result<Rect>
 where
