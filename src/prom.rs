@@ -208,7 +208,7 @@ impl PromClient {
             return Ok(series);
         }
 
-        let inflight_key = format!("{}|{}|{}|{}", expr, start, end, step.as_secs());
+        let inflight_key = format!("{}|{}|{}|{}", expr, start, end, step.as_millis());
         let claim = {
             let mut inflight = lock(&self.inflight);
             if let Some(waiters) = inflight.get_mut(&inflight_key) {
