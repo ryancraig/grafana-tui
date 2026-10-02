@@ -50,7 +50,11 @@ fn list_themes_marks_the_configured_theme_through_its_alias() {
     let output = run_with_config("list-alias", r#"theme = "catppuccin""#, &["--list-themes"]);
 
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.lines().any(|line| line == "catppuccin-mocha (current)"));
+    assert!(
+        stdout
+            .lines()
+            .any(|line| line == "catppuccin-mocha (current)")
+    );
     assert_eq!(stdout.matches("(current)").count(), 1);
 }
 
@@ -83,7 +87,13 @@ fn custom_themes_are_listed_and_selectable() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     let names: Vec<_> = stdout.lines().collect();
     assert_eq!(names.last(), Some(&"mine (current)"));
-    assert_eq!(names.iter().filter(|name| name.starts_with("tokyo-night")).count(), 4);
+    assert_eq!(
+        names
+            .iter()
+            .filter(|name| name.starts_with("tokyo-night"))
+            .count(),
+        4
+    );
 }
 
 #[test]

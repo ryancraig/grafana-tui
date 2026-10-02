@@ -394,7 +394,10 @@ mod tests {
     fn legend_placeholders_allow_spaces_and_drop_missing_labels() {
         let metric = HashMap::from([("job".to_string(), "node".to_string())]);
         assert_eq!(format_legend("{{ job }}/{{instance}}", &metric), "node/");
-        assert_eq!(format_legend("{{job}} {{ unterminated", &metric), "node {{ unterminated");
+        assert_eq!(
+            format_legend("{{job}} {{ unterminated", &metric),
+            "node {{ unterminated"
+        );
     }
 
     #[test]

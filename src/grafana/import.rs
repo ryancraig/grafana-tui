@@ -449,7 +449,9 @@ const GRID_UNIT_PX: f64 = 38.0;
 const GRID_MARGIN_PX: f64 = 8.0;
 
 fn auto_grid_column_cells(width_px: f64) -> u16 {
-    (width_px / AUTO_GRID_PX_PER_COLUMN).round().clamp(1.0, f64::from(u16::MAX)) as u16
+    (width_px / AUTO_GRID_PX_PER_COLUMN)
+        .round()
+        .clamp(1.0, f64::from(u16::MAX)) as u16
 }
 
 /// Converts a pixel height to the fixed-grid units used by `GridPos::h`, where `h`

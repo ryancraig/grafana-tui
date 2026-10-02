@@ -357,8 +357,9 @@ fn filter_items(
     items
         .iter()
         .filter_map(|item| match item {
-            DashboardLayoutItem::Panel(index) => (!hidden.contains(&ConditionTarget::Panel(*index)))
-                .then(|| item.clone()),
+            DashboardLayoutItem::Panel(index) => {
+                (!hidden.contains(&ConditionTarget::Panel(*index))).then(|| item.clone())
+            }
             DashboardLayoutItem::Row(row) => (!hidden.contains(&ConditionTarget::Row(row.id)))
                 .then(|| {
                     DashboardLayoutItem::Row(DashboardRow {

@@ -118,13 +118,19 @@ pub(crate) fn render_panel(
     }
 
     // Render the outer block (Panel container)
-    let mut title = vec![Span::styled(p.title.clone(), Style::default().fg(theme.title))];
+    let mut title = vec![Span::styled(
+        p.title.clone(),
+        Style::default().fg(theme.title),
+    )];
     if let Some((notice, level)) = data_notice(p) {
         let color = match level {
             NoticeLevel::Error => theme.error,
             NoticeLevel::Warning => theme.warning,
         };
-        title.push(Span::styled(format!(" {notice}"), Style::default().fg(color)));
+        title.push(Span::styled(
+            format!(" {notice}"),
+            Style::default().fg(color),
+        ));
     }
     let block = Block::default()
         .borders(Borders::ALL)

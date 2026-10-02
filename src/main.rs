@@ -391,7 +391,9 @@ fn install_terminal_panic_hook() {
 
 /// One theme name per line, marking the one `selected` resolves to.
 fn theme_list(selected: &str, themes: &[Theme]) -> String {
-    let current = theme::resolve(selected, themes).ok().map(|theme| theme.name);
+    let current = theme::resolve(selected, themes)
+        .ok()
+        .map(|theme| theme.name);
     themes
         .iter()
         .map(|theme| {
@@ -565,7 +567,10 @@ fn merge_user_vars(
         .collect();
     let mut cli_selections: Vec<(String, Vec<String>)> = Vec::new();
     for (name, value) in cli_vars {
-        match cli_selections.iter_mut().find(|(selected, _)| selected == name) {
+        match cli_selections
+            .iter_mut()
+            .find(|(selected, _)| selected == name)
+        {
             Some((_, values)) => values.push(value.clone()),
             None => cli_selections.push((name.clone(), vec![value.clone()])),
         }
@@ -890,7 +895,10 @@ mod tests {
             variables.vars.get("instance"),
             Some(&"config-instance".to_string())
         );
-        assert_eq!(variables.var_values.get("job"), Some(&vec!["cli".to_string()]));
+        assert_eq!(
+            variables.var_values.get("job"),
+            Some(&vec!["cli".to_string()])
+        );
         assert!(pinned.contains("job"));
         assert!(pinned.contains("instance"));
     }

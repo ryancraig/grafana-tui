@@ -69,8 +69,11 @@ impl Default for Theme {
 /// Every selectable theme: the built-ins in display order, each replaced by a
 /// user theme of the same name, followed by the remaining user themes.
 pub(crate) fn catalog(custom: &[Theme]) -> Vec<Theme> {
-    let find_custom =
-        |name: &str| custom.iter().find(|theme| theme.name.eq_ignore_ascii_case(name));
+    let find_custom = |name: &str| {
+        custom
+            .iter()
+            .find(|theme| theme.name.eq_ignore_ascii_case(name))
+    };
     let mut themes: Vec<Theme> = builtin_names()
         .map(|name| {
             find_custom(name)
@@ -107,7 +110,6 @@ pub(crate) fn resolve(name: &str, catalog: &[Theme]) -> Result<Theme> {
 }
 
 impl Theme {
-
     /// Replaces a threshold step color the terminal cannot show.
     pub(crate) fn threshold_color(&self, color: Color) -> Color {
         if color == Color::Reset {
@@ -272,7 +274,11 @@ mod tests {
             assert_eq!(theme.name, name);
             assert!(!theme.palette.is_empty(), "{name} palette is empty");
             if name != "terminal" {
-                assert_ne!(theme.background, Color::Reset, "{name} paints no background");
+                assert_ne!(
+                    theme.background,
+                    Color::Reset,
+                    "{name} paints no background"
+                );
                 assert_ne!(theme.text, Color::Reset, "{name} has no text color");
             }
         }
@@ -280,7 +286,10 @@ mod tests {
 
     #[test]
     fn lookup_ignores_case() {
-        assert_eq!(builtin("Dracula").map(|t| t.name), Some("dracula".to_string()));
+        assert_eq!(
+            builtin("Dracula").map(|t| t.name),
+            Some("dracula".to_string())
+        );
     }
 
     #[test]
@@ -302,7 +311,11 @@ mod tests {
             ("gruvbox-dark-medium", "gruvbox-dark"),
             ("gruvbox-light-medium", "gruvbox-light"),
         ] {
-            assert_eq!(resolve(alias, &catalog(&[])).unwrap().name, canonical, "{alias}");
+            assert_eq!(
+                resolve(alias, &catalog(&[])).unwrap().name,
+                canonical,
+                "{alias}"
+            );
         }
         assert_eq!(Theme::default().name, DEFAULT_THEME);
     }
@@ -328,7 +341,12 @@ mod tests {
         // Aliases reach the user's override of their target.
         assert_eq!(resolve("gruvbox", &themes).unwrap(), shadow);
         assert_eq!(resolve("mine", &themes).unwrap(), extra);
-        assert!(resolve("nope", &themes).unwrap_err().to_string().contains("Mine"));
+        assert!(
+            resolve("nope", &themes)
+                .unwrap_err()
+                .to_string()
+                .contains("Mine")
+        );
     }
 
     #[test]
@@ -343,23 +361,36 @@ mod tests {
     #[test]
     fn aliases_point_at_builtins_without_shadowing_them() {
         for (alias, target) in builtin::ALIASES {
-            assert!(builtin_names().any(|name| name == *target), "{alias} -> {target}");
-            assert!(builtin_names().all(|name| name != *alias), "{alias} shadows a builtin");
+            assert!(
+                builtin_names().any(|name| name == *target),
+                "{alias} -> {target}"
+            );
+            assert!(
+                builtin_names().all(|name| name != *alias),
+                "{alias} shadows a builtin"
+            );
         }
     }
 
     #[test]
     fn light_flavors_paint_light_backgrounds() {
         let luma = |color| match color {
-            Color::Rgb(r, g, b) => 0.299 * f64::from(r) + 0.587 * f64::from(g) + 0.114 * f64::from(b),
+            Color::Rgb(r, g, b) => {
+                0.299 * f64::from(r) + 0.587 * f64::from(g) + 0.114 * f64::from(b)
+            }
             other => panic!("expected rgb, got {other:?}"),
         };
         for name in builtin_names().filter(|name| *name != "terminal") {
             let theme = builtin(name).unwrap();
-            let light = ["day", "latte", "light"].iter().any(|flavor| name.contains(flavor));
+            let light = ["day", "latte", "light"]
+                .iter()
+                .any(|flavor| name.contains(flavor));
             assert_eq!(luma(theme.background) > 128.0, light, "{name}");
             // Text must contrast with the background it sits on.
-            assert!((luma(theme.text) - luma(theme.background)).abs() > 80.0, "{name}");
+            assert!(
+                (luma(theme.text) - luma(theme.background)).abs() > 80.0,
+                "{name}"
+            );
         }
     }
 

@@ -126,7 +126,10 @@ fn parse_auto_grid_layout(
 
     let items_path = format!("{spec_path}.items");
     let mut panels = Vec::new();
-    for (index, item) in optional_array_from(spec, "items", &items_path)?.iter().enumerate() {
+    for (index, item) in optional_array_from(spec, "items", &items_path)?
+        .iter()
+        .enumerate()
+    {
         let item_path = format!("{items_path}[{index}]");
         let item = item.as_object().ok_or_else(|| {
             anyhow!("invalid Grafana V2 auto grid item at {item_path}: expected an object")
@@ -714,7 +717,9 @@ fn parse_condition_group(
                 let item_spec = require_object_from(item, "spec", &item_spec_path)?;
                 let value = optional_string_from(item_spec, "value", &item_spec_path)?;
                 Condition::TimeRangeAtMost(
-                    value.as_deref().and_then(crate::conditions::parse_time_range_size),
+                    value
+                        .as_deref()
+                        .and_then(crate::conditions::parse_time_range_size),
                 )
             }
             other => {
@@ -750,11 +755,7 @@ fn parse_element_reference(spec: &JsonObject, spec_path: &str) -> Result<String>
     Ok(require_string_from(element, "name", &element_name_path)?.to_string())
 }
 
-fn resolve_element<'a>(
-    elements: &'a JsonObject,
-    name: &str,
-    item_path: &str,
-) -> Result<&'a Value> {
+fn resolve_element<'a>(elements: &'a JsonObject, name: &str, item_path: &str) -> Result<&'a Value> {
     elements.get(name).ok_or_else(|| {
         anyhow!("unresolved Grafana V2 element reference `{name}` at {item_path}.spec.element.name")
     })
@@ -766,7 +767,9 @@ fn resolve_element_reference<'a>(
     item_spec_path: &str,
 ) -> Result<(String, &'a Value)> {
     let name = parse_element_reference(item_spec, item_spec_path)?;
-    let item_path = item_spec_path.strip_suffix(".spec").unwrap_or(item_spec_path);
+    let item_path = item_spec_path
+        .strip_suffix(".spec")
+        .unwrap_or(item_spec_path);
     let element = resolve_element(elements, &name, item_path)?;
     Ok((name, element))
 }
@@ -926,7 +929,9 @@ fn validate_panel_structure(element: &JsonObject, path: &str) -> Result<()> {
     let panel = require_object_from(element, "spec", &panel_path)?;
     let id_path = format!("{panel_path}.id");
     ensure!(
-        panel.get("id").is_none_or(|id| id.is_null() || id.is_number()),
+        panel
+            .get("id")
+            .is_none_or(|id| id.is_null() || id.is_number()),
         "invalid Grafana V2 resource at {id_path}: expected a number"
     );
     optional_string_from(panel, "title", &panel_path)?;
