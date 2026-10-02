@@ -63,7 +63,7 @@ docker-compose down -v
 | `q` | Quit |
 | `r` | Force refresh |
 | `+` / `-` | Zoom out / in |
-| `[` / `]` | Pan left / right |
+| `Shift+Left` / `Shift+Right` | Pan left / right |
 | `f` | Fullscreen selected panel |
 | `Enter` / `Space` on a row | Toggle the row |
 | `Left` / `Right` on a row | Collapse / expand the row |

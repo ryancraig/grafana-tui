@@ -1,18 +1,20 @@
 # Grafatui Roadmap
 
 Grafatui is a terminal-based Grafana-like UI for Prometheus. The roadmap is
-oriented around two priorities:
+oriented around three priorities:
 
-1. **Grafana parity** - imported dashboards should preserve as much meaning as a
+1. **Production readiness** - the data path must be correct, responsive, and
+   able to reach both unsecured and secured Prometheus-compatible backends.
+2. **Grafana parity** - imported dashboards should preserve as much meaning as a
    terminal UI can reasonably express.
-2. **User-visible product value** - parity work should make real dashboards
+3. **User-visible product value** - parity work should make real dashboards
    easier to read, debug, and share.
 
 > **Current version**: 0.1.12 · **Status**: Active development, pre-1.0
 
 **Legend**:
 - 🟢 Low complexity · 🟡 Medium complexity · 🔴 High complexity
-- ✅ Shipped · 🔜 Up next · 📋 Planned · 💡 Exploring
+- ✅ Shipped · 🔶 Partial · 🔜 Up next · 📋 Planned · 💡 Exploring
 
 ---
 
@@ -66,7 +68,7 @@ refreshed alongside parity work so it stays aligned with the current release.
 |---|---|---|
 | 1 | External JSONL point annotations | ✅ Shipped |
 | 2 | Navigable annotation popup, panel targeting, and tag filtering | ✅ Shipped |
-| 3 | Bounded command provider protocol and Prometheus-coordinated refresh | ✅ Implemented by this PR |
+| 3 | Bounded command provider protocol and Prometheus-coordinated refresh | ✅ Shipped |
 
 These iterations are separate from Grafana `annotations` and `annotations.list`,
 which remain unsupported.
@@ -104,6 +106,51 @@ Roadmap items are prioritized by:
 The intent is to make parity work feel practical rather than academic. For
 example, unit support is not just `fieldConfig.defaults.unit`; it is the
 difference between readable latency/cache panels and raw float noise.
+
+---
+
+## Production Readiness
+
+The compatibility ladder below assumes the data path is trustworthy. A
+code audit on 2026-10-01 found gaps that block production use regardless of
+how faithfully a dashboard imports, so this track comes first.
+
+Plain HTTP with no authentication stays the zero-config default. Every auth
+and TLS setting below is opt-in, so unsecured local and lab Prometheus
+endpoints keep working unchanged.
+
+### Correctness and Robustness
+
+| Item | Why it blocks production | Complexity | Status |
+|---|---|---|---|
+| **Adaptive query step** | The fixed `--step` (default 5s) exceeds Prometheus's 11,000-point limit above about 15h, so long ranges and zoom-out fail; `$__interval` doesn't match the real step | 🟡 | 🔜 |
+| **Non-blocking refresh** | Refresh runs inline in the event loop, so a slow or unreachable backend freezes input and delays startup | 🔴 | 🔜 |
+| **Variable refresh policy** | Query variables are re-queried every refresh tick and their errors are swallowed; Grafana's `refresh` setting is ignored | 🟡 | 📋 |
+| **Error and warning surfacing** | Last good data is dropped on error, only one error per panel survives, Prometheus `warnings` are discarded, and 4xx errors are retried | 🟡 | 📋 |
+| **Unit and display fixes** | `bytes` scales by 1000 instead of 1024, `bps` displays as bytes/s, `legendFormat: __auto` renders literally, and stat/bar gauge distort negative or fractional values | 🟢 | 📋 |
+| **Classic import diagnostics** | Classic non-Prometheus targets are sent to Prometheus, and `transformations`, `timeFrom`/`timeShift`, and overrides are dropped without a warning | 🟢 | 📋 |
+| **Config validation** | A missing `--config` file and unknown keys are silently ignored; refresh, step, and range are unbounded | 🟢 | 📋 |
+| **Key binding fixes and help overlay** | `[`/`]` only pan when Shift is reported, live mode can't be restored outside fullscreen, and `?` shows debug info rather than help | 🟢 | 📋 |
+| **Logging** | No log file or verbosity flag, so field failures can't be diagnosed | 🟢 | 📋 |
+
+### Secured Prometheus-Compatible Backends
+
+| Item | Why it blocks production | Complexity | Status |
+|---|---|---|---|
+| **Optional authentication** | Bearer tokens and Basic auth from files or env vars, never literal CLI args; credentials are redacted from the debug bar and logs | 🟡 | 📋 |
+| **Custom headers** | Multi-tenant Mimir and Cortex need `X-Scope-OrgID` | 🟢 | 📋 |
+| **Optional TLS settings** | Custom CA bundles, the OS trust store, client certificates (mTLS), and an explicit insecure mode for lab use | 🟡 | 📋 |
+| **Configurable timeouts** | The 10s request and 5s connect timeouts are hard-coded | 🟢 | 📋 |
+| **Named datasource profiles** | Switch between environments and map dashboard datasource uids to endpoints | 🟡 | 📋 |
+| **End-to-end tests against a mock backend** | Cover unsecured, auth, tenant-header, and TLS paths without a live server | 🟡 | 📋 |
+
+### Release Engineering
+
+| Item | Why it blocks production | Complexity | Status |
+|---|---|---|---|
+| **CI quality gates** | CI only builds and tests on Linux; add fmt, clippy, MSRV, macOS/Windows tests, and cargo-deny | 🟢 | 📋 |
+| **Independent release channel** | Crate, installer, docs site, and release workflow still point at the upstream project | 🟡 | 📋 |
+| **Terminal capability fallbacks** | Honor `NO_COLOR` and fall back from truecolor themes on 256-color terminals | 🟢 | 📋 |
 
 ---
 
@@ -147,7 +194,7 @@ This is the main backlog, ordered by Grafana parity domain.
 
 | Feature | Grafana field / behavior | User value | Complexity | Status |
 |---|---|---|---|---|
-| **Hidden targets** | `targets[].hide` | Helper queries do not clutter imported panels | 🟢 | 🔜 |
+| **Hidden targets** | `targets[].hide` | Helper queries do not clutter imported panels | 🟢 | ✅ |
 | **Instant query defaults** | Panel-specific fallback behavior when `targets[].instant` is omitted | Keeps summary panels fast while preserving range queries for charts | 🟢 | ✅ |
 | **Target interval** | `targets[].interval` / `intervalFactor` | Panel-specific resolution is respected | 🟡 | 📋 |
 | **Target ref IDs** | `targets[].refId` | Better diagnostics and future transformation support | 🟢 | 📋 |
@@ -169,10 +216,10 @@ This is the main backlog, ordered by Grafana parity domain.
 
 | Feature | Grafana field / behavior | User value | Complexity | Status |
 |---|---|---|---|---|
-| **Draw styles** | `fieldConfig.defaults.custom.drawStyle` | Line, bars, and points map to distinct terminal renderings | 🟡 | 📋 |
-| **Stacking** | `fieldConfig.defaults.custom.stacking` | Stacked area/bar intent is visible in dense dashboards | 🟡 | 📋 |
+| **Draw styles** | `fieldConfig.defaults.custom.drawStyle` | Line, bars, and points map to distinct terminal renderings | 🟡 | ✅ |
+| **Stacking** | `fieldConfig.defaults.custom.stacking` | Stacked area/bar intent is visible in dense dashboards; parsed but not yet rendered | 🟡 | 🔶 |
 | **Axis labels** | `fieldConfig.defaults.custom.axisLabel` | Imported axis meaning is visible where space allows | 🟢 | 📋 |
-| **Axis placement** | `fieldConfig.defaults.custom.axisPlacement` | Left/right/hidden axis settings map to TUI behavior | 🟡 | 📋 |
+| **Axis placement** | `fieldConfig.defaults.custom.axisPlacement` | Left/right/hidden axis settings map to TUI behavior; `hidden` is honored | 🟡 | 🔶 |
 | **Scale distribution** | `fieldConfig.defaults.custom.scaleDistribution` | Linear/log choices are respected or explicitly warned | 🟡 | 💡 |
 
 ### 7. Panel Type Parity
@@ -257,9 +304,9 @@ constraints.
 
 | Item | Why it belongs here | Complexity | Status |
 |---|---|---|---|
-| Draw styles | Bars/points/lines should be distinguishable | 🟡 | 📋 |
-| Stacking | Common Grafana area/bar semantics | 🟡 | 📋 |
-| Axis labels and placement | Preserves context for imported charts | 🟡 | 📋 |
+| Draw styles | Bars/points/lines should be distinguishable | 🟡 | ✅ |
+| Stacking | Common Grafana area/bar semantics | 🟡 | 🔶 |
+| Axis labels and placement | Preserves context for imported charts | 🟡 | 🔶 |
 | Scale distribution handling | Honor or warn on log/non-linear scales | 🟡 | 💡 |
 | Row headers and collapsed rows | Keeps large dashboard structure intact | 🟡 | ✅ |
 
@@ -306,24 +353,23 @@ These are valuable, but they should not outrank core Grafana import fidelity.
 
 Recommended order for the next focused development cycle:
 
-1. **Automate compatibility truth**
-   - Add tests or fixtures for fields already supported by v0.1.9 so the
-     compatibility matrix is easier to keep current.
-   - Prefer small checks that compare parser behavior with documented support.
+1. **Fix the data path**
+   - Adaptive query step, non-blocking refresh, variable refresh policy, and
+     error and warning surfacing.
+   - Unit, display, key binding, config, and Classic import diagnostic fixes.
 
-2. **Extend the field display layer**
-   - Add value mappings and broaden unit coverage beyond the shipped common
-     units.
-   - Keep the shared display configuration model applied across Stat, Gauge,
-     BarGauge, Table, Graph labels, legends, and exports.
+2. **Reach secured backends**
+   - Opt-in auth, custom headers, TLS settings, and timeouts, with the
+     unsecured default unchanged.
+   - End-to-end tests against a mock backend for every mode.
 
-3. **Make unsupported imports visible**
-   - Track skipped panel types, hidden/unsupported target behavior, and ignored
-     high-impact fields.
-   - Surface a concise warning in the TUI and a fuller report via `--validate`.
+3. **Harden releases**
+   - CI quality gates and an independent release channel.
 
-4. **Ship v0.2 as "Grafana Import Fidelity"**
-   - Keep the release tightly scoped.
+4. **Resume Grafana import fidelity**
+   - Dashboard time and timezone, a runtime variable picker and format
+     modifiers, reduce options, value mappings, display names, and legend
+     options.
    - Prefer common Grafana dashboard correctness over new non-parity features.
 
 ---
