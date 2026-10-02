@@ -849,6 +849,7 @@ mod tests {
                 stacking: GraphStackingMode::Off,
             }),
             resolution: Default::default(),
+            notices: Default::default(),
         }
     }
 

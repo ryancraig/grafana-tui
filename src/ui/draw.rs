@@ -334,6 +334,26 @@ fn backend_status_label(status: BackendStatus) -> String {
     }
 }
 
+/// Details behind the selected panel's title marker: a failed query of a
+/// panel still showing data, or Prometheus warnings.
+fn selected_panel_notice(app: &AppState) -> Option<String> {
+    let panel = app.panels.get(app.selected_panel_index()?)?;
+    let (kind, messages): (&str, Vec<&str>) = match &panel.last_error {
+        Some(error) if !panel.series.is_empty() => ("", error.lines().collect()),
+        Some(_) => return None,
+        None => (
+            "warning: ",
+            panel.notices.warnings.iter().map(String::as_str).collect(),
+        ),
+    };
+    let first = messages.first()?;
+    let more = match messages.len() {
+        1 => String::new(),
+        count => format!(" (+{} more)", count - 1),
+    };
+    Some(format!("{}: {kind}{first}{more}", panel.title))
+}
+
 fn build_footer_detail(app: &AppState) -> String {
     let mut parts = Vec::new();
 
@@ -348,6 +368,10 @@ fn build_footer_detail(app: &AppState) -> String {
 
     if let Some(status) = app.annotations.footer_status() {
         parts.push(format!("Annotations: {status}"));
+    }
+
+    if let Some(notice) = selected_panel_notice(app) {
+        parts.push(notice);
     }
 
     if let Some(status) = &app.export_status {
@@ -432,6 +456,7 @@ mod tests {
             display: crate::ui::DisplayFormat::default(),
             options: crate::app::PanelOptions::None,
             resolution: Default::default(),
+            notices: Default::default(),
         }
     }
 
@@ -823,6 +848,7 @@ mod tests {
                     display: panel.display,
                     options: panel.options,
                     resolution: panel.resolution,
+                    notices: Default::default(),
                 }
             })
             .collect();
@@ -866,6 +892,76 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn gauges_render_non_finite_values_without_panicking() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut app = test_app();
+            let mut panel = graph_panel("Ratio");
+            panel.panel_type = PanelType::Gauge;
+            panel.last_url = Some("http://localhost:9090/api/v1/query".to_string());
+            panel.series = vec![SeriesView {
+                name: "ratio".to_string(),
+                value: Some(value),
+                points: vec![],
+                visible: true,
+            }];
+            app.panels = vec![panel];
+            app.apply_layout(crate::dashboard::DashboardLayout::flat(1));
+            let mut terminal = Terminal::new(TestBackend::new(100, 40)).unwrap();
+
+            terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+        }
+    }
+
+    fn panel_with_data(title: &str) -> PanelState {
+        let mut panel = graph_panel(title);
+        panel.exprs = vec!["up".to_string()];
+        panel.last_url = Some("http://localhost:9090/api/v1/query_range".to_string());
+        panel.series = vec![SeriesView {
+            name: "api".to_string(),
+            value: Some(1.0),
+            points: vec![(1_699_999_700.0, 1.0), (1_700_000_000.0, 1.0)],
+            visible: true,
+        }];
+        panel
+    }
+
+    #[test]
+    fn stale_panels_keep_their_chart_and_explain_in_the_footer() {
+        let mut app = test_app();
+        let mut panel = panel_with_data("Requests");
+        panel.last_error = Some("query_range failed for `up`: request failed".to_string());
+        panel.notices.stale = true;
+        app.panels = vec![panel];
+        app.apply_layout(crate::dashboard::DashboardLayout::flat(1));
+        app.view_end_ts = 1_700_000_000;
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+
+        let text = terminal_text(&terminal);
+        assert!(text.contains("Requests ⚠ stale: queries failed"), "{text}");
+        assert!(!text.contains("ERROR"));
+        assert!(text.contains("Requests: query_range failed for `up`: request failed"));
+    }
+
+    #[test]
+    fn panels_with_warnings_show_a_marker_and_the_first_warning() {
+        let mut app = test_app();
+        let mut panel = panel_with_data("Requests");
+        panel.notices.warnings = vec!["partial response".to_string(), "second".to_string()];
+        app.panels = vec![panel];
+        app.apply_layout(crate::dashboard::DashboardLayout::flat(1));
+        app.view_end_ts = 1_700_000_000;
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+
+        let text = terminal_text(&terminal);
+        assert!(text.contains("Requests ⚠ warning"), "{text}");
+        assert!(text.contains("Requests: warning: partial response (+1 more)"));
     }
 
     #[test]

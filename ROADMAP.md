@@ -126,7 +126,7 @@ endpoints keep working unchanged.
 | **Adaptive query step** | The fixed `--step` (default 5s) exceeded Prometheus's 11,000-point limit above about 15h, so long ranges and zoom-out failed; steps now scale with the range, honoring `maxDataPoints` and min intervals | 🟡 | ✅ |
 | **Non-blocking refresh** | Refresh ran inline in the event loop, so a slow or unreachable backend froze input and delayed startup; refreshes now run in the background, with a connection indicator and retry backoff | 🔴 | ✅ |
 | **Variable refresh policy** | Query variables are re-queried every refresh tick and their errors are swallowed; Grafana's `refresh` setting is ignored | 🟡 | 📋 |
-| **Error and warning surfacing** | Last good data is dropped on error, only one error per panel survives, Prometheus `warnings` are discarded, and 4xx errors are retried | 🟡 | 📋 |
+| **Error and warning surfacing** | Last good data was dropped on error, only one error per panel survived, Prometheus `warnings` were discarded, and 4xx errors were retried; panels now keep data marked stale, show every failed query, and surface warnings | 🟡 | ✅ |
 | **Unit and display fixes** | `bytes` scales by 1000 instead of 1024, `bps` displays as bytes/s, `legendFormat: __auto` renders literally, and stat/bar gauge distort negative or fractional values | 🟢 | 📋 |
 | **Classic import diagnostics** | Classic non-Prometheus targets are sent to Prometheus, and `transformations`, `timeFrom`/`timeShift`, and overrides are dropped without a warning | 🟢 | 📋 |
 | **Config validation** | A missing `--config` file and unknown keys are silently ignored; refresh, step, and range are unbounded | 🟢 | 📋 |
@@ -354,7 +354,7 @@ These are valuable, but they should not outrank core Grafana import fidelity.
 Recommended order for the next focused development cycle:
 
 1. **Fix the data path**
-   - Variable refresh policy, and error and warning surfacing.
+   - Variable refresh policy.
    - Unit, display, key binding, config, and Classic import diagnostic fixes.
 
 2. **Reach secured backends**

@@ -676,6 +676,7 @@ mod tests {
             display: DisplayFormat::default(),
             options: PanelOptions::None,
             resolution: Default::default(),
+            notices: Default::default(),
         }
     }
 
