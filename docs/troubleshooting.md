@@ -16,6 +16,21 @@ seconds between attempts, and recovers on its own when Prometheus answers again.
 Press `r` to retry immediately. Queries that Prometheus rejects, such as invalid
 PromQL, show as panel errors rather than as unreachable.
 
+## Panel Markers
+
+A panel keeps showing data when a later fetch has problems, and marks its title:
+
+| Panel title | Meaning |
+|---|---|
+| `⚠ stale: queries failed` | Every query of the latest fetch failed; the chart shows the last data that loaded |
+| `⚠ query failed` | Some of the panel's queries failed; the chart shows the ones that succeeded |
+| `⚠ warning` | Prometheus returned the data with warnings, such as partial results |
+
+Select the panel to see the error or warning in the footer. A panel that has
+never loaded data shows the full error instead. Prometheus rejects a query with
+a 4xx status the same way every time, so only connection failures and 5xx or
+429 responses are retried.
+
 Check that Prometheus is running and reachable:
 
 ```bash

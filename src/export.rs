@@ -507,6 +507,21 @@ fn render_panel(
         "start",
         FONT_SIZE,
     );
+    if let Some((notice, level)) = ui::data_notice(panel) {
+        let color = match level {
+            ui::NoticeLevel::Error => color_hex(theme.error, "#ff5555"),
+            ui::NoticeLevel::Warning => color_hex(theme.warning, "#f0d000"),
+        };
+        write_text(
+            out,
+            rect.left + rect.width - 8.0,
+            rect.top + 18.0,
+            notice,
+            &color,
+            "end",
+            FONT_SIZE,
+        );
+    }
 
     let inner = PlotRect {
         left: rect.left + PANEL_PADDING,
@@ -515,7 +530,9 @@ fn render_panel(
         height: (rect.height - TITLE_HEIGHT - PANEL_PADDING).max(0.0),
     };
 
-    if let Some(err) = &panel.last_error {
+    if let Some(err) = &panel.last_error
+        && panel.series.is_empty()
+    {
         write_text(
             out,
             inner.left,
@@ -1854,6 +1871,7 @@ mod tests {
             display: crate::ui::DisplayFormat::default(),
             options: PanelOptions::Graph(GraphOptions::default()),
             resolution: Default::default(),
+            notices: Default::default(),
         }
     }
 

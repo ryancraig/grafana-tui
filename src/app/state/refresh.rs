@@ -146,7 +146,11 @@ struct PanelFetch {
     index: usize,
     series: Vec<SeriesView>,
     url: Option<String>,
-    error: Option<String>,
+    /// One message per failed query.
+    errors: Vec<String>,
+    warnings: Vec<String>,
+    /// Whether any of the panel's queries succeeded.
+    succeeded: bool,
 }
 
 /// Query outcomes, to tell an unreachable backend from failing queries.
@@ -540,23 +544,31 @@ impl AppState {
                 continue;
             }
             *applied = batch.seq;
-            // Series the user hid stay hidden across refreshes.
-            let hidden: HashSet<&str> = panel
-                .series
-                .iter()
-                .filter(|series| !series.visible)
-                .map(|series| series.name.as_str())
-                .collect();
-            let mut series = fetch.series;
-            for series in &mut series {
-                series.visible = !hidden.contains(series.name.as_str());
+            if !fetch.succeeded && !fetch.errors.is_empty() && !panel.series.is_empty() {
+                // Every query failed, so the last data stays on screen,
+                // marked stale, until Prometheus answers again.
+                panel.notices.stale = true;
+            } else {
+                // Series the user hid stay hidden across refreshes.
+                let hidden: HashSet<&str> = panel
+                    .series
+                    .iter()
+                    .filter(|series| !series.visible)
+                    .map(|series| series.name.as_str())
+                    .collect();
+                let mut series = fetch.series;
+                for series in &mut series {
+                    series.visible = !hidden.contains(series.name.as_str());
+                }
+                panel.series = series;
+                panel.last_samples = panel.series.iter().map(|s| s.points.len()).sum();
+                panel.notices.stale = false;
             }
-            panel.series = series;
-            panel.last_samples = panel.series.iter().map(|s| s.points.len()).sum();
             if let Some(url) = fetch.url {
                 panel.last_url = Some(url);
             }
-            panel.last_error = fetch.error;
+            panel.last_error = (!fetch.errors.is_empty()).then(|| fetch.errors.join("\n"));
+            panel.notices.warnings = fetch.warnings;
         }
     }
 }
@@ -662,7 +674,8 @@ async fn fetch_panel(
     } = window;
     let mut panel_results = Vec::new();
     let mut last_url = None;
-    let mut error = None;
+    let mut errors = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
     let mut counts = FetchCounts::default();
 
     for (i, expr) in p.exprs.iter().enumerate() {
@@ -697,10 +710,21 @@ async fn fetch_panel(
         };
 
         match query_result {
-            Ok(res) => {
+            Ok(result) => {
                 counts.succeeded += 1;
-                for s in res {
-                    let latest_val = s.values.last().and_then(|(_, v)| v.parse::<f64>().ok());
+                for warning in result.warnings {
+                    if !warnings.contains(&warning) {
+                        warnings.push(warning);
+                    }
+                }
+                for s in result.series {
+                    // NaN and ±Inf show as no value, as they cannot be
+                    // scaled for gauges or compared with thresholds.
+                    let latest_val = s
+                        .values
+                        .last()
+                        .and_then(|(_, v)| v.parse::<f64>().ok())
+                        .filter(|v| v.is_finite());
                     let legend_base = if let Some(fmt) = legend_fmt {
                         format_legend(fmt, &s.metric)
                     } else if s.metric.is_empty() {
@@ -739,7 +763,7 @@ async fn fetch_panel(
                     QueryMode::Range => "query_range",
                     QueryMode::Instant => "query",
                 };
-                error = Some(format!(
+                errors.push(format!(
                     "{} failed for `{}`: {}",
                     query_name, expr_expanded, e
                 ));
@@ -750,7 +774,9 @@ async fn fetch_panel(
         index,
         series: panel_results,
         url: last_url,
-        error,
+        errors,
+        warnings,
+        succeeded: counts.succeeded > 0,
     };
     (fetch, counts)
 }
@@ -791,6 +817,7 @@ mod tests {
                 display: crate::ui::DisplayFormat::default(),
                 options: PanelOptions::None,
                 resolution: Default::default(),
+                notices: Default::default(),
             })
             .collect();
         AppState::new(
@@ -869,10 +896,104 @@ mod tests {
                     visible: true,
                 }],
                 url: None,
-                error: None,
+                errors: vec![],
+                warnings: vec![],
+                succeeded: true,
             }],
             counts: FetchCounts::default(),
         }
+    }
+
+    fn failed_batch(seq: u64, errors: &[&str], succeeded: Option<&str>) -> PanelBatch {
+        let mut batch = panel_batch(seq, 0, succeeded.unwrap_or_default());
+        let fetch = &mut batch.fetches[0];
+        if succeeded.is_none() {
+            fetch.series.clear();
+        }
+        fetch.errors = errors.iter().map(|error| error.to_string()).collect();
+        fetch.succeeded = succeeded.is_some();
+        batch
+    }
+
+    #[test]
+    fn failed_fetches_keep_the_last_data_marked_stale() {
+        let mut app = app_with_panels("http://127.0.0.1:9", 1);
+        app.finish_refresh_task(Ok(RefreshMessage::Panels(panel_batch(1, 0, "cpu"))));
+        app.panels[0].series[0].visible = false;
+
+        let failed = failed_batch(2, &["request failed: connection refused"], None);
+        app.finish_refresh_task(Ok(RefreshMessage::Panels(failed)));
+
+        let panel = &app.panels[0];
+        assert_eq!(panel.series[0].name, "cpu");
+        assert!(!panel.series[0].visible);
+        assert!(panel.notices.stale);
+        assert_eq!(panel.last_error.as_deref(), Some("request failed: connection refused"));
+
+        app.finish_refresh_task(Ok(RefreshMessage::Panels(panel_batch(3, 0, "cpu"))));
+        let panel = &app.panels[0];
+        assert!(!panel.notices.stale);
+        assert!(panel.last_error.is_none());
+        assert!(!panel.series[0].visible);
+    }
+
+    #[test]
+    fn partly_failed_fetches_show_the_queries_that_succeeded() {
+        let mut app = app_with_panels("http://127.0.0.1:9", 1);
+        app.finish_refresh_task(Ok(RefreshMessage::Panels(panel_batch(1, 0, "old"))));
+
+        let partial = failed_batch(2, &["first failed", "second failed"], Some("new"));
+        app.finish_refresh_task(Ok(RefreshMessage::Panels(partial)));
+
+        let panel = &app.panels[0];
+        assert_eq!(panel.series[0].name, "new");
+        assert!(!panel.notices.stale);
+        assert_eq!(panel.last_error.as_deref(), Some("first failed\nsecond failed"));
+    }
+
+    #[test]
+    fn a_first_fetch_that_fails_has_no_data_to_keep() {
+        let mut app = app_with_panels("http://127.0.0.1:9", 1);
+
+        let failed = failed_batch(1, &["request failed"], None);
+        app.finish_refresh_task(Ok(RefreshMessage::Panels(failed)));
+
+        let panel = &app.panels[0];
+        assert!(panel.series.is_empty());
+        assert!(!panel.notices.stale);
+        assert!(panel.last_error.is_some());
+    }
+
+    #[tokio::test]
+    async fn warnings_are_kept_until_a_fetch_without_them() {
+        let url = prometheus_answering(
+            "200 OK",
+            r#"{"status":"success","data":{"resultType":"vector","result":[
+                {"metric":{"job":"api"},"value":[1700000000,"1"]}]},
+                "warnings":["partial response"]}"#,
+        )
+        .await;
+        let mut app = app_with_panels(&url, 1);
+
+        app.refresh().await.unwrap();
+        assert_eq!(app.panels[0].notices.warnings, ["partial response"]);
+        assert_eq!(app.panels[0].series.len(), 1);
+
+        // Prometheus goes away: the data stays, marked stale.
+        app.prometheus = prom::PromClient::new(refused_prometheus());
+        app.refresh().await.unwrap();
+        let panel = &app.panels[0];
+        assert_eq!(panel.series.len(), 1);
+        assert!(panel.notices.stale);
+        assert!(panel.last_error.as_deref().unwrap().contains("request failed"));
+        assert!(panel.notices.warnings.is_empty());
+
+        app.prometheus = prom::PromClient::new(prometheus_answering("200 OK", EMPTY_VECTOR).await);
+        app.refresh().await.unwrap();
+        let panel = &app.panels[0];
+        assert!(!panel.notices.stale);
+        assert!(panel.series.is_empty());
+        assert!(panel.last_error.is_none());
     }
 
     #[tokio::test]

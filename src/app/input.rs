@@ -655,6 +655,7 @@ mod tests {
             display: crate::ui::DisplayFormat::default(),
             options: PanelOptions::Graph(GraphOptions::default()),
             resolution: Default::default(),
+            notices: Default::default(),
         }
     }
 

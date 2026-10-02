@@ -35,6 +35,31 @@ use heatmap::render_heatmap;
 use stat::render_stat;
 use table::render_table;
 
+/// How serious a panel's data notice is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NoticeLevel {
+    Error,
+    Warning,
+}
+
+/// A marker shown after the title of a panel that still has data to show but
+/// whose latest fetch failed or returned warnings. The footer shows the
+/// details for the selected panel.
+pub(crate) fn data_notice(p: &PanelState) -> Option<(&'static str, NoticeLevel)> {
+    if p.last_error.is_some() {
+        let text = if p.notices.stale {
+            "⚠ stale: queries failed"
+        } else {
+            "⚠ query failed"
+        };
+        Some((text, NoticeLevel::Error))
+    } else if !p.notices.warnings.is_empty() {
+        Some(("⚠ warning", NoticeLevel::Warning))
+    } else {
+        None
+    }
+}
+
 /// Renders a single panel.
 ///
 /// This function handles:
@@ -59,7 +84,9 @@ pub(crate) fn render_panel(
         Style::default().fg(theme.border)
     };
 
-    if let Some(err) = &p.last_error {
+    if let Some(err) = &p.last_error
+        && p.series.is_empty()
+    {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(border_style)
@@ -91,13 +118,18 @@ pub(crate) fn render_panel(
     }
 
     // Render the outer block (Panel container)
+    let mut title = vec![Span::styled(p.title.clone(), Style::default().fg(theme.title))];
+    if let Some((notice, level)) = data_notice(p) {
+        let color = match level {
+            NoticeLevel::Error => theme.error,
+            NoticeLevel::Warning => theme.warning,
+        };
+        title.push(Span::styled(format!(" {notice}"), Style::default().fg(color)));
+    }
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(border_style)
-        .title(Span::styled(
-            p.title.clone(),
-            Style::default().fg(theme.title),
-        ));
+        .title(Line::from(title));
     frame.render_widget(block.clone(), area);
 
     let inner_area = block.inner(area);

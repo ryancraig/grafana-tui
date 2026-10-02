@@ -74,6 +74,18 @@ pub(crate) struct PanelState {
     pub(crate) options: PanelOptions,
     /// Grafana query options that set the range query step.
     pub(crate) resolution: QueryResolution,
+    /// Staleness and warnings of the latest fetch, beyond `last_error`.
+    pub(crate) notices: DataNotices,
+}
+
+/// How far to trust a panel's data, beyond `last_error`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct DataNotices {
+    /// The series are from an earlier fetch, because every query of the
+    /// latest one failed.
+    pub(crate) stale: bool,
+    /// Prometheus warnings from the latest fetch, such as partial results.
+    pub(crate) warnings: Vec<String>,
 }
 
 /// Grafana query options that set how finely a panel's range queries sample.
@@ -193,6 +205,7 @@ fn clear_panel_data(panel: &mut PanelState) {
     panel.last_error = None;
     panel.last_url = None;
     panel.last_samples = 0;
+    panel.notices = DataNotices::default();
 }
 
 /// Grid positioning unit (Grafana style).
@@ -1115,6 +1128,7 @@ mod tests {
             display: crate::ui::DisplayFormat::default(),
             options: PanelOptions::None,
             resolution: Default::default(),
+            notices: Default::default(),
         }
     }
 
@@ -2155,6 +2169,7 @@ mod tests {
             display: crate::ui::DisplayFormat::default(),
             options: PanelOptions::None,
             resolution: Default::default(),
+            notices: Default::default(),
         };
 
         assert_eq!(panel.query_mode(0), QueryMode::Instant);
@@ -2273,6 +2288,7 @@ mod tests {
             display: crate::ui::DisplayFormat::default(),
             options: PanelOptions::None,
             resolution: Default::default(),
+            notices: Default::default(),
         };
 
         assert_eq!(panel.graph_options(), GraphOptions::default());

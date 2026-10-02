@@ -28,7 +28,11 @@ pub(super) fn render_gauge(frame: &mut Frame, area: Rect, p: &PanelState, app: &
         .series
         .iter()
         .filter(|s| s.visible)
-        .find_map(|s| s.value.map(|v| (v, s.name.clone())))
+        .find_map(|s| {
+            s.value
+                .filter(|v| v.is_finite())
+                .map(|v| (v, s.name.clone()))
+        })
         .unwrap_or((0.0, "No data".to_string()));
 
     let min = p.min.unwrap_or(0.0);
@@ -38,11 +42,13 @@ pub(super) fn render_gauge(frame: &mut Frame, area: Rect, p: &PanelState, app: &
 
     let color = p.get_color_for_value(value).unwrap_or(theme.palette[0]);
 
+    // `Gauge::ratio` panics outside 0..=1, which NaN is.
     let ratio = if max > min {
         ((value - min) / (max - min)).clamp(0.0, 1.0)
     } else {
         0.0
     };
+    let ratio = if ratio.is_finite() { ratio } else { 0.0 };
 
     let gauge = Gauge::default()
         .block(Block::default().borders(Borders::NONE))

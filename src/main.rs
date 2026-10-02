@@ -202,6 +202,7 @@ async fn main() -> Result<()> {
                 display: q.display,
                 options: q.options,
                 resolution: q.resolution,
+                notices: Default::default(),
             })
             .collect();
         template = Some(
