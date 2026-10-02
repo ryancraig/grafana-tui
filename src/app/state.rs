@@ -767,7 +767,9 @@ impl AppState {
             .difference(&data_hidden)
             .copied()
             .collect();
-        self.unfiltered_layout.without(&hidden).visible_panel_indices()
+        self.unfiltered_layout
+            .without(&hidden)
+            .visible_panel_indices()
     }
 
     pub(crate) fn selected_panel_index(&self) -> Option<usize> {
@@ -1342,7 +1344,11 @@ mod tests {
             );
         }
         for (index, panel) in app.panels.iter().enumerate() {
-            assert!(panel.last_error.is_none(), "panel {index}: {:?}", panel.last_error);
+            assert!(
+                panel.last_error.is_none(),
+                "panel {index}: {:?}",
+                panel.last_error
+            );
         }
     }
 
@@ -1442,9 +1448,9 @@ mod tests {
 
     #[tokio::test]
     async fn data_conditions_hide_empty_panels_but_keep_fetching_them() {
-        let (url, _) = mock_prometheus(|_| {
-            r#"{"status":"success","data":{"resultType":"matrix","result":[]}}"#
-        })
+        let (url, _) = mock_prometheus(
+            |_| r#"{"status":"success","data":{"resultType":"matrix","result":[]}}"#,
+        )
         .await;
         let mut app = create_test_app();
         app.prometheus = prom::PromClient::new(url);
@@ -1606,7 +1612,9 @@ mod tests {
         repeats
             .rows
             .insert(RowId::new(0), crate::dashboard::Repeat::new("pod"));
-        repeats.panels.insert(0, crate::dashboard::Repeat::new("pod"));
+        repeats
+            .panels
+            .insert(0, crate::dashboard::Repeat::new("pod"));
         let layout = DashboardLayout::new(vec![DashboardLayoutItem::Row(DashboardRow::new(
             RowId::new(0),
             "Pod $pod",
@@ -1639,7 +1647,9 @@ mod tests {
         );
 
         for generation in 0..1000 {
-            let pods: Vec<String> = (0..3).map(|pod| format!("pod-{generation}-{pod}")).collect();
+            let pods: Vec<String> = (0..3)
+                .map(|pod| format!("pod-{generation}-{pod}"))
+                .collect();
             app.var_values.insert("pod".to_string(), pods);
             app.materialize_layout();
             // Section queries resolve per copy scope; record a result for each.
@@ -1665,10 +1675,22 @@ mod tests {
         assert_eq!(app.visible_panel_indices().len(), 3);
         // Freed slots are reused on the next update, so storage peaks at twice
         // the copies on screen (here the primary panel plus two copies, twice).
-        assert!(app.panels.len() <= 5, "{} panels retained", app.panels.len());
-        assert!(app.section_values.len() <= 3, "{} section results", app.section_values.len());
+        assert!(
+            app.panels.len() <= 5,
+            "{} panels retained",
+            app.panels.len()
+        );
+        assert!(
+            app.section_values.len() <= 3,
+            "{} section results",
+            app.section_values.len()
+        );
         let template = app.template.as_ref().unwrap();
-        assert!(template.retained_ids() <= 3 + 3, "{} ids retained", template.retained_ids());
+        assert!(
+            template.retained_ids() <= 3 + 3,
+            "{} ids retained",
+            template.retained_ids()
+        );
         // Nothing outside the layout keeps stale data.
         let shown: HashSet<usize> = app.visible_panel_indices().into_iter().collect();
         for (index, panel) in app.panels.iter().enumerate() {
@@ -1726,7 +1748,9 @@ mod tests {
         });
         app.panels = vec![panel];
         let mut repeats = crate::dashboard::Repeats::default();
-        repeats.panels.insert(0, crate::dashboard::Repeat::new("pod"));
+        repeats
+            .panels
+            .insert(0, crate::dashboard::Repeat::new("pod"));
         app.apply_template(DashboardTemplate::new(
             DashboardLayout::flat(1),
             repeats,
@@ -1781,7 +1805,10 @@ mod tests {
         app.materialize_layout();
 
         assert_eq!(app.visible_panel_indices(), [0, 2]);
-        assert_eq!(app.panels[1].last_samples, 7, "the `us` copy keeps its state");
+        assert_eq!(
+            app.panels[1].last_samples, 7,
+            "the `us` copy keeps its state"
+        );
         assert_eq!(app.panels[2].title, "CPU ap");
         assert_eq!(
             app.panel_scopes.get(&2),
@@ -2214,9 +2241,9 @@ mod tests {
 
     #[tokio::test]
     async fn refresh_requests_steps_scaled_to_the_range() {
-        let (url, requests) = mock_prometheus(|_| {
-            r#"{"status":"success","data":{"resultType":"matrix","result":[]}}"#
-        })
+        let (url, requests) = mock_prometheus(
+            |_| r#"{"status":"success","data":{"resultType":"matrix","result":[]}}"#,
+        )
         .await;
         let mut sparse = range_panel("Sparse", &["sparse"]);
         sparse.resolution.max_data_points = Some(60);

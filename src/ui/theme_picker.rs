@@ -45,9 +45,7 @@ fn picker_area(size: Size, themes: &[Theme]) -> Rect {
         .unwrap_or(u16::MAX)
         .min(size.width);
     let rows = picker_rows(themes).len() + 1;
-    let height = u16::try_from(rows + 2)
-        .unwrap_or(u16::MAX)
-        .min(size.height);
+    let height = u16::try_from(rows + 2).unwrap_or(u16::MAX).min(size.height);
     Rect::new(
         (size.width - width) / 2,
         (size.height - height) / 2,

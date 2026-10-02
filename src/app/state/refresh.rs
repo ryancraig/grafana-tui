@@ -11,10 +11,10 @@
 
 use super::{AppState, PanelState, SeriesView};
 use crate::annotations::{AnnotationProvider, AnnotationRefreshContext, ProviderPoll};
+use crate::app::QueryMode;
 use crate::app::data::{QueryIntervals, custom_legend, downsample, expand_expr, format_legend};
 use crate::app::template::{ResolvedSections, Scope, SectionInstance, scoped_vars};
 use crate::app::variables::{VariableReport, VariableUpdate, refresh_query_variables};
-use crate::app::QueryMode;
 use crate::grafana::TemplateQueryVar;
 use crate::prom;
 use futures::StreamExt;
@@ -39,7 +39,9 @@ pub(crate) enum BackendStatus {
     Connecting,
     Live,
     /// Every query in this many consecutive refreshes failed to connect.
-    Unreachable { failures: u32 },
+    Unreachable {
+        failures: u32,
+    },
 }
 
 /// What the title bar shows about the backend, when anything.
@@ -300,8 +302,8 @@ impl AppState {
         }
         let interval = match self.refreshes.status {
             BackendStatus::Unreachable { failures } => {
-                let backoff = self.refresh_every.max(Duration::from_secs(1))
-                    * 2_u32.pow(failures.min(5));
+                let backoff =
+                    self.refresh_every.max(Duration::from_secs(1)) * 2_u32.pow(failures.min(5));
                 backoff.min(MAX_BACKOFF).max(self.refresh_every)
             }
             BackendStatus::Connecting | BackendStatus::Live => self.refresh_every,
@@ -542,8 +544,7 @@ impl AppState {
         let epoch = self.refreshes.layout_epoch;
         self.refreshes.tasks.spawn(async move {
             let report =
-                resolve_sections(&prometheus, &instances, update, &vars, &mut values, window)
-                    .await;
+                resolve_sections(&prometheus, &instances, update, &vars, &mut values, window).await;
             RefreshMessage::Sections {
                 generation,
                 epoch,
@@ -656,12 +657,8 @@ async fn refresh_variables(
     vars: &mut HashMap<String, String>,
     var_values: &mut HashMap<String, Vec<String>>,
 ) -> VariableReport {
-    let intervals = QueryIntervals::new(
-        window.range,
-        window.min_step,
-        window.scrape_interval,
-        None,
-    );
+    let intervals =
+        QueryIntervals::new(window.range, window.min_step, window.scrape_interval, None);
     refresh_query_variables(
         prometheus,
         query_vars,
@@ -687,12 +684,8 @@ async fn resolve_sections(
     window: QueryWindow,
 ) -> VariableReport {
     let mut report = VariableReport::default();
-    let intervals = QueryIntervals::new(
-        window.range,
-        window.min_step,
-        window.scrape_interval,
-        None,
-    );
+    let intervals =
+        QueryIntervals::new(window.range, window.min_step, window.scrape_interval, None);
     for instance in instances {
         let key = (instance.id, instance.scope.clone());
         let mut vars = scoped_vars(vars, Some(&instance.scope)).into_owned();
@@ -869,9 +862,9 @@ async fn fetch_panel(
 mod tests {
     use super::*;
     use crate::annotations::ProviderFuture;
-    use crate::grafana::VariableRefresh;
     use crate::app::{PanelOptions, PanelType, YAxisMode};
     use crate::export::ExportOptions;
+    use crate::grafana::VariableRefresh;
     use crate::theme::Theme;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::layout::Size;
@@ -1013,7 +1006,10 @@ mod tests {
         assert_eq!(panel.series[0].name, "cpu");
         assert!(!panel.series[0].visible);
         assert!(panel.notices.stale);
-        assert_eq!(panel.last_error.as_deref(), Some("request failed: connection refused"));
+        assert_eq!(
+            panel.last_error.as_deref(),
+            Some("request failed: connection refused")
+        );
 
         app.finish_refresh_task(Ok(RefreshMessage::Panels(panel_batch(3, 0, "cpu"))));
         let panel = &app.panels[0];
@@ -1033,7 +1029,10 @@ mod tests {
         let panel = &app.panels[0];
         assert_eq!(panel.series[0].name, "new");
         assert!(!panel.notices.stale);
-        assert_eq!(panel.last_error.as_deref(), Some("first failed\nsecond failed"));
+        assert_eq!(
+            panel.last_error.as_deref(),
+            Some("first failed\nsecond failed")
+        );
     }
 
     #[test]
@@ -1070,7 +1069,13 @@ mod tests {
         let panel = &app.panels[0];
         assert_eq!(panel.series.len(), 1);
         assert!(panel.notices.stale);
-        assert!(panel.last_error.as_deref().unwrap().contains("request failed"));
+        assert!(
+            panel
+                .last_error
+                .as_deref()
+                .unwrap()
+                .contains("request failed")
+        );
         assert!(panel.notices.warnings.is_empty());
 
         app.prometheus = prom::PromClient::new(prometheus_answering("200 OK", EMPTY_VECTOR).await);
@@ -1166,7 +1171,11 @@ mod tests {
     async fn on_load_variables_resolve_once() {
         let (url, requests) = recording_prometheus(label_values).await;
         let mut app = app_with_panels(&url, 1);
-        app.query_vars = vec![query_var("job", "label_values(job)", VariableRefresh::OnLoad)];
+        app.query_vars = vec![query_var(
+            "job",
+            "label_values(job)",
+            VariableRefresh::OnLoad,
+        )];
 
         app.refresh().await.unwrap();
         app.refresh().await.unwrap();
@@ -1177,7 +1186,10 @@ mod tests {
 
         let job = requests_to(&requests, "/api/v1/label/job/");
         assert_eq!(job.len(), 1, "{job:?}");
-        assert!(job[0].contains("start=") && job[0].contains("end="), "{job:?}");
+        assert!(
+            job[0].contains("start=") && job[0].contains("end="),
+            "{job:?}"
+        );
         assert_eq!(app.vars["job"], "api");
     }
 
@@ -1211,7 +1223,11 @@ mod tests {
         let (url, requests) = recording_prometheus(label_values).await;
         let mut app = app_with_panels(&url, 1);
         app.query_vars = vec![
-            query_var("job", "label_values(job)", VariableRefresh::OnTimeRangeChange),
+            query_var(
+                "job",
+                "label_values(job)",
+                VariableRefresh::OnTimeRangeChange,
+            ),
             query_var(
                 "instance",
                 r#"label_values(up{job="$job"}, instance)"#,
@@ -1224,7 +1240,10 @@ mod tests {
 
         app.refresh().await.unwrap();
         let instance = requests_to(&requests, "/api/v1/label/instance/");
-        assert!(instance[0].contains(r#"match[]=up{job="web"}"#), "{instance:?}");
+        assert!(
+            instance[0].contains(r#"match[]=up{job="web"}"#),
+            "{instance:?}"
+        );
         assert_eq!(app.vars["instance"], "web-1");
 
         // `job` resolves to a new value, so `instance`, which references it,
@@ -1235,7 +1254,10 @@ mod tests {
         app.refresh().await.unwrap();
         let instance = requests_to(&requests, "/api/v1/label/instance/");
         assert_eq!(instance.len(), 2, "{instance:?}");
-        assert!(instance[1].contains(r#"match[]=up{job="api"}"#), "{instance:?}");
+        assert!(
+            instance[1].contains(r#"match[]=up{job="api"}"#),
+            "{instance:?}"
+        );
 
         // Unchanged, it does not.
         app.zoom_out();
@@ -1248,7 +1270,11 @@ mod tests {
         let (url, _) = recording_prometheus(label_values).await;
         let mut app = app_with_panels(&url, 1);
         app.query_vars = vec![
-            query_var("broken", "label_values(broken)", VariableRefresh::OnTimeRangeChange),
+            query_var(
+                "broken",
+                "label_values(broken)",
+                VariableRefresh::OnTimeRangeChange,
+            ),
             query_var("job", "label_values(job)", VariableRefresh::OnLoad),
         ];
         app.vars.insert("broken".to_string(), "saved".to_string());
@@ -1260,7 +1286,10 @@ mod tests {
         let errors: Vec<_> = app.variable_errors().collect();
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].0, "broken");
-        assert!(errors[0].1.contains("bad_data: invalid label"), "{errors:?}");
+        assert!(
+            errors[0].1.contains("bad_data: invalid label"),
+            "{errors:?}"
+        );
 
         let mut terminal =
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(160, 30)).unwrap();
@@ -1303,14 +1332,20 @@ mod tests {
         let mut app = app_with_panels(&refused_prometheus(), 1);
 
         app.refresh().await.unwrap();
-        assert_eq!(app.backend_status(), BackendStatus::Unreachable { failures: 1 });
+        assert_eq!(
+            app.backend_status(),
+            BackendStatus::Unreachable { failures: 1 }
+        );
         assert_eq!(app.backend_indicator(), Some(BackendIndicator::Unreachable));
         assert!(app.panels[0].last_error.is_some());
         let next = app.next_refresh_at().unwrap();
         assert_eq!(next - app.last_refresh, Duration::from_secs(2));
 
         app.refresh().await.unwrap();
-        assert_eq!(app.backend_status(), BackendStatus::Unreachable { failures: 2 });
+        assert_eq!(
+            app.backend_status(),
+            BackendStatus::Unreachable { failures: 2 }
+        );
         let next = app.next_refresh_at().unwrap();
         assert_eq!(next - app.last_refresh, Duration::from_secs(4));
 
@@ -1407,11 +1442,10 @@ mod tests {
     async fn annotation_loads_queue_behind_a_running_one() {
         let windows = Arc::new(Mutex::new(Vec::new()));
         let mut app = app_with_panels("http://127.0.0.1:9", 0);
-        app.annotations = crate::annotations::AnnotationState::from_provider(Some(Box::new(
-            WindowRecorder {
+        app.annotations =
+            crate::annotations::AnnotationState::from_provider(Some(Box::new(WindowRecorder {
                 windows: Arc::clone(&windows),
-            },
-        )));
+            })));
 
         app.start_refresh();
         app.zoom_out();

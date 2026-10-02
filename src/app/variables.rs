@@ -136,7 +136,9 @@ pub(crate) fn parse_custom_variable_values(query: &str, json: bool) -> Vec<Strin
     let mut chars = query.chars().peekable();
     let mut push = |current: &mut String| {
         let text = current.trim();
-        let value = text.rsplit_once(" : ").map_or(text, |(_, value)| value.trim());
+        let value = text
+            .rsplit_once(" : ")
+            .map_or(text, |(_, value)| value.trim());
         if !value.is_empty() {
             values.push(value.to_string());
         }

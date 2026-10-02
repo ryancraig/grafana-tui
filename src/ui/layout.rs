@@ -646,8 +646,8 @@ mod tests {
     use crate::{
         app::{GridUnit, PanelOptions, PanelType, YAxisMode},
         dashboard::{
-            DashboardAutoGrid, DashboardItemId, DashboardLayout, DashboardLayoutItem,
-            DashboardRow, DashboardTab, DashboardTabs, RowId, TabGroupId,
+            DashboardAutoGrid, DashboardItemId, DashboardLayout, DashboardLayoutItem, DashboardRow,
+            DashboardTab, DashboardTabs, RowId, TabGroupId,
         },
         export::ExportOptions,
         prom::PromClient,

@@ -51,14 +51,23 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
         normal_panel_count(app),
     ))];
     if !app.is_live() {
-        title_spans.push(Span::styled("⏸ PAUSED ", Style::default().fg(theme.warning)));
+        title_spans.push(Span::styled(
+            "⏸ PAUSED ",
+            Style::default().fg(theme.warning),
+        ));
     }
     match app.backend_indicator() {
         Some(BackendIndicator::Connecting) => {
-            title_spans.push(Span::styled("◌ connecting ", Style::default().fg(theme.warning)));
+            title_spans.push(Span::styled(
+                "◌ connecting ",
+                Style::default().fg(theme.warning),
+            ));
         }
         Some(BackendIndicator::Refreshing) => {
-            title_spans.push(Span::styled("⟳ refreshing ", Style::default().fg(theme.warning)));
+            title_spans.push(Span::styled(
+                "⟳ refreshing ",
+                Style::default().fg(theme.warning),
+            ));
         }
         Some(BackendIndicator::Unreachable) => {
             title_spans.push(Span::styled(
@@ -68,7 +77,9 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
         }
         None => {}
     }
-    title_spans.push(Span::raw("(r to refresh, +/- range, [] pan, 0 live, q quit)"));
+    title_spans.push(Span::raw(
+        "(r to refresh, +/- range, [] pan, 0 live, q quit)",
+    ));
     let title_block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(theme.border))

@@ -111,7 +111,10 @@ impl Variables<'_> {
             }
             match self.values.get(name) {
                 Some(values) if !values.is_empty() => Some(Cow::Owned(values.join(" + "))),
-                _ => self.formatted.get(name).map(|value| Cow::Owned(value.clone())),
+                _ => self
+                    .formatted
+                    .get(name)
+                    .map(|value| Cow::Owned(value.clone())),
             }
         })
     }
@@ -235,7 +238,8 @@ impl CloneIds {
             used
         });
         self.rows.retain(|key, _| used_rows.contains(key));
-        self.tab_groups.retain(|key, _| used_tab_groups.contains(key));
+        self.tab_groups
+            .retain(|key, _| used_tab_groups.contains(key));
         self.free_panels.extend(reclaimed.iter().copied());
         while self.next_panel > imported_panels
             && self.free_panels.last() == Some(&(self.next_panel - 1))
@@ -501,7 +505,9 @@ impl Builder<'_, '_> {
                 None => 0,
             };
             if shift > 0
-                && let Some(grid) = self.instance_mut(index).and_then(|panel| panel.grid.as_mut())
+                && let Some(grid) = self
+                    .instance_mut(index)
+                    .and_then(|panel| panel.grid.as_mut())
             {
                 grid.y += shift;
             }
@@ -612,8 +618,8 @@ impl Builder<'_, '_> {
         }
         let mut materialized = DashboardTabs::new(id, tabs);
         if let Some(active) = group.active {
-            materialized.active = Some(active.min(materialized.tabs.len().saturating_sub(1)))
-                .filter(|_| !materialized.tabs.is_empty());
+            materialized.active =
+                (!materialized.tabs.is_empty()).then(|| active.min(materialized.tabs.len() - 1));
         }
         DashboardLayoutItem::Tabs(materialized)
     }
@@ -739,7 +745,10 @@ impl Builder<'_, '_> {
     }
 
     fn instance_mut(&mut self, index: usize) -> Option<&mut PanelInstance> {
-        self.panels.iter_mut().rev().find(|panel| panel.index == index)
+        self.panels
+            .iter_mut()
+            .rev()
+            .find(|panel| panel.index == index)
     }
 }
 
@@ -894,7 +903,10 @@ mod tests {
                 item => panic!("expected rows, got {item:?}"),
             })
             .collect();
-        assert_eq!(titles, ["Handlers", "Quantile 0.5", "Quantile 0.99", "By tab"]);
+        assert_eq!(
+            titles,
+            ["Handlers", "Quantile 0.5", "Quantile 0.99", "By tab"]
+        );
 
         let handlers: Vec<_> = materialized
             .panels
@@ -920,7 +932,10 @@ mod tests {
             panic!("expected tabs, got {:?}", by_tab.children);
         };
         let tab_titles: Vec<_> = tabs.tabs.iter().map(|tab| tab.title.as_str()).collect();
-        assert_eq!(tab_titles, ["/api/v1/query", "/api/v1/query_range", "/metrics"]);
+        assert_eq!(
+            tab_titles,
+            ["/api/v1/query", "/api/v1/query_range", "/metrics"]
+        );
     }
 
     #[test]
@@ -979,9 +994,19 @@ mod tests {
                 (1, grid(0, 8, 24, 4)),
             ]
         );
-        let titles: Vec<_> = materialized.panels.iter().map(|p| p.title.as_str()).collect();
-        assert_eq!(titles, ["CPU a", "CPU b", "CPU c", "CPU d", "CPU e", "Below"]);
-        assert_eq!(materialized.panels[4].scope, [ScopeBinding::repeat("dc", "e", true)]);
+        let titles: Vec<_> = materialized
+            .panels
+            .iter()
+            .map(|p| p.title.as_str())
+            .collect();
+        assert_eq!(
+            titles,
+            ["CPU a", "CPU b", "CPU c", "CPU d", "CPU e", "Below"]
+        );
+        assert_eq!(
+            materialized.panels[4].scope,
+            [ScopeBinding::repeat("dc", "e", true)]
+        );
     }
 
     #[test]
@@ -1005,7 +1030,10 @@ mod tests {
             .map(|panel| panel.grid.unwrap())
             .map(|grid| (grid.x, grid.w, grid.y))
             .collect();
-        assert_eq!(widths, [(0, 5, 2), (5, 5, 2), (10, 5, 2), (15, 5, 2), (20, 4, 2)]);
+        assert_eq!(
+            widths,
+            [(0, 5, 2), (5, 5, 2), (10, 5, 2), (15, 5, 2), (20, 4, 2)]
+        );
     }
 
     #[test]
@@ -1056,8 +1084,7 @@ mod tests {
                 }],
             ))],
         ))]);
-        let mut template =
-            DashboardTemplate::new(layout, repeats, &panels(&[("CPU $dc", None)]));
+        let mut template = DashboardTemplate::new(layout, repeats, &panels(&[("CPU $dc", None)]));
         let vars = Vars::new(&[("dc", &["eu", "us"])]);
 
         let materialized = template.materialize(&vars.get());
@@ -1138,7 +1165,12 @@ mod tests {
         };
         assert_eq!(
             scopes,
-            [scope("eu", "a"), scope("eu", "b"), scope("us", "a"), scope("us", "b")]
+            [
+                scope("eu", "a"),
+                scope("eu", "b"),
+                scope("us", "a"),
+                scope("us", "b")
+            ]
         );
     }
 
@@ -1178,7 +1210,11 @@ mod tests {
             panic!("expected a row");
         };
         assert_eq!(row.title, "Env staging");
-        let titles: Vec<_> = materialized.panels.iter().map(|p| p.title.as_str()).collect();
+        let titles: Vec<_> = materialized
+            .panels
+            .iter()
+            .map(|p| p.title.as_str())
+            .collect();
         assert_eq!(titles, ["CPU staging", "Global prod"]);
         let staging = &materialized.panels[0].scope;
         assert_eq!(staging.len(), 1);
@@ -1234,7 +1270,8 @@ mod tests {
             false,
             vec![DashboardLayoutItem::Panel(0)],
         ))]);
-        let mut template = DashboardTemplate::new(layout.clone(), repeats, &panels(&[("$dc", None)]));
+        let mut template =
+            DashboardTemplate::new(layout.clone(), repeats, &panels(&[("$dc", None)]));
 
         let materialized = template.materialize(&Vars::new(&[]).get());
 

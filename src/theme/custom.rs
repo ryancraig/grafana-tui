@@ -70,8 +70,8 @@ fn build(name: &str, spec: &ThemeSpec) -> Result<Theme> {
         bail!("theme names cannot be empty");
     }
     let extends = spec.extends.as_deref().unwrap_or(DEFAULT_THEME);
-    let mut theme = builtin(extends)
-        .ok_or_else(|| anyhow!("`extends`: unknown built-in theme `{extends}`"))?;
+    let mut theme =
+        builtin(extends).ok_or_else(|| anyhow!("`extends`: unknown built-in theme `{extends}`"))?;
     theme.name = name.to_string();
     spec.apply_roles(&mut theme)?;
     if let Some(bands) = &spec.heatmap {
@@ -226,7 +226,10 @@ mod tests {
     #[test]
     fn color_names_are_case_insensitive() {
         assert_eq!(parse_theme_color("Light-Blue").unwrap(), Color::LightBlue);
-        assert_eq!(parse_theme_color("#ABCDEF").unwrap(), Color::Rgb(0xab, 0xcd, 0xef));
+        assert_eq!(
+            parse_theme_color("#ABCDEF").unwrap(),
+            Color::Rgb(0xab, 0xcd, 0xef)
+        );
         assert_eq!(parse_theme_color("RESET").unwrap(), Color::Reset);
     }
 }

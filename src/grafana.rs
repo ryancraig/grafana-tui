@@ -754,8 +754,16 @@ mod tests {
     #[test]
     fn v2_auto_grid_named_and_custom_sizes() {
         for (spec, min_column_width, row_height) in [
-            (serde_json::json!({"columnWidthMode": "narrow", "rowHeightMode": "tall"}), 24, 14),
-            (serde_json::json!({"columnWidthMode": "wide", "rowHeightMode": "short"}), 96, 5),
+            (
+                serde_json::json!({"columnWidthMode": "narrow", "rowHeightMode": "tall"}),
+                24,
+                14,
+            ),
+            (
+                serde_json::json!({"columnWidthMode": "wide", "rowHeightMode": "short"}),
+                96,
+                5,
+            ),
             (
                 serde_json::json!({
                     "columnWidthMode": "custom",
@@ -767,8 +775,16 @@ mod tests {
                 1,
             ),
             // Grafana treats `custom` without a size, and unknown modes, as `standard`.
-            (serde_json::json!({"columnWidthMode": "custom", "rowHeightMode": "huge"}), 56, 9),
-            (serde_json::json!({"columnWidthMode": null, "rowHeightMode": null}), 56, 9),
+            (
+                serde_json::json!({"columnWidthMode": "custom", "rowHeightMode": "huge"}),
+                56,
+                9,
+            ),
+            (
+                serde_json::json!({"columnWidthMode": null, "rowHeightMode": null}),
+                56,
+                9,
+            ),
         ] {
             let dashboard = v2_auto_grid(spec.clone()).unwrap();
             let grid = only_auto_grid(&dashboard);
@@ -886,10 +902,21 @@ mod tests {
         ))
         .unwrap();
 
-        assert!(dashboard.diagnostics.is_empty(), "{:?}", dashboard.diagnostics);
-        assert_eq!(dashboard.vars.get("quantile").map(String::as_str), Some("0.9"));
+        assert!(
+            dashboard.diagnostics.is_empty(),
+            "{:?}",
+            dashboard.diagnostics
+        );
+        assert_eq!(
+            dashboard.vars.get("quantile").map(String::as_str),
+            Some("0.9")
+        );
         let section = |row| &dashboard.sections[&SectionId::Row(RowId::new(row))];
-        assert!(!dashboard.sections.contains_key(&SectionId::Row(RowId::new(0))));
+        assert!(
+            !dashboard
+                .sections
+                .contains_key(&SectionId::Row(RowId::new(0)))
+        );
         assert_eq!(section(1)[0].name, "quantile");
         assert_eq!(section(1)[0].values, ["0.99"]);
         let handler = &section(2)[0];
@@ -899,31 +926,33 @@ mod tests {
             Some("label_values(prometheus_http_requests_total, handler)")
         );
         assert_eq!(
-            dashboard.repeats.panels.get(&2).map(|repeat| repeat.variable.as_str()),
+            dashboard
+                .repeats
+                .panels
+                .get(&2)
+                .map(|repeat| repeat.variable.as_str()),
             Some("handler")
         );
     }
 
     #[test]
     fn v2_tabs_reject_malformed_section_variables_at_native_paths() {
-        for (field, value) in [("variables", serde_json::json!([{"kind": "TextVariable"}]))] {
-            let mut spec = serde_json::json!({
-                "title": "Tab",
-                "layout": {"kind": "GridLayout", "spec": {"items": []}}
-            });
-            spec[field] = value;
-            let dashboard = minimal_v2_with_layout(serde_json::json!({
-                "kind": "TabsLayout",
-                "spec": {"tabs": [{"kind": "TabsLayoutTab", "spec": spec}]}
-            }));
-            let error = parse_grafana_dashboard(&dashboard.to_string())
-                .unwrap_err()
-                .to_string();
-            assert!(
-                error.contains(&format!("spec.layout.spec.tabs[0].spec.{field}[0].spec")),
-                "unexpected error for {field}: {error}"
-            );
-        }
+        let spec = serde_json::json!({
+            "title": "Tab",
+            "layout": {"kind": "GridLayout", "spec": {"items": []}},
+            "variables": [{"kind": "TextVariable"}]
+        });
+        let dashboard = minimal_v2_with_layout(serde_json::json!({
+            "kind": "TabsLayout",
+            "spec": {"tabs": [{"kind": "TabsLayoutTab", "spec": spec}]}
+        }));
+        let error = parse_grafana_dashboard(&dashboard.to_string())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("spec.layout.spec.tabs[0].spec.variables[0].spec"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
@@ -1039,9 +1068,8 @@ mod tests {
 
         let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
 
-        let section = &dashboard.sections[&crate::dashboard::SectionId::Row(
-            crate::dashboard::RowId::new(0),
-        )];
+        let section =
+            &dashboard.sections[&crate::dashboard::SectionId::Row(crate::dashboard::RowId::new(0))];
         assert_eq!(section.len(), 2);
         assert_eq!(section[0].name, "host");
         assert_eq!(section[0].values, ["a", "b"]);
@@ -1723,8 +1751,7 @@ mod tests {
                     .remove("hidden");
             }
             "wrong_hidden_type" => {
-                panel["data"]["spec"]["queries"][0]["spec"]["hidden"] =
-                    serde_json::json!("false")
+                panel["data"]["spec"]["queries"][0]["spec"]["hidden"] = serde_json::json!("false")
             }
             "missing_data_query_group" => {
                 panel["data"]["spec"]["queries"][0]["spec"]["query"]
@@ -1733,8 +1760,7 @@ mod tests {
                     .remove("group");
             }
             "wrong_data_query_group_type" => {
-                panel["data"]["spec"]["queries"][0]["spec"]["query"]["group"] =
-                    serde_json::json!(1)
+                panel["data"]["spec"]["queries"][0]["spec"]["query"]["group"] = serde_json::json!(1)
             }
             "missing_data_query_spec" => {
                 panel["data"]["spec"]["queries"][0]["spec"]["query"]
@@ -1743,8 +1769,7 @@ mod tests {
                     .remove("spec");
             }
             "wrong_data_query_spec_type" => {
-                panel["data"]["spec"]["queries"][0]["spec"]["query"]["spec"] =
-                    serde_json::json!([])
+                panel["data"]["spec"]["queries"][0]["spec"]["query"]["spec"] = serde_json::json!([])
             }
             "missing_viz_group" => {
                 panel["vizConfig"].as_object_mut().unwrap().remove("group");
@@ -1778,9 +1803,7 @@ mod tests {
                     .unwrap()
                     .remove("options");
             }
-            "wrong_options_type" => {
-                panel["vizConfig"]["spec"]["options"] = serde_json::json!([])
-            }
+            "wrong_options_type" => panel["vizConfig"]["spec"]["options"] = serde_json::json!([]),
             _ => unreachable!(),
         }
         json
@@ -1810,9 +1833,18 @@ mod tests {
                 "wrong_data_query_spec_type",
                 "spec.elements[\"panel-1\"].spec.data.spec.queries[0].spec.query.spec",
             ),
-            ("missing_viz_group", "spec.elements[\"panel-1\"].spec.vizConfig.group"),
-            ("wrong_viz_group_type", "spec.elements[\"panel-1\"].spec.vizConfig.group"),
-            ("wrong_viz_spec_type", "spec.elements[\"panel-1\"].spec.vizConfig.spec"),
+            (
+                "missing_viz_group",
+                "spec.elements[\"panel-1\"].spec.vizConfig.group",
+            ),
+            (
+                "wrong_viz_group_type",
+                "spec.elements[\"panel-1\"].spec.vizConfig.group",
+            ),
+            (
+                "wrong_viz_spec_type",
+                "spec.elements[\"panel-1\"].spec.vizConfig.spec",
+            ),
             (
                 "wrong_field_config_type",
                 "spec.elements[\"panel-1\"].spec.vizConfig.spec.fieldConfig",
@@ -1821,7 +1853,10 @@ mod tests {
                 "wrong_defaults_type",
                 "spec.elements[\"panel-1\"].spec.vizConfig.spec.fieldConfig.defaults",
             ),
-            ("wrong_options_type", "spec.elements[\"panel-1\"].spec.vizConfig.spec.options"),
+            (
+                "wrong_options_type",
+                "spec.elements[\"panel-1\"].spec.vizConfig.spec.options",
+            ),
         ];
 
         for (case, expected_path) in cases {
@@ -1967,7 +2002,8 @@ mod tests {
         ] {
             let mut json = valid_v2_resource();
             make_v2_panel_importable(&mut json);
-            let query = &mut json["spec"]["elements"]["panel-1"]["spec"]["data"]["spec"]["queries"][0];
+            let query =
+                &mut json["spec"]["elements"]["panel-1"]["spec"]["data"]["spec"]["queries"][0];
             query["spec"]["query"]["group"] = group.into();
 
             let dashboard = parse_grafana_dashboard(&json.to_string()).unwrap();
@@ -1997,8 +2033,14 @@ mod tests {
             dashboard.queries[1].query_modes,
             [crate::app::QueryMode::Instant]
         );
-        assert_eq!(dashboard.vars.get("job").map(String::as_str), Some("prometheus"));
-        assert_eq!(dashboard.vars.get("quantile").map(String::as_str), Some("0.9"));
+        assert_eq!(
+            dashboard.vars.get("job").map(String::as_str),
+            Some("prometheus")
+        );
+        assert_eq!(
+            dashboard.vars.get("quantile").map(String::as_str),
+            Some("0.9")
+        );
         assert_eq!(dashboard.query_vars.len(), 1);
         assert_eq!(dashboard.skipped_panels, 1);
         assert_eq!(dashboard.diagnostics.len(), 1);
@@ -2018,7 +2060,10 @@ mod tests {
 
         assert_eq!(dashboard.queries.len(), 2);
         assert!(!dashboard.vars.contains_key("job"));
-        assert_eq!(dashboard.vars.get("quantile").map(String::as_str), Some("0.9"));
+        assert_eq!(
+            dashboard.vars.get("quantile").map(String::as_str),
+            Some("0.9")
+        );
         assert_eq!(dashboard.query_vars.len(), 1);
         assert_eq!(dashboard.query_vars[0].name, "job");
         assert_eq!(dashboard.query_vars[0].query, "label_values(up, job)");
@@ -2303,7 +2348,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            dashboard.conditions.rows.get(&crate::dashboard::RowId::new(0)),
+            dashboard
+                .conditions
+                .rows
+                .get(&crate::dashboard::RowId::new(0)),
             Some(&ConditionGroup {
                 show: false,
                 match_all: false,
@@ -2377,7 +2425,11 @@ mod tests {
         ))
         .unwrap();
 
-        assert!(dashboard.diagnostics.is_empty(), "{:?}", dashboard.diagnostics);
+        assert!(
+            dashboard.diagnostics.is_empty(),
+            "{:?}",
+            dashboard.diagnostics
+        );
         assert_eq!(dashboard.conditions.rows.len(), 2);
         assert_eq!(dashboard.conditions.tabs.len(), 1);
         assert_eq!(dashboard.conditions.panels.len(), 1);
@@ -2391,7 +2443,10 @@ mod tests {
     fn v2_rejects_malformed_conditional_rendering_at_native_paths() {
         let path = "spec.layout.spec.rows[0].spec.conditionalRendering";
         for (condition, expected) in [
-            (serde_json::json!({"kind": "Other", "spec": {}}), format!("{path}.kind")),
+            (
+                serde_json::json!({"kind": "Other", "spec": {}}),
+                format!("{path}.kind"),
+            ),
             (
                 serde_json::json!({"kind": "ConditionalRenderingGroup", "spec": {"visibility": "maybe"}}),
                 format!("{path}.spec.visibility"),
@@ -2456,8 +2511,14 @@ mod tests {
     #[test]
     fn v2_rejects_malformed_repeats_at_native_paths() {
         for (repeat, expected) in [
-            (serde_json::json!({"mode": "query", "value": "job"}), "repeat.mode"),
-            (serde_json::json!({"value": "job", "direction": "x"}), "repeat.direction"),
+            (
+                serde_json::json!({"mode": "query", "value": "job"}),
+                "repeat.mode",
+            ),
+            (
+                serde_json::json!({"value": "job", "direction": "x"}),
+                "repeat.direction",
+            ),
             (serde_json::json!({"value": 1}), "repeat.value"),
             (serde_json::json!([]), "repeat"),
         ] {
@@ -2518,7 +2579,10 @@ mod tests {
             Some(&dc)
         );
         // Without a saved selection, the first option is selected.
-        assert_eq!(dashboard.var_values.get("dc"), Some(&vec!["eu".to_string()]));
+        assert_eq!(
+            dashboard.var_values.get("dc"),
+            Some(&vec!["eu".to_string()])
+        );
         assert_eq!(dashboard.vars.get("dc").map(String::as_str), Some("eu"));
     }
 
@@ -2620,7 +2684,11 @@ mod tests {
         assert_eq!(yaml.refresh_rate_ms, json.refresh_rate_ms);
         assert_eq!(yaml.diagnostics, json.diagnostics);
         let exprs = |import: &DashboardImport| -> Vec<Vec<String>> {
-            import.queries.iter().map(|query| query.exprs.clone()).collect()
+            import
+                .queries
+                .iter()
+                .map(|query| query.exprs.clone())
+                .collect()
         };
         assert_eq!(exprs(&yaml), exprs(&json));
     }
@@ -2645,14 +2713,19 @@ mod tests {
 
     #[test]
     fn json_files_report_json_errors_without_yaml_fallback() {
-        let error = parse_document("apiVersion: dashboard.grafana.app/v2\n", DocumentFormat::Json)
-            .unwrap_err();
+        let error = parse_document(
+            "apiVersion: dashboard.grafana.app/v2\n",
+            DocumentFormat::Json,
+        )
+        .unwrap_err();
         assert!(format!("{error:#}").contains("parsing Grafana dashboard JSON"));
     }
 
     #[test]
     fn undetectable_documents_report_both_parse_errors() {
-        let error = parse_grafana_dashboard("{ not: [valid").unwrap_err().to_string();
+        let error = parse_grafana_dashboard("{ not: [valid")
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("not valid JSON"), "{error}");
         assert!(error.contains("or YAML"), "{error}");
     }
@@ -2767,21 +2840,39 @@ mod tests {
     fn classic_examples_and_their_v2_conversions_import_identically() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         for (classic, example) in [
-            ("all_visualizations.json", "examples/dashboards/all_visualizations.json"),
-            ("instant_queries.json", "examples/dashboards/instant_queries.json"),
-            ("prometheus_demo.json", "examples/dashboards/prometheus_demo.json"),
+            (
+                "all_visualizations.json",
+                "examples/dashboards/all_visualizations.json",
+            ),
+            (
+                "instant_queries.json",
+                "examples/dashboards/instant_queries.json",
+            ),
+            (
+                "prometheus_demo.json",
+                "examples/dashboards/prometheus_demo.json",
+            ),
             ("simple_test.json", "examples/dashboards/simple_test.json"),
-            ("thresholds_demo.json", "examples/dashboards/thresholds_demo.json"),
+            (
+                "thresholds_demo.json",
+                "examples/dashboards/thresholds_demo.json",
+            ),
             ("vllm_demo.json", "examples/demo/vllm_demo.json"),
             ("vllm_grafana.json", "examples/demo/vllm/grafana.json"),
         ] {
             let classic = load_grafana_dashboard(
-                &root.join("tests/fixtures/grafana/classic_examples").join(classic),
+                &root
+                    .join("tests/fixtures/grafana/classic_examples")
+                    .join(classic),
             )
             .unwrap();
             let v2 = load_grafana_dashboard(&root.join(example)).unwrap();
 
-            assert_eq!(import_semantics(&v2), import_semantics(&classic), "{example}");
+            assert_eq!(
+                import_semantics(&v2),
+                import_semantics(&classic),
+                "{example}"
+            );
         }
     }
 
@@ -3042,7 +3133,11 @@ mod tests {
             .filter(|diagnostic| diagnostic.path.ends_with("interval"))
             .collect::<Vec<_>>();
         assert_eq!(interval_diagnostics.len(), 2);
-        assert!(interval_diagnostics.iter().all(|diagnostic| diagnostic.code == "ignored_field"));
+        assert!(
+            interval_diagnostics
+                .iter()
+                .all(|diagnostic| diagnostic.code == "ignored_field")
+        );
         assert!(interval_diagnostics.iter().any(|diagnostic| {
             diagnostic.path.ends_with("].interval") && diagnostic.message.contains("`fast`")
         }));

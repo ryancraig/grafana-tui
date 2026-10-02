@@ -136,7 +136,12 @@ fn format_scaled(value: f64, suffixes: &[&str], base: f64, decimals: Option<usiz
         suffix_index += 1;
     }
 
-    format!("{:.*}{}", decimals.unwrap_or(2), scaled, suffixes[suffix_index])
+    format!(
+        "{:.*}{}",
+        decimals.unwrap_or(2),
+        scaled,
+        suffixes[suffix_index]
+    )
 }
 
 /// Formats seconds in the largest unit that keeps the value at least 1, from

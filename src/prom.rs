@@ -650,15 +650,19 @@ mod tests {
         let client = PromClient::new(url);
         let step = Duration::from_secs(15);
 
-        let abandoned =
-            tokio::time::timeout(Duration::from_millis(200), client.query_range("up", 0, 60, step))
-                .await;
+        let abandoned = tokio::time::timeout(
+            Duration::from_millis(200),
+            client.query_range("up", 0, 60, step),
+        )
+        .await;
         assert!(abandoned.is_err(), "the stalled request should time out");
 
-        let retried =
-            tokio::time::timeout(Duration::from_secs(2), client.query_range("up", 0, 60, step))
-                .await
-                .expect("a later identical query must not wait on the dropped one");
+        let retried = tokio::time::timeout(
+            Duration::from_secs(2),
+            client.query_range("up", 0, 60, step),
+        )
+        .await
+        .expect("a later identical query must not wait on the dropped one");
         assert!(retried.unwrap().series.is_empty());
         assert!(lock(&client.inflight).is_empty());
     }
@@ -730,7 +734,10 @@ mod tests {
             .query_range("up", 0, 60, Duration::from_secs(15))
             .await
             .unwrap();
-        assert_eq!(result.warnings, ["partial response", "metric might not be a counter"]);
+        assert_eq!(
+            result.warnings,
+            ["partial response", "metric might not be a counter"]
+        );
 
         let instant = r#"{"status":"success","data":{"resultType":"vector","result":[]},
             "warnings":["partial response"]}"#;
@@ -763,7 +770,8 @@ mod tests {
     #[tokio::test]
     async fn unavailable_prometheus_is_retried() {
         let body = r#"{"status":"error","errorType":"unavailable","error":"too many queries"}"#;
-        let (url, requests) = counting_server(status_response("503 Service Unavailable", body)).await;
+        let (url, requests) =
+            counting_server(status_response("503 Service Unavailable", body)).await;
 
         PromClient::new(url)
             .query_range("up", 0, 60, Duration::from_secs(15))
@@ -776,7 +784,10 @@ mod tests {
     #[test]
     fn non_prometheus_error_bodies_keep_an_excerpt() {
         let error = StatusError::new(reqwest::StatusCode::BAD_GATEWAY, "<html>bad gateway</html>");
-        assert_eq!(error.to_string(), "prometheus 502 Bad Gateway: <html>bad gateway</html>");
+        assert_eq!(
+            error.to_string(),
+            "prometheus 502 Bad Gateway: <html>bad gateway</html>"
+        );
     }
 
     #[test]
@@ -784,7 +795,10 @@ mod tests {
         let mut cache = QueryCache::default();
         let step = Duration::from_secs(15);
         for end in 0..1000 {
-            cache.insert(("up".to_string(), end - 60, end, step), QueryResult::default());
+            cache.insert(
+                ("up".to_string(), end - 60, end, step),
+                QueryResult::default(),
+            );
         }
 
         assert_eq!(cache.len(), CACHE_CAPACITY);
@@ -819,7 +833,10 @@ mod tests {
         let long = "é".repeat(ERROR_EXCERPT_CHARS + 10);
         let shown = excerpt(&long);
         assert!(shown.starts_with(&"é".repeat(ERROR_EXCERPT_CHARS)));
-        assert!(shown.ends_with(&format!("… ({} bytes)", long.len())), "{shown}");
+        assert!(
+            shown.ends_with(&format!("… ({} bytes)", long.len())),
+            "{shown}"
+        );
     }
 
     #[test]
