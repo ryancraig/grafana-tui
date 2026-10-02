@@ -139,7 +139,7 @@ endpoints keep working unchanged.
 |---|---|---|---|
 | **Optional authentication** | Bearer tokens and Basic auth from files or env vars, never literal CLI args; credentials are redacted from the debug bar and logs | 🟡 | 📋 |
 | **Custom headers** | Multi-tenant Mimir and Cortex need `X-Scope-OrgID` | 🟢 | 📋 |
-| **Optional TLS settings** | Custom CA bundles, the OS trust store, client certificates (mTLS), and an explicit insecure mode for lab use | 🟡 | 📋 |
+| **Optional TLS settings** | Custom CA bundles and client certificates (mTLS) are supported through `[tls]` and `--ca-cert`/`--client-cert`/`--client-key`; the OS trust store and an explicit insecure mode for lab use remain | 🟡 | 🔶 |
 | **Configurable timeouts** | The 10s request and 5s connect timeouts are hard-coded | 🟢 | 📋 |
 | **Named datasource profiles** | Switch between environments and map dashboard datasource uids to endpoints | 🟡 | 📋 |
 | **End-to-end tests against a mock backend** | Cover unsecured, auth, tenant-header, and TLS paths without a live server | 🟡 | 📋 |

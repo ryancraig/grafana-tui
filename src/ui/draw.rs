@@ -70,10 +70,11 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
             ));
         }
         Some(BackendIndicator::Unreachable) => {
-            title_spans.push(Span::styled(
-                "✗ Prometheus unreachable ",
-                Style::default().fg(theme.error),
-            ));
+            let text = match app.unreachable_cause() {
+                Some(cause) => format!("✗ Prometheus unreachable ({cause}) "),
+                None => "✗ Prometheus unreachable ".to_string(),
+            };
+            title_spans.push(Span::styled(text, Style::default().fg(theme.error)));
         }
         None => {}
     }
@@ -887,6 +888,39 @@ mod tests {
         app.apply_layout(layout);
         app.view_end_ts = 1_700_000_000;
         app
+    }
+
+    #[tokio::test]
+    async fn title_bar_shows_why_tls_failed() {
+        use crate::prom::tls_tests::{TestCa, mtls_prometheus};
+        let (server_ca, client_ca) = (TestCa::new("server CA"), TestCa::new("client CA"));
+        let (url, _) = mtls_prometheus(&server_ca.server_cert(), &client_ca).await;
+        let mut panel = graph_panel("Up");
+        panel.exprs = vec!["up".to_string()];
+        panel.legends = vec![None];
+        panel.query_modes = vec![crate::app::QueryMode::Instant];
+        let mut app = AppState::new(
+            PromClient::new(url),
+            std::time::Duration::from_secs(300),
+            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(1),
+            "Test".to_string(),
+            vec![panel],
+            0,
+            Theme::default(),
+            "dashed-line".to_string(),
+            ExportOptions::default(),
+        );
+        app.refresh().await.unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(160, 20)).unwrap();
+
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+
+        assert!(
+            terminal_text(&terminal).contains("✗ Prometheus unreachable (TLS: unknown issuer)"),
+            "{}",
+            terminal_text(&terminal)
+        );
     }
 
     fn terminal_text(terminal: &Terminal<TestBackend>) -> String {

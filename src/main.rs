@@ -116,6 +116,13 @@ async fn main() -> Result<()> {
         .prometheus_url
         .or(config.prometheus_url)
         .unwrap_or_else(|| "http://localhost:9090".to_string());
+    let tls = prom::TlsFiles {
+        ca_cert: args.ca_cert,
+        client_cert: args.client_cert,
+        client_key: args.client_key,
+    }
+    .or(config.tls)
+    .map_paths(config::expand_path);
 
     let range_str = args
         .range
@@ -164,7 +171,7 @@ async fn main() -> Result<()> {
     let mut template = None;
     let mut dashboard_refresh_rate_ms = None;
 
-    let prom = prom::PromClient::new(prometheus_url);
+    let prom = prom::PromClient::with_tls(prometheus_url, &tls)?;
 
     // Build panels from Grafana import or simple queries.
     let (title, panels, skipped_panels) = if let Some(path) = dashboard_path {

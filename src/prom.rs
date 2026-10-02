@@ -22,6 +22,12 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+mod tls;
+
+pub(crate) use tls::TlsFiles;
+#[cfg(test)]
+pub(crate) use tls::tests as tls_tests;
+
 /// Range query results kept for re-use, such as when panning back to a window.
 const CACHE_CAPACITY: usize = 64;
 /// Largest response body read from Prometheus.
@@ -120,11 +126,26 @@ impl std::error::Error for ResponseTooLarge {}
 /// Prometheus could not be reached, or the connection failed mid-response, as
 /// opposed to Prometheus answering with an error.
 #[derive(Debug)]
-struct TransportError(String);
+struct TransportError {
+    message: String,
+    tls: Option<tls::TlsFailure>,
+}
+
+impl TransportError {
+    fn new(context: &str, error: &reqwest::Error) -> Self {
+        let tls = tls::TlsFailure::find(error);
+        let chain = tls::error_chain(error);
+        let message = match &tls {
+            Some(tls) => format!("{context}: {} ({}): {chain}", tls.cause, tls.hint),
+            None => format!("{context}: {chain}"),
+        };
+        Self { message, tls }
+    }
+}
 
 impl std::fmt::Display for TransportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.message)
     }
 }
 
@@ -133,6 +154,15 @@ impl std::error::Error for TransportError {}
 /// Whether `error` means Prometheus could not be reached.
 pub(crate) fn is_transport_error(error: &anyhow::Error) -> bool {
     error.is::<TransportError>()
+}
+
+/// A short cause, such as `TLS: unknown issuer`, when `error` is a failed TLS
+/// handshake or the server rejecting the client certificate.
+pub(crate) fn tls_failure_cause(error: &anyhow::Error) -> Option<&str> {
+    error
+        .downcast_ref::<TransportError>()
+        .and_then(|error| error.tls.as_ref())
+        .map(|tls| tls.cause.as_str())
 }
 
 /// Prometheus answered with an error status.
@@ -175,10 +205,11 @@ impl StatusError {
 }
 
 /// Whether trying again could succeed: the connection failed, or Prometheus
-/// was overloaded or unavailable. A rejected query fails the same way again.
+/// was overloaded or unavailable. A rejected query fails the same way again,
+/// as does a TLS handshake, until the certificates change.
 fn is_retryable(error: &anyhow::Error) -> bool {
-    if error.is::<TransportError>() {
-        return true;
+    if let Some(error) = error.downcast_ref::<TransportError>() {
+        return error.tls.is_none();
     }
     error.downcast_ref::<StatusError>().is_some_and(|error| {
         error.status.is_server_error() || error.status == reqwest::StatusCode::TOO_MANY_REQUESTS
@@ -218,22 +249,41 @@ pub(crate) struct PromClient {
 
 impl PromClient {
     pub(crate) fn new(base: String) -> Self {
-        let http = Client::builder()
+        let http = Self::client_builder().build().unwrap_or_else(|e| {
+            eprintln!(
+                "Warning: Failed to configure HTTP client with timeouts: {}",
+                e
+            );
+            eprintln!("         Falling back to default client (requests may hang).");
+            Client::new()
+        });
+        Self::with_client(base, http)
+    }
+
+    /// A client for `base` that uses `tls`. With TLS options set, it fails
+    /// rather than fall back to a default client, which would connect without
+    /// the configured certificates.
+    pub(crate) fn with_tls(base: String, tls: &TlsFiles) -> Result<Self> {
+        if tls.is_empty() {
+            return Ok(Self::new(base));
+        }
+        let http = tls
+            .configure(&base, Self::client_builder())?
+            .build()
+            .map_err(|error| tls.build_error(&error))?;
+        Ok(Self::with_client(base, http))
+    }
+
+    fn client_builder() -> reqwest::ClientBuilder {
+        Client::builder()
             .timeout(Duration::from_secs(10))
             .connect_timeout(Duration::from_secs(5))
-            .build()
-            .unwrap_or_else(|e| {
-                eprintln!(
-                    "Warning: Failed to configure HTTP client with timeouts: {}",
-                    e
-                );
-                eprintln!("         Falling back to default client (requests may hang).");
-                Client::new()
-            });
+    }
 
+    fn with_client(base: String, client: Client) -> Self {
         Self {
             base,
-            client: http,
+            client,
             cache: Arc::new(Mutex::new(QueryCache::default())),
             inflight: Arc::new(Mutex::new(HashMap::new())),
             max_response_bytes: MAX_RESPONSE_BYTES,
@@ -423,7 +473,7 @@ impl PromClient {
             .get(url)
             .send()
             .await
-            .map_err(|e| TransportError(format!("request failed: {e}")))?;
+            .map_err(|e| TransportError::new("request failed", &e))?;
         let status = resp.status();
         let limit = self.max_response_bytes;
         let too_large = || anyhow::Error::new(ResponseTooLarge(limit));
@@ -437,7 +487,7 @@ impl PromClient {
         while let Some(chunk) = resp
             .chunk()
             .await
-            .map_err(|e| TransportError(format!("reading text: {e}")))?
+            .map_err(|e| TransportError::new("reading text", &e))?
         {
             if body.len() + chunk.len() > limit {
                 return Err(too_large());

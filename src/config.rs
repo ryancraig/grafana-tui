@@ -42,6 +42,9 @@ pub(crate) struct Config {
     pub(crate) autogrid: Option<bool>,
     pub(crate) autogrid_color: Option<String>,
     pub(crate) vars: Option<HashMap<String, String>>,
+    /// TLS files for the Prometheus connection.
+    #[serde(default)]
+    pub(crate) tls: crate::prom::TlsFiles,
     /// User-defined themes, keyed by name.
     #[serde(default)]
     pub(crate) themes: BTreeMap<String, crate::theme::ThemeSpec>,
@@ -153,6 +156,42 @@ mod tests {
             config.annotations_file,
             Some(PathBuf::from("~/events.jsonl"))
         );
+    }
+
+    #[test]
+    fn parses_the_tls_table() {
+        let config: Config = toml::from_str(
+            r#"
+            prometheus_url = "https://10.60.1.21:9090"
+
+            [tls]
+            ca_cert = "~/certs/ca.pem"
+            client_cert = "/etc/grafatui/client.pem"
+            client_key = "/etc/grafatui/client.key"
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(config.tls.ca_cert, Some(PathBuf::from("~/certs/ca.pem")));
+        assert_eq!(
+            config.tls.client_cert,
+            Some(PathBuf::from("/etc/grafatui/client.pem"))
+        );
+        assert_eq!(
+            config.tls.client_key,
+            Some(PathBuf::from("/etc/grafatui/client.key"))
+        );
+        assert!(Config::default().tls.is_empty());
+    }
+
+    #[test]
+    fn misspelled_tls_options_are_errors() {
+        let error = toml::from_str::<Config>("[tls]\nca_file = \"ca.pem\"\n")
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("unknown field `ca_file`"), "{error}");
+        assert!(error.contains("ca_cert"), "{error}");
     }
 
     #[test]
