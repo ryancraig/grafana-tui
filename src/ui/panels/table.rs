@@ -43,7 +43,7 @@ pub(super) fn render_table(frame: &mut Frame, area: Rect, p: &PanelState, app: &
         .collect();
 
     if rows.is_empty() {
-        let para = Paragraph::new("No data").style(Style::default().fg(theme.text));
+        let para = Paragraph::new(p.display.no_data_text()).style(Style::default().fg(theme.text));
         frame.render_widget(para, area);
         return;
     }

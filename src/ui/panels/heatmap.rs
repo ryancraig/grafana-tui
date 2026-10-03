@@ -25,7 +25,7 @@ pub(super) fn render_heatmap(frame: &mut Frame, area: Rect, p: &PanelState, app:
     let theme = &app.theme;
 
     if p.series.is_empty() {
-        let para = Paragraph::new("No data").style(Style::default().fg(theme.text));
+        let para = Paragraph::new(p.display.no_data_text()).style(Style::default().fg(theme.text));
         frame.render_widget(para, area);
         return;
     }
@@ -98,7 +98,7 @@ pub(super) fn render_heatmap(frame: &mut Frame, area: Rect, p: &PanelState, app:
     }
 
     if lines.is_empty() {
-        let para = Paragraph::new("No data to display").style(Style::default().fg(theme.text));
+        let para = Paragraph::new(p.display.no_data_text()).style(Style::default().fg(theme.text));
         frame.render_widget(para, area);
         return;
     }

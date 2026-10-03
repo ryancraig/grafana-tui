@@ -62,7 +62,7 @@ pub(super) fn render_bar_gauge(frame: &mut Frame, area: Rect, p: &PanelState, ap
     }
 
     if bars.is_empty() {
-        let para = Paragraph::new("No data").style(Style::default().fg(theme.text));
+        let para = Paragraph::new(p.display.no_data_text()).style(Style::default().fg(theme.text));
         frame.render_widget(para, area);
         return;
     }

@@ -173,6 +173,7 @@ struct PanelFetch {
     /// One message per failed query.
     errors: Vec<String>,
     warnings: Vec<String>,
+    infos: Vec<String>,
     /// Whether any of the panel's queries succeeded.
     succeeded: bool,
 }
@@ -660,6 +661,7 @@ impl AppState {
             }
             panel.last_error = (!fetch.errors.is_empty()).then(|| fetch.errors.join("\n"));
             panel.notices.warnings = fetch.warnings;
+            panel.notices.infos = fetch.infos;
         }
     }
 }
@@ -768,6 +770,7 @@ async fn fetch_panel(
     let mut last_url = None;
     let mut errors = Vec::new();
     let mut warnings: Vec<String> = Vec::new();
+    let mut infos: Vec<String> = Vec::new();
     let mut counts = FetchCounts::default();
 
     for (i, expr) in p.exprs.iter().enumerate() {
@@ -807,6 +810,11 @@ async fn fetch_panel(
                 for warning in result.warnings {
                     if !warnings.contains(&warning) {
                         warnings.push(warning);
+                    }
+                }
+                for info in result.infos {
+                    if !infos.contains(&info) {
+                        infos.push(info);
                     }
                 }
                 for s in result.series {
@@ -871,6 +879,7 @@ async fn fetch_panel(
         url: last_url,
         errors,
         warnings,
+        infos,
         succeeded: counts.succeeded > 0,
     };
     (fetch, counts)
@@ -994,6 +1003,7 @@ mod tests {
                 url: None,
                 errors: vec![],
                 warnings: vec![],
+                infos: vec![],
                 succeeded: true,
             }],
             counts: FetchCounts::default(),
@@ -1072,13 +1082,18 @@ mod tests {
             "200 OK",
             r#"{"status":"success","data":{"resultType":"vector","result":[
                 {"metric":{"job":"api"},"value":[1700000000,"1"]}]},
-                "warnings":["partial response"]}"#,
+                "warnings":["partial response"],
+                "infos":["metric might not be a counter"]}"#,
         )
         .await;
         let mut app = app_with_panels(&url, 1);
 
         app.refresh().await.unwrap();
         assert_eq!(app.panels[0].notices.warnings, ["partial response"]);
+        assert_eq!(
+            app.panels[0].notices.infos,
+            ["metric might not be a counter"]
+        );
         assert_eq!(app.panels[0].series.len(), 1);
 
         // Prometheus goes away: the data stays, marked stale.
@@ -1095,6 +1110,7 @@ mod tests {
                 .contains("request failed")
         );
         assert!(panel.notices.warnings.is_empty());
+        assert!(panel.notices.infos.is_empty());
 
         app.prometheus = prom::PromClient::new(prometheus_answering("200 OK", EMPTY_VECTOR).await);
         app.refresh().await.unwrap();

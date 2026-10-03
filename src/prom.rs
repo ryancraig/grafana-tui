@@ -220,8 +220,11 @@ fn is_retryable(error: &anyhow::Error) -> bool {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct QueryResult {
     pub(crate) series: Vec<Series>,
-    /// Response `warnings` and `infos`, such as partial results.
+    /// Response `warnings`, such as partial results.
     pub(crate) warnings: Vec<String>,
+    /// Response `infos`, which Prometheus 3 returns for queries that likely
+    /// do not mean what they say, such as `rate` over a non-counter name.
+    pub(crate) infos: Vec<String>,
 }
 
 /// The start of a response body, for error messages.
@@ -408,8 +411,9 @@ impl PromClient {
         }
 
         Ok(QueryResult {
-            warnings: body.notices(),
             series: body.data.result,
+            warnings: body.warnings,
+            infos: body.infos,
         })
     }
 
@@ -454,8 +458,9 @@ impl PromClient {
         let body: PromResponse<QueryInstantData> = self.get_json(&url).await?;
         ensure_success(&body.status)?;
         Ok(QueryResult {
-            warnings: body.notices(),
             series: body.data.into_series(time),
+            warnings: body.warnings,
+            infos: body.infos,
         })
     }
 
@@ -521,14 +526,6 @@ struct PromResponse<T> {
     warnings: Vec<String>,
     #[serde(default)]
     infos: Vec<String>,
-}
-
-impl<T> PromResponse<T> {
-    /// Warnings, then infos, which Prometheus 3 returns for queries that
-    /// likely do not mean what they say.
-    fn notices(&self) -> Vec<String> {
-        self.warnings.iter().chain(&self.infos).cloned().collect()
-    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -784,10 +781,8 @@ mod tests {
             .query_range("up", 0, 60, Duration::from_secs(15))
             .await
             .unwrap();
-        assert_eq!(
-            result.warnings,
-            ["partial response", "metric might not be a counter"]
-        );
+        assert_eq!(result.warnings, ["partial response"]);
+        assert_eq!(result.infos, ["metric might not be a counter"]);
 
         let instant = r#"{"status":"success","data":{"resultType":"vector","result":[]},
             "warnings":["partial response"]}"#;
@@ -797,6 +792,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(result.warnings, ["partial response"]);
+        assert!(result.infos.is_empty());
     }
 
     #[tokio::test]

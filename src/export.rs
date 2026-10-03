@@ -39,6 +39,11 @@ const PANEL_PADDING: f64 = 12.0;
 const TITLE_HEIGHT: f64 = 28.0;
 const X_LABEL_HEIGHT: f64 = 24.0;
 const LEGEND_HEIGHT: f64 = 28.0;
+/// Advance of a monospace character, in ems, with slack for glyphs such as
+/// `⚠` that a fallback font may draw wider.
+const CHAR_ADVANCE: f64 = 0.62;
+/// Distance between the baselines of wrapped error lines.
+const ERROR_LINE_HEIGHT: f64 = 16.0;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
@@ -498,30 +503,35 @@ fn render_panel(
         rect.left, rect.top, rect.width, rect.height
     )
     .unwrap();
-    write_text(
+    // The notice follows the title in the same text, as in the TUI, so the
+    // two cannot overlap.
+    let notice = ui::data_notice(panel);
+    let (title_text, badge) = ui::fit_panel_title(
+        &panel.title,
+        notice.map(|(text, _)| text),
+        text_columns(rect.width - 16.0, FONT_SIZE),
+    );
+    write!(
         out,
+        r#"<text x="{:.2}" y="{:.2}" fill="{title}" font-size="{FONT_SIZE:.1}" text-anchor="start">{}"#,
         rect.left + 8.0,
         rect.top + 18.0,
-        &panel.title,
-        &title,
-        "start",
-        FONT_SIZE,
-    );
-    if let Some((notice, level)) = ui::data_notice(panel) {
+        escape_xml(&title_text)
+    )
+    .unwrap();
+    if let (Some(badge), Some((_, level))) = (badge, notice) {
         let color = match level {
             ui::NoticeLevel::Error => color_hex(theme.error, "#ff5555"),
             ui::NoticeLevel::Warning => color_hex(theme.warning, "#f0d000"),
         };
-        write_text(
+        write!(
             out,
-            rect.left + rect.width - 8.0,
-            rect.top + 18.0,
-            notice,
-            &color,
-            "end",
-            FONT_SIZE,
-        );
+            r#" <tspan fill="{color}" data-role="panel-notice">{}</tspan>"#,
+            escape_xml(badge)
+        )
+        .unwrap();
     }
+    out.push_str("</text>");
 
     let inner = PlotRect {
         left: rect.left + PANEL_PADDING,
@@ -533,15 +543,20 @@ fn render_panel(
     if let Some(err) = &panel.last_error
         && panel.series.is_empty()
     {
-        write_text(
-            out,
-            inner.left,
-            inner.top + 18.0,
-            err,
-            &color_hex(app.theme.error, "#ff5555"),
-            "start",
-            FONT_SIZE,
-        );
+        let color = color_hex(app.theme.error, "#ff5555");
+        let max_lines = ((inner.height - 18.0).max(0.0) / ERROR_LINE_HEIGHT) as usize + 1;
+        let lines = wrap_text(err, text_columns(inner.width, FONT_SIZE), max_lines);
+        for (row, line) in lines.iter().enumerate() {
+            write_text(
+                out,
+                inner.left,
+                inner.top + 18.0 + row as f64 * ERROR_LINE_HEIGHT,
+                line,
+                &color,
+                "start",
+                FONT_SIZE,
+            );
+        }
         return;
     }
 
@@ -564,10 +579,6 @@ fn render_graph_panel(
     rect: PlotRect,
     out: &mut String,
 ) {
-    if rect.width < 120.0 || rect.height < 80.0 {
-        return;
-    }
-
     let (x_min, x_max) = app.time_bounds();
     let annotations_enabled = panel.panel_type == PanelType::Graph;
     let has_annotations = annotations_enabled
@@ -581,6 +592,13 @@ fn render_graph_panel(
                 [x_min, x_max],
             )
             .is_empty();
+    if !has_annotations && panel.series.iter().all(|series| series.points.is_empty()) {
+        render_no_data(app, panel, rect, out);
+        return;
+    }
+    if rect.width < 120.0 || rect.height < 80.0 {
+        return;
+    }
     let legend_height = if panel.series.is_empty() && !has_annotations {
         0.0
     } else {
@@ -911,12 +929,12 @@ fn render_annotation_details(
 
 fn render_stat_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out: &mut String) {
     let Some(series) = panel.series.iter().find(|series| series.visible) else {
-        render_no_data(app, rect, out);
+        render_no_data(app, panel, rect, out);
         return;
     };
 
-    // Mirror the TUI distinction: a visible null series can show Grafana's
-    // noValue fallback, but a panel with no visible series still renders No data.
+    // As in the TUI, Grafana's noValue stands in for a null value here, and
+    // render_no_data shows it for no series at all.
     let color = series
         .value
         .map(|value| value_color(app, panel, value))
@@ -952,7 +970,7 @@ fn render_stat_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out: &m
 
 fn render_gauge_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out: &mut String) {
     let Some((series, value)) = first_visible_value(panel) else {
-        render_no_data(app, rect, out);
+        render_no_data(app, panel, rect, out);
         return;
     };
 
@@ -1029,7 +1047,7 @@ fn render_bar_gauge_panel(app: &AppState, panel: &PanelState, rect: PlotRect, ou
     values.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
 
     if values.is_empty() {
-        render_no_data(app, rect, out);
+        render_no_data(app, panel, rect, out);
         return;
     }
 
@@ -1094,7 +1112,7 @@ fn render_table_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out: &
         .filter(|series| series.visible)
         .collect::<Vec<_>>();
     if values.is_empty() {
-        render_no_data(app, rect, out);
+        render_no_data(app, panel, rect, out);
         return;
     }
 
@@ -1172,7 +1190,7 @@ fn render_heatmap_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out:
         .filter(|series| series.visible)
         .collect::<Vec<_>>();
     if visible.is_empty() {
-        render_no_data(app, rect, out);
+        render_no_data(app, panel, rect, out);
         return;
     }
 
@@ -1186,7 +1204,7 @@ fn render_heatmap_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out:
         }
     }
     if !min.is_finite() || !max.is_finite() || min == max {
-        render_no_data(app, rect, out);
+        render_no_data(app, panel, rect, out);
         return;
     }
 
@@ -1268,12 +1286,17 @@ fn value_ratio(value: f64, min: f64, max: f64) -> f64 {
     ((value - min) / (max - min)).clamp(0.0, 1.0)
 }
 
-fn render_no_data(app: &AppState, rect: PlotRect, out: &mut String) {
+fn render_no_data(app: &AppState, panel: &PanelState, rect: PlotRect, out: &mut String) {
+    let columns = text_columns(rect.width - 8.0, FONT_SIZE);
+    let text = ui::truncate_title(
+        panel.display.no_data_text(),
+        u16::try_from(columns).unwrap_or(u16::MAX),
+    );
     write_text(
         out,
         rect.left + 8.0,
         rect.top + 24.0,
-        "No data",
+        &text,
         &color_hex(app.theme.text, "#e6e6e6"),
         "start",
         FONT_SIZE,
@@ -1636,6 +1659,58 @@ fn draw_line(out: &mut String, start: (f64, f64), end: (f64, f64), style: LineSt
         write!(out, r#" stroke-dasharray="{dash}""#).unwrap();
     }
     out.push_str("/>");
+}
+
+/// How many characters of `size` fit in `width` pixels.
+fn text_columns(width: f64, size: f64) -> usize {
+    if width.is_finite() && width > 0.0 {
+        (width / (size * CHAR_ADVANCE)).floor() as usize
+    } else {
+        0
+    }
+}
+
+/// Wraps `text` at spaces into at most `max_lines` lines of `columns`
+/// characters, keeping its line breaks and breaking words longer than a line.
+/// Text that does not fit ends the last line with `…`.
+fn wrap_text(text: &str, columns: usize, max_lines: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    if columns == 0 || max_lines == 0 {
+        return lines;
+    }
+    for paragraph in text.lines() {
+        let mut line = String::new();
+        let mut width = 0;
+        for word in paragraph.split_whitespace() {
+            if width > 0 && width + 1 + word.chars().count() > columns {
+                lines.push(std::mem::take(&mut line));
+                width = 0;
+            }
+            if width > 0 {
+                line.push(' ');
+                width += 1;
+            }
+            for ch in word.chars() {
+                if width == columns {
+                    lines.push(std::mem::take(&mut line));
+                    width = 0;
+                }
+                line.push(ch);
+                width += 1;
+            }
+        }
+        lines.push(line);
+    }
+    if lines.len() > max_lines {
+        lines.truncate(max_lines);
+        if let Some(last) = lines.last_mut() {
+            while last.chars().count() >= columns {
+                last.pop();
+            }
+            last.push('…');
+        }
+    }
+    lines
 }
 
 fn write_text(out: &mut String, x: f64, y: f64, text: &str, color: &str, anchor: &str, size: f64) {
@@ -2733,6 +2808,94 @@ mod tests {
         let table_svg = render_svg(&table_app, Rect::new(0, 0, 100, 40));
         assert!(table_svg.contains("42%"));
         assert!(table_svg.contains("n/a"));
+    }
+
+    #[test]
+    fn test_empty_panels_export_the_dashboard_no_value_text() {
+        for panel_type in [PanelType::Graph, PanelType::Table, PanelType::Stat] {
+            let mut app = test_app_with_panel_type(panel_type);
+            app.panels[0].series.clear();
+            let svg = render_svg(&app, Rect::new(0, 0, 100, 40));
+            assert!(svg.contains("No data"), "{panel_type:?}");
+
+            app.panels[0].display.no_value = Some("none (healthy)".to_string());
+            let svg = render_svg(&app, Rect::new(0, 0, 100, 40));
+            assert!(svg.contains("none (healthy)"), "{panel_type:?}");
+            assert!(!svg.contains("No data"), "{panel_type:?}");
+        }
+    }
+
+    #[test]
+    fn test_export_keeps_panel_notices_beside_shortened_titles() {
+        let mut app = test_app_with_panel_type(PanelType::Stat);
+        app.panels[0].title = "Upstream connect failures / timeouts".to_string();
+        app.panels[0].notices.warnings = vec!["partial response".to_string()];
+
+        let svg = render_svg(&app, Rect::new(0, 0, 50, 20));
+        assert!(svg.contains(">Upstream"), "{svg}");
+        assert!(
+            svg.contains(r#"… <tspan fill=""#)
+                && svg.contains(r#"data-role="panel-notice">⚠ warning</tspan></text>"#),
+            "{svg}"
+        );
+
+        // Infos alone get no marker.
+        app.panels[0].notices.warnings.clear();
+        app.panels[0].notices.infos = vec!["metric might not be a counter".to_string()];
+        let svg = render_svg(&app, Rect::new(0, 0, 50, 20));
+        assert!(!svg.contains("panel-notice"), "{svg}");
+    }
+
+    #[test]
+    fn test_export_wraps_errors_inside_the_panel() {
+        let mut app = test_app_with_panel_type(PanelType::Graph);
+        app.panels[0].series.clear();
+        let error = format!(
+            "query_range failed for `{}`: request failed",
+            "rate(envoy_cluster_upstream_cx_connect_fail[5m])".repeat(2)
+        );
+        app.panels[0].last_error = Some(error.clone());
+        let error_color = color_hex(app.theme.error, "#ff5555");
+        let error_lines = |svg: &str| {
+            svg.split(r#"<text x="22.00""#)
+                .skip(1)
+                .filter(|text| text.contains(&format!(r#"fill="{error_color}""#)))
+                .filter_map(|text| text.split_once('>'))
+                .filter_map(|(_, rest)| rest.split_once("</text>"))
+                .map(|(line, _)| line.to_string())
+                .collect::<Vec<_>>()
+        };
+
+        // The panel is 190px wide in a 400px export.
+        let columns = text_columns(190.0 - PANEL_PADDING * 2.0, FONT_SIZE);
+        let svg = render_svg(&app, Rect::new(0, 0, 40, 30));
+        let lines = error_lines(&svg);
+        assert!(lines.len() > 1, "{svg}");
+        assert!(
+            lines.iter().all(|line| line.chars().count() <= columns),
+            "{lines:?}"
+        );
+        assert_eq!(
+            lines.concat().replace(' ', ""),
+            error.replace(' ', ""),
+            "{svg}"
+        );
+
+        // A short panel cuts the error off.
+        let svg = render_svg(&app, Rect::new(0, 0, 40, 10));
+        let lines = error_lines(&svg);
+        assert_eq!(lines.len(), 1, "{svg}");
+        assert!(lines[0].ends_with('…'), "{lines:?}");
+    }
+
+    #[test]
+    fn test_wrap_text_breaks_at_spaces_lines_and_long_words() {
+        assert_eq!(wrap_text("one two three", 8, 5), ["one two", "three"]);
+        assert_eq!(wrap_text("a\nb", 8, 5), ["a", "b"]);
+        assert_eq!(wrap_text("abcdefghij", 4, 5), ["abcd", "efgh", "ij"]);
+        assert_eq!(wrap_text("one two three four", 7, 2), ["one two", "three…"]);
+        assert_eq!(wrap_text("abcdefghij", 4, 1), ["abc…"]);
+        assert!(wrap_text("text", 0, 3).is_empty());
     }
 
     #[test]

@@ -86,6 +86,10 @@ pub(crate) struct DataNotices {
     pub(crate) stale: bool,
     /// Prometheus warnings from the latest fetch, such as partial results.
     pub(crate) warnings: Vec<String>,
+    /// Prometheus infos from the latest fetch, such as `rate` over a metric
+    /// whose name does not say it is a counter. The data is fine, so these
+    /// get no title marker.
+    pub(crate) infos: Vec<String>,
 }
 
 /// Grafana query options that set how finely a panel's range queries sample.

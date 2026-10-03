@@ -347,16 +347,19 @@ fn backend_status_label(status: BackendStatus) -> String {
 }
 
 /// Details behind the selected panel's title marker: a failed query of a
-/// panel still showing data, or Prometheus warnings.
+/// panel still showing data, or Prometheus warnings. Without either, the
+/// Prometheus infos, which have no marker.
 fn selected_panel_notice(app: &AppState) -> Option<String> {
     let panel = app.panels.get(app.selected_panel_index()?)?;
+    let notices = &panel.notices;
     let (kind, messages): (&str, Vec<&str>) = match &panel.last_error {
         Some(error) if !panel.series.is_empty() => ("", error.lines().collect()),
         Some(_) => return None,
-        None => (
+        None if !notices.warnings.is_empty() => (
             "warning: ",
-            panel.notices.warnings.iter().map(String::as_str).collect(),
+            notices.warnings.iter().map(String::as_str).collect(),
         ),
+        None => ("info: ", notices.infos.iter().map(String::as_str).collect()),
     };
     let first = messages.first()?;
     let more = match messages.len() {
@@ -1016,6 +1019,74 @@ mod tests {
         let text = terminal_text(&terminal);
         assert!(text.contains("Requests ⚠ warning"), "{text}");
         assert!(text.contains("Requests: warning: partial response (+1 more)"));
+    }
+
+    #[test]
+    fn prometheus_infos_show_in_the_footer_without_a_marker() {
+        let mut app = test_app();
+        let mut panel = panel_with_data("Requests");
+        panel.notices.infos = vec!["metric might not be a counter".to_string()];
+        app.panels = vec![panel];
+        app.apply_layout(crate::dashboard::DashboardLayout::flat(1));
+        app.view_end_ts = 1_700_000_000;
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+
+        let text = terminal_text(&terminal);
+        assert!(!text.contains('⚠'), "{text}");
+        assert!(text.contains("Requests: info: metric might not be a counter"));
+
+        // Warnings come first, and keep the marker.
+        app.panels[0].notices.warnings = vec!["partial response".to_string()];
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+        let text = terminal_text(&terminal);
+        assert!(text.contains("Requests ⚠ warning"), "{text}");
+        assert!(text.contains("Requests: warning: partial response"));
+    }
+
+    #[test]
+    fn narrow_panels_shorten_the_title_to_keep_the_notice() {
+        let mut app = test_app();
+        let mut panel = panel_with_data("Upstream connect failures / timeouts");
+        panel.notices.warnings = vec!["partial response".to_string()];
+        app.panels = vec![panel];
+        app.apply_layout(crate::dashboard::DashboardLayout::flat(1));
+        app.view_end_ts = 1_700_000_000;
+        let mut terminal = Terminal::new(TestBackend::new(70, 20)).unwrap();
+
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+
+        let text = terminal_text(&terminal);
+        assert!(text.contains("┌Upstream"), "{text}");
+        assert!(text.contains("… ⚠ warning┐"), "{text}");
+    }
+
+    #[test]
+    fn empty_panels_show_the_dashboard_no_value_text() {
+        for panel_type in [crate::app::PanelType::Table, crate::app::PanelType::Graph] {
+            let mut app = test_app();
+            let mut panel = graph_panel("Active alerts");
+            panel.panel_type = panel_type;
+            panel.exprs = vec!["ALERTS".to_string()];
+            panel.last_url = Some("http://localhost:9090/api/v1/query".to_string());
+            app.panels = vec![panel];
+            app.apply_layout(crate::dashboard::DashboardLayout::flat(1));
+            let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+
+            terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+            assert!(
+                terminal_text(&terminal).contains("No data"),
+                "{panel_type:?}: {}",
+                terminal_text(&terminal)
+            );
+
+            app.panels[0].display.no_value = Some("none (healthy)".to_string());
+            terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+            let text = terminal_text(&terminal);
+            assert!(text.contains("none (healthy)"), "{panel_type:?}: {text}");
+            assert!(!text.contains("No data"), "{panel_type:?}: {text}");
+        }
     }
 
     #[test]
