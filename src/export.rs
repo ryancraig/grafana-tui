@@ -44,6 +44,18 @@ const LEGEND_HEIGHT: f64 = 28.0;
 const CHAR_ADVANCE: f64 = 0.62;
 /// Distance between the baselines of wrapped error lines.
 const ERROR_LINE_HEIGHT: f64 = 16.0;
+/// Font size of a stat value with room to spare.
+const STAT_FONT_SIZE: f64 = 28.0;
+/// Least space between two labels on one axis.
+const AXIS_LABEL_GAP: f64 = 6.0;
+/// Space above the first legend row's baseline and below its last.
+const LEGEND_PADDING: f64 = 13.0;
+/// Distance between the baselines of legend rows.
+const LEGEND_ROW_HEIGHT: f64 = 15.0;
+/// Width of a legend swatch and the space after it.
+const LEGEND_SWATCH: f64 = 13.0;
+/// Space between legend entries in a row.
+const LEGEND_GAP: f64 = 11.0;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
@@ -599,21 +611,47 @@ fn render_graph_panel(
     if rect.width < 120.0 || rect.height < 80.0 {
         return;
     }
+    let y_bounds = ui::calculate_y_bounds(panel);
+    // The y labels' gutter fits the widest of them, up to 40% of the panel.
+    let y_label_room = std::iter::once(y_bounds[0])
+        .chain(std::iter::once(y_bounds[1]))
+        .chain(value_ticks(y_bounds[0], y_bounds[1]))
+        .chain(
+            threshold_lines(panel, app)
+                .into_iter()
+                .map(|(value, ..)| value),
+        )
+        .map(|value| text_width(&panel.display.format_number(value), SMALL_FONT_SIZE))
+        .fold(0.0, f64::max)
+        .min(rect.width * 0.4 - 12.0);
+    let y_label_width = (y_label_room + 12.0).max(64.0);
+    let y_label = |value: f64| {
+        fit_text(
+            &panel.display.format_number(value),
+            y_label_room,
+            SMALL_FONT_SIZE,
+        )
+        .0
+    };
+    let plot_width = (rect.width - y_label_width - 8.0).max(1.0);
+    // The legend takes the rows it needs, up to a third of the panel.
+    let max_legend_rows = ((rect.height / 3.0 - LEGEND_PADDING) / LEGEND_ROW_HEIGHT)
+        .floor()
+        .max(1.0) as usize;
+    let legend = layout_legend(legend_items(app, panel), plot_width, max_legend_rows);
     let legend_height = if panel.series.is_empty() && !has_annotations {
         0.0
     } else {
-        LEGEND_HEIGHT
+        (LEGEND_PADDING + legend.rows as f64 * LEGEND_ROW_HEIGHT).max(LEGEND_HEIGHT)
     };
-    let y_label_width = 64.0;
     let plot = PlotRect {
         left: rect.left + y_label_width,
         top: rect.top + 6.0,
-        width: (rect.width - y_label_width - 8.0).max(1.0),
+        width: plot_width,
         height: (rect.height - X_LABEL_HEIGHT - legend_height - 10.0).max(1.0),
     };
 
     let x_bounds = [x_min, x_max];
-    let y_bounds = ui::calculate_y_bounds(panel);
     let text = color_hex(app.theme.text, "#e6e6e6");
     let axis = color_hex(app.theme.axis, "#777777");
     let grid = &color_hex(app.grid_color(), "#6d6d6d");
@@ -639,8 +677,23 @@ fn render_graph_panel(
     )
     .unwrap();
 
+    // Labels give way rather than overprint: the axis ends first, then
+    // thresholds, then ticks. A label that gives way keeps its line.
+    let y_extent = |y: f64| [y + 4.0 - SMALL_FONT_SIZE, y + 4.0];
+    let mut y_labels = AxisLabels::default();
+    y_labels.claim(y_extent(plot.bottom()));
+    let show_y_max = y_labels.claim(y_extent(plot.top));
+    let thresholds = threshold_lines(panel, app)
+        .into_iter()
+        .filter(|(value, ..)| *value > y_bounds[0] && *value < y_bounds[1])
+        .map(|line| {
+            let labelled = y_labels.claim(y_extent(map_y(line.0, y_bounds, plot)));
+            (line, labelled)
+        })
+        .collect::<Vec<_>>();
     for tick in value_ticks(y_bounds[0], y_bounds[1]) {
         let y = map_y(tick, y_bounds, plot);
+        let labelled = y_labels.claim(y_extent(y));
         if show_grid {
             draw_line(
                 out,
@@ -653,19 +706,35 @@ fn render_graph_panel(
                 },
             );
         }
-        write_text(
-            out,
-            plot.left - 8.0,
-            y + 4.0,
-            &panel.display.format_number(tick),
-            grid,
-            "end",
-            SMALL_FONT_SIZE,
-        );
+        if labelled {
+            write_text(
+                out,
+                plot.left - 8.0,
+                y + 4.0,
+                &y_label(tick),
+                grid,
+                "end",
+                SMALL_FONT_SIZE,
+            );
+        }
     }
 
+    let start_label = ui::format_time(x_min);
+    let end_label = ui::format_time(x_max);
+    let mut x_labels = AxisLabels::default();
+    x_labels.claim([
+        plot.left,
+        plot.left + text_width(&start_label, SMALL_FONT_SIZE),
+    ]);
+    let show_x_max = x_labels.claim([
+        plot.right() - text_width(&end_label, SMALL_FONT_SIZE),
+        plot.right(),
+    ]);
     for tick in time_ticks(x_min, x_max) {
         let x = map_x(tick, x_bounds, plot);
+        let label = ui::format_time(tick);
+        let half = text_width(&label, SMALL_FONT_SIZE) / 2.0;
+        let labelled = x_labels.claim([x - half, x + half]);
         if show_grid {
             draw_line(
                 out,
@@ -678,58 +747,61 @@ fn render_graph_panel(
                 },
             );
         }
-        write_text(
-            out,
-            x,
-            plot.bottom() + 17.0,
-            &ui::format_time(tick),
-            grid,
-            "middle",
-            SMALL_FONT_SIZE,
-        );
+        if labelled {
+            write_text(
+                out,
+                x,
+                plot.bottom() + 17.0,
+                &label,
+                grid,
+                "middle",
+                SMALL_FONT_SIZE,
+            );
+        }
     }
 
     write_text(
         out,
         plot.left - 8.0,
         plot.bottom() + 4.0,
-        &panel.display.format_number(y_bounds[0]),
+        &y_label(y_bounds[0]),
         &text,
         "end",
         SMALL_FONT_SIZE,
     );
-    write_text(
-        out,
-        plot.left - 8.0,
-        plot.top + 4.0,
-        &panel.display.format_number(y_bounds[1]),
-        &text,
-        "end",
-        SMALL_FONT_SIZE,
-    );
+    if show_y_max {
+        write_text(
+            out,
+            plot.left - 8.0,
+            plot.top + 4.0,
+            &y_label(y_bounds[1]),
+            &text,
+            "end",
+            SMALL_FONT_SIZE,
+        );
+    }
     write_text(
         out,
         plot.left,
         plot.bottom() + 17.0,
-        &ui::format_time(x_min),
+        &start_label,
         &text,
         "start",
         SMALL_FONT_SIZE,
     );
-    write_text(
-        out,
-        plot.right(),
-        plot.bottom() + 17.0,
-        &ui::format_time(x_max),
-        &text,
-        "end",
-        SMALL_FONT_SIZE,
-    );
+    if show_x_max {
+        write_text(
+            out,
+            plot.right(),
+            plot.bottom() + 17.0,
+            &end_label,
+            &text,
+            "end",
+            SMALL_FONT_SIZE,
+        );
+    }
 
-    for (value, color, dashed) in threshold_lines(panel, app) {
-        if value <= y_bounds[0] || value >= y_bounds[1] {
-            continue;
-        }
+    for ((value, color, dashed), labelled) in thresholds {
         let y = map_y(value, y_bounds, plot);
         let color = color_hex(app.theme.threshold_color(color), "#ffaa00");
         draw_line(
@@ -742,15 +814,17 @@ fn render_graph_panel(
                 width: 1.2,
             },
         );
-        write_text(
-            out,
-            plot.left - 8.0,
-            y + 4.0,
-            &panel.display.format_number(value),
-            &color,
-            "end",
-            SMALL_FONT_SIZE,
-        );
+        if labelled {
+            write_text(
+                out,
+                plot.left - 8.0,
+                y + 4.0,
+                &y_label(value),
+                &color,
+                "end",
+                SMALL_FONT_SIZE,
+            );
+        }
     }
 
     // Area fills remain behind annotations so marker lines stay legible.
@@ -832,7 +906,7 @@ fn render_graph_panel(
             out,
         );
     } else {
-        render_legend(app, panel, plot.left, legend_top, plot.width, out);
+        render_legend(app, panel, &legend, plot.left, legend_top, out);
     }
 }
 
@@ -940,20 +1014,28 @@ fn render_stat_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out: &m
         .map(|value| value_color(app, panel, value))
         .unwrap_or_else(|| color_hex(app.theme.text, "#e6e6e6"));
     let text = color_hex(app.theme.text, "#e6e6e6");
-    write_text(
-        out,
-        rect.left + rect.width / 2.0,
-        rect.top + 34.0,
+    // As Grafana does, the value shrinks to fit a narrow panel.
+    let width = rect.width - 8.0;
+    let (value, size) = fit_text(
         &panel.display.format_value(series.value),
-        &color,
-        "middle",
-        28.0,
+        width,
+        STAT_FONT_SIZE,
     );
     write_text(
         out,
         rect.left + rect.width / 2.0,
+        rect.top + 34.0,
+        &value,
+        &color,
+        "middle",
+        size,
+    );
+    let (name, _) = fit_text(&series.name, width, SMALL_FONT_SIZE);
+    write_text(
+        out,
+        rect.left + rect.width / 2.0,
         rect.top + 56.0,
-        &series.name,
+        &name,
         &text,
         "middle",
         SMALL_FONT_SIZE,
@@ -995,46 +1077,69 @@ fn render_gauge_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out: &
         ..gauge
     };
     write_rect(out, fill, &color, "none", 0.0);
+    let (name, _) = fit_text(&series.name, gauge.width, SMALL_FONT_SIZE);
     write_text(
         out,
         rect.left + rect.width / 2.0,
         gauge.top - 12.0,
-        &series.name,
+        &name,
         &text,
         "middle",
         SMALL_FONT_SIZE,
     );
+    let label = format!(
+        "{} ({:.0}%)",
+        panel.display.format_number(value),
+        ratio * 100.0
+    );
+    let (label, size) = fit_text(&label, gauge.width, FONT_SIZE);
     write_text(
         out,
         rect.left + rect.width / 2.0,
         gauge.top + 18.0,
-        &format!(
-            "{} ({:.0}%)",
-            panel.display.format_number(value),
-            ratio * 100.0
-        ),
+        &label,
         &color_hex(app.theme.text, "#ffffff"),
         "middle",
-        FONT_SIZE,
+        size,
+    );
+    let (min_label, _) = fit_text(
+        &panel.display.format_number(min),
+        gauge.width,
+        SMALL_FONT_SIZE,
+    );
+    let (max_label, _) = fit_text(
+        &panel.display.format_number(max),
+        gauge.width,
+        SMALL_FONT_SIZE,
     );
     write_text(
         out,
         gauge.left,
         gauge.bottom() + 17.0,
-        &panel.display.format_number(min),
+        &min_label,
         &text,
         "start",
         SMALL_FONT_SIZE,
     );
-    write_text(
-        out,
+    let mut labels = AxisLabels::default();
+    labels.claim([
+        gauge.left,
+        gauge.left + text_width(&min_label, SMALL_FONT_SIZE),
+    ]);
+    if labels.claim([
+        gauge.right() - text_width(&max_label, SMALL_FONT_SIZE),
         gauge.right(),
-        gauge.bottom() + 17.0,
-        &panel.display.format_number(max),
-        &text,
-        "end",
-        SMALL_FONT_SIZE,
-    );
+    ]) {
+        write_text(
+            out,
+            gauge.right(),
+            gauge.bottom() + 17.0,
+            &max_label,
+            &text,
+            "end",
+            SMALL_FONT_SIZE,
+        );
+    }
 }
 
 fn render_bar_gauge_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out: &mut String) {
@@ -1058,20 +1163,33 @@ fn render_bar_gauge_panel(app: &AppState, panel: &PanelState, rect: PlotRect, ou
         .max(1.0);
     let row_height = 22.0;
     let max_rows = (rect.height / row_height).floor().max(1.0) as usize;
-    let label_width = (rect.width * 0.32).clamp(80.0, 180.0);
-    let bar_width = (rect.width - label_width - 76.0).max(1.0);
+    let shown = values.into_iter().take(max_rows).collect::<Vec<_>>();
+    // The name column is as wide as the widest name, up to half the panel,
+    // and the value column as wide as the widest value, up to 30%.
+    let label_width = shown
+        .iter()
+        .map(|(series, _)| text_width(&series.name, SMALL_FONT_SIZE) + 8.0)
+        .fold(0.0, f64::max)
+        .min(rect.width * 0.5);
+    let value_width = shown
+        .iter()
+        .map(|(_, value)| text_width(&panel.display.format_number(*value), SMALL_FONT_SIZE))
+        .fold(0.0, f64::max)
+        .min(rect.width * 0.3);
+    let bar_width = (rect.width - label_width - value_width - 8.0).max(1.0);
     let text = color_hex(app.theme.text, "#e6e6e6");
     let track = color_hex(app.theme.gauge_track, "#444444");
 
-    for (row, (series, value)) in values.into_iter().take(max_rows).enumerate() {
+    for (row, (series, value)) in shown.into_iter().enumerate() {
         let y = rect.top + row as f64 * row_height + 15.0;
         let ratio = (value / max_value).clamp(0.0, 1.0);
         let color = value_color(app, panel, value);
+        let (name, _) = fit_text(&series.name, label_width - 8.0, SMALL_FONT_SIZE);
         write_text(
             out,
             rect.left + 4.0,
             y,
-            &series.name,
+            &name,
             &text,
             "start",
             SMALL_FONT_SIZE,
@@ -1093,11 +1211,16 @@ fn render_bar_gauge_panel(app: &AppState, panel: &PanelState, rect: PlotRect, ou
             "none",
             0.0,
         );
+        let (value, _) = fit_text(
+            &panel.display.format_number(value),
+            value_width,
+            SMALL_FONT_SIZE,
+        );
         write_text(
             out,
             track_rect.right() + 8.0,
             y,
-            &panel.display.format_number(value),
+            &value,
             &color,
             "start",
             SMALL_FONT_SIZE,
@@ -1121,13 +1244,15 @@ fn render_table_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out: &
     let border = color_hex(app.theme.border, "#555555");
     let row_height = 20.0;
     let value_x = rect.left + rect.width * 0.7;
+    let name_width = value_x - rect.left - 6.0 - AXIS_LABEL_GAP;
+    let value_width = rect.right() - value_x - 4.0;
     let max_rows = ((rect.height - row_height) / row_height).floor().max(1.0) as usize;
 
     write_text(
         out,
         rect.left + 6.0,
         rect.top + 15.0,
-        "Series",
+        &fit_text("Series", name_width, SMALL_FONT_SIZE).0,
         &title,
         "start",
         SMALL_FONT_SIZE,
@@ -1136,7 +1261,7 @@ fn render_table_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out: &
         out,
         value_x,
         rect.top + 15.0,
-        "Value",
+        &fit_text("Value", value_width, SMALL_FONT_SIZE).0,
         &title,
         "start",
         SMALL_FONT_SIZE,
@@ -1162,11 +1287,13 @@ fn render_table_panel(app: &AppState, panel: &PanelState, rect: PlotRect, out: &
             .value
             .map(|value| value_color(app, panel, value))
             .unwrap_or_else(|| text.clone());
+        let (name, _) = fit_text(&series.name, name_width, SMALL_FONT_SIZE);
+        let (value, _) = fit_text(&value, value_width, SMALL_FONT_SIZE);
         write_text(
             out,
             rect.left + 6.0,
             y,
-            &series.name,
+            &name,
             &text,
             "start",
             SMALL_FONT_SIZE,
@@ -1339,34 +1466,109 @@ fn render_sparkline(series: &SeriesView, rect: PlotRect, color: &str, out: &mut 
     .unwrap();
 }
 
+/// A graph legend laid out in rows.
+struct LegendLayout {
+    entries: Vec<LegendEntry>,
+    /// Where "+N more" starts on the last row, and the text, when some
+    /// entries did not fit.
+    more: Option<(f64, String)>,
+    rows: usize,
+}
+
+/// One legend label, with its series index and its place in the legend.
+struct LegendEntry {
+    index: usize,
+    label: String,
+    x: f64,
+    row: usize,
+}
+
+/// The legend's labels, as series index and text: each visible series with
+/// its value at the cursor, or its latest value.
+fn legend_items(app: &AppState, panel: &PanelState) -> Vec<(usize, String)> {
+    let cursor_values = cursor_values(panel, app);
+    panel
+        .series
+        .iter()
+        .enumerate()
+        .filter(|(_, series)| series.visible)
+        .map(|(index, series)| {
+            let label = cursor_values
+                .get(&series.name)
+                .copied()
+                .or(series.value)
+                .map(|value| format!("{} ({})", series.name, panel.display.format_number(value)))
+                .unwrap_or_else(|| series.name.clone());
+            (index, label)
+        })
+        .collect()
+}
+
+/// Lays legend entries out in rows of `width` pixels, shortening any label
+/// wider than a row. Past `max_rows`, the last row ends with "+N more".
+fn layout_legend(items: Vec<(usize, String)>, width: f64, max_rows: usize) -> LegendLayout {
+    let entry_width = |label: &str| LEGEND_SWATCH + text_width(label, SMALL_FONT_SIZE);
+    let mut entries: Vec<LegendEntry> = Vec::new();
+    let (mut x, mut row) = (0.0, 0);
+    for (index, label) in items {
+        let label = fit_text(&label, width - LEGEND_SWATCH, SMALL_FONT_SIZE).0;
+        let label_width = entry_width(&label);
+        if x > 0.0 && x + label_width > width {
+            x = 0.0;
+            row += 1;
+        }
+        entries.push(LegendEntry {
+            index,
+            label,
+            x,
+            row,
+        });
+        x += label_width + LEGEND_GAP;
+    }
+    let rows = entries.last().map_or(0, |entry| entry.row + 1);
+    if rows <= max_rows {
+        return LegendLayout {
+            entries,
+            more: None,
+            rows,
+        };
+    }
+
+    let total = entries.len();
+    let last_row = max_rows.max(1) - 1;
+    entries.retain(|entry| entry.row <= last_row);
+    loop {
+        let label = format!("+{} more", total - entries.len());
+        let x = match entries.last() {
+            Some(entry) if entry.row == last_row => {
+                entry.x + entry_width(&entry.label) + LEGEND_GAP
+            }
+            _ => 0.0,
+        };
+        if x == 0.0 || x + text_width(&label, SMALL_FONT_SIZE) <= width {
+            return LegendLayout {
+                entries,
+                more: Some((x, label)),
+                rows: last_row + 1,
+            };
+        }
+        entries.pop();
+    }
+}
+
 fn render_legend(
     app: &AppState,
     panel: &PanelState,
+    legend: &LegendLayout,
     left: f64,
     top: f64,
-    width: f64,
     out: &mut String,
 ) {
-    let mut x = left;
-    let mut y = top + 15.0;
     let text = color_hex(app.theme.text, "#e6e6e6");
-    let cursor_values = cursor_values(panel, app);
-
-    for (index, series) in panel.series.iter().enumerate().filter(|(_, s)| s.visible) {
-        let color = color_hex(series_color(panel, &app.theme, index), "#00ff88");
-        let value = cursor_values
-            .get(&series.name)
-            .copied()
-            .or(series.value)
-            .map(|value| panel.display.format_number(value));
-        let label = value
-            .map(|value| format!("{} ({value})", series.name))
-            .unwrap_or_else(|| series.name.clone());
-        let estimated_width = (label.len() as f64 * 7.0) + 24.0;
-        if x + estimated_width > left + width && x > left {
-            x = left;
-            y += 15.0;
-        }
+    let baseline = |row: usize| top + LEGEND_PADDING + 2.0 + row as f64 * LEGEND_ROW_HEIGHT;
+    for entry in &legend.entries {
+        let color = color_hex(series_color(panel, &app.theme, entry.index), "#00ff88");
+        let (x, y) = (left + entry.x, baseline(entry.row));
         write!(
             out,
             r#"<rect x="{:.2}" y="{:.2}" width="8" height="8" fill="{color}"/>"#,
@@ -1374,8 +1576,27 @@ fn render_legend(
             y - 8.0
         )
         .unwrap();
-        write_text(out, x + 13.0, y, &label, &text, "start", SMALL_FONT_SIZE);
-        x += estimated_width;
+        write_text(
+            out,
+            x + LEGEND_SWATCH,
+            y,
+            &entry.label,
+            &text,
+            "start",
+            SMALL_FONT_SIZE,
+        );
+    }
+    if let Some((x, more)) = &legend.more {
+        let muted = color_hex(app.grid_color(), "#6d6d6d");
+        write_text(
+            out,
+            left + x,
+            baseline(legend.rows - 1),
+            more,
+            &muted,
+            "start",
+            SMALL_FONT_SIZE,
+        );
     }
 }
 
@@ -1668,6 +1889,42 @@ fn text_columns(width: f64, size: f64) -> usize {
     } else {
         0
     }
+}
+
+/// Extents of the labels placed along one axis, so that a later label can
+/// give way instead of overprinting one already there.
+#[derive(Default)]
+struct AxisLabels(Vec<[f64; 2]>);
+
+impl AxisLabels {
+    /// Places a label over `[start, end]`, unless it would come within
+    /// `AXIS_LABEL_GAP` of a placed one. Returns whether it was placed.
+    fn claim(&mut self, [start, end]: [f64; 2]) -> bool {
+        let clear = self.0.iter().all(|&[placed_start, placed_end]| {
+            end + AXIS_LABEL_GAP <= placed_start || placed_end + AXIS_LABEL_GAP <= start
+        });
+        if clear {
+            self.0.push([start, end]);
+        }
+        clear
+    }
+}
+
+/// Estimated width of `text` at `size`, in pixels.
+fn text_width(text: &str, size: f64) -> f64 {
+    text.chars().count() as f64 * size * CHAR_ADVANCE
+}
+
+/// Fits `text` in `width` pixels: at `size`, or as small as
+/// `SMALL_FONT_SIZE`, then cut short with `…`. Returns the text and its size.
+fn fit_text(text: &str, width: f64, size: f64) -> (String, f64) {
+    let fitted = (size * width / text_width(text, size).max(size * CHAR_ADVANCE)).min(size);
+    if fitted >= SMALL_FONT_SIZE.min(size) {
+        return (text.to_string(), fitted);
+    }
+    let size = SMALL_FONT_SIZE.min(size);
+    let columns = u16::try_from(text_columns(width, size)).unwrap_or(u16::MAX);
+    (ui::truncate_title(text, columns), size)
 }
 
 /// Wraps `text` at spaces into at most `max_lines` lines of `columns`
@@ -2886,6 +3143,224 @@ mod tests {
         let lines = error_lines(&svg);
         assert_eq!(lines.len(), 1, "{svg}");
         assert!(lines[0].ends_with('…'), "{lines:?}");
+    }
+
+    #[test]
+    fn test_fit_text_shrinks_then_shortens() {
+        // 10 characters at 28px need 173.6px.
+        assert_eq!(
+            fit_text("0.00 ops/s", 200.0, 28.0),
+            ("0.00 ops/s".to_string(), 28.0)
+        );
+        let (text, size) = fit_text("0.00 ops/s", 124.0, 28.0);
+        assert_eq!(text, "0.00 ops/s");
+        assert!((size - 20.0).abs() < 1e-9, "{size}");
+        // Below the small size, the text is cut short instead.
+        let (text, size) = fit_text("0.00 ops/s", 50.0, 28.0);
+        assert_eq!((text.as_str(), size), ("0.00 o…", SMALL_FONT_SIZE));
+        // Text already at the small size is never enlarged.
+        assert_eq!(
+            fit_text("api", 500.0, SMALL_FONT_SIZE),
+            ("api".to_string(), SMALL_FONT_SIZE)
+        );
+    }
+
+    #[test]
+    fn test_stat_values_fit_narrow_export_panels() {
+        let mut app = test_app_with_panel_type(PanelType::Stat);
+        app.panels[0].display.unit = Some("ops".to_string());
+        app.panels[0].series[0].name = "Upstream connect failures".to_string();
+        // The value and the name sit on these baselines inside the panel.
+        let text_at = |svg: &str, y: &str| {
+            let (_, rest) = svg.split_once(&format!(r#"y="{y}""#)).unwrap();
+            let (_, rest) = rest.split_once(r#"font-size=""#).unwrap();
+            let (size, rest) = rest.split_once('"').unwrap();
+            let (_, rest) = rest.split_once('>').unwrap();
+            let (text, _) = rest.split_once("</text>").unwrap();
+            (text.to_string(), size.parse::<f64>().unwrap())
+        };
+        let stat_value = |svg: &str| {
+            let (value, size) = text_at(svg, "134.00");
+            (value, size, text_at(svg, "156.00").0)
+        };
+        let panel_width = |svg: &str| {
+            let (_, rest) = svg.split_once(r#"<rect x="10" y="72" width=""#).unwrap();
+            rest.split_once('"').unwrap().0.parse::<f64>().unwrap()
+        };
+
+        // Wide: the full value at full size.
+        let svg = render_svg(&app, Rect::new(0, 0, 100, 40));
+        let (value, size, name) = stat_value(&svg);
+        assert_eq!(
+            (value.as_str(), size),
+            ("10.00 ops/s", STAT_FONT_SIZE),
+            "{svg}"
+        );
+        assert_eq!(name, "Upstream connect failures");
+
+        // Narrow: smaller, still whole, and inside the panel.
+        let svg = render_svg(&app, Rect::new(0, 0, 32, 40));
+        let (value, size, name) = stat_value(&svg);
+        let width = panel_width(&svg) - PANEL_PADDING * 2.0;
+        assert_eq!(value, "10.00 ops/s", "{svg}");
+        assert!((SMALL_FONT_SIZE..STAT_FONT_SIZE).contains(&size), "{size}");
+        assert!(value.chars().count() as f64 * size * CHAR_ADVANCE <= width);
+        assert!(name.ends_with('…'), "{name}");
+        assert!(name.chars().count() as f64 * SMALL_FONT_SIZE * CHAR_ADVANCE <= width);
+
+        // Very narrow: cut short at the small size.
+        let svg = render_svg(&app, Rect::new(0, 0, 18, 40));
+        let (value, size, _) = stat_value(&svg);
+        assert_eq!(size, SMALL_FONT_SIZE, "{svg}");
+        assert!(value.ends_with('…'), "{value}");
+    }
+
+    #[test]
+    fn test_axis_labels_give_way_to_placed_ones() {
+        let mut labels = AxisLabels::default();
+        assert!(labels.claim([0.0, 50.0]));
+        assert!(!labels.claim([40.0, 90.0]), "overlaps");
+        assert!(!labels.claim([53.0, 90.0]), "closer than the gap");
+        assert!(labels.claim([56.0, 90.0]));
+        assert!(labels.claim([-40.0, -6.0]));
+    }
+
+    #[test]
+    fn test_layout_legend_wraps_shortens_and_counts_the_rest() {
+        let items = |names: &[&str]| {
+            names
+                .iter()
+                .enumerate()
+                .map(|(index, name)| (index, name.to_string()))
+                .collect::<Vec<_>>()
+        };
+        // Each "aaaaaaaaaa" entry is 13 + 68.2 wide, plus an 11 gap.
+        let legend = layout_legend(items(&["aaaaaaaaaa"; 3]), 200.0, 3);
+        assert_eq!(legend.rows, 2);
+        assert_eq!(
+            legend
+                .entries
+                .iter()
+                .map(|entry| entry.row)
+                .collect::<Vec<_>>(),
+            [0, 0, 1]
+        );
+        assert!(legend.more.is_none());
+
+        // A label wider than the legend is shortened.
+        let legend = layout_legend(items(&[&"x".repeat(80)]), 200.0, 3);
+        assert!(legend.entries[0].label.ends_with('…'));
+        assert!(LEGEND_SWATCH + text_width(&legend.entries[0].label, SMALL_FONT_SIZE) <= 200.0);
+
+        // Past the last row, "+N more" takes the place of what does not fit.
+        let legend = layout_legend(items(&["aaaaaaaaaa"; 9]), 200.0, 2);
+        assert_eq!(legend.rows, 2);
+        assert_eq!(legend.entries.len(), 3);
+        let (x, more) = legend.more.unwrap();
+        assert_eq!(more, "+6 more");
+        assert!(x + text_width(&more, SMALL_FONT_SIZE) <= 200.0);
+    }
+
+    /// The `<text>` elements of an SVG: each one's box, estimated as the
+    /// layout estimates it, as `[left, top, right, baseline]`, and its text.
+    fn svg_text_boxes(svg: &str) -> Vec<([f64; 4], String)> {
+        let attribute = |attributes: &str, name: &str| {
+            attributes
+                .split_once(&format!(r#" {name}=""#))
+                .and_then(|(_, rest)| rest.split_once('"'))
+                .map(|(value, _)| value.to_string())
+        };
+        svg.split("<text")
+            .skip(1)
+            .map(|element| {
+                let (attributes, rest) = element.split_once('>').unwrap();
+                let (content, _) = rest.split_once("</text>").unwrap();
+                let mut text = String::new();
+                let mut in_tag = false;
+                for ch in content.chars() {
+                    match ch {
+                        '<' => in_tag = true,
+                        '>' => in_tag = false,
+                        _ if !in_tag => text.push(ch),
+                        _ => {}
+                    }
+                }
+                let text = text
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&quot;", "\"")
+                    .replace("&amp;", "&");
+                let number = |name| attribute(attributes, name).unwrap().parse::<f64>().unwrap();
+                let (x, y, size) = (number("x"), number("y"), number("font-size"));
+                let width = text_width(&text, size);
+                let left = match attribute(attributes, "text-anchor").as_deref() {
+                    Some("middle") => x - width / 2.0,
+                    Some("end") => x - width,
+                    _ => x,
+                };
+                ([left, y - size, left + width, y], text)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_export_text_stays_in_its_panel_without_overprinting() {
+        for panel_type in [
+            PanelType::Graph,
+            PanelType::Stat,
+            PanelType::Gauge,
+            PanelType::BarGauge,
+            PanelType::Table,
+        ] {
+            for cells in [18, 25, 32, 50, 100] {
+                let mut app = test_app_with_panel_type(panel_type);
+                // Three hours ending 9m12s past an hour, so the last hour
+                // tick falls near the end label.
+                app.range = std::time::Duration::from_secs(3 * 3600);
+                app.view_end_ts = 1_700_002_752;
+                let (start, end) = app.time_bounds();
+                app.panels[0].title = "Upstream connect failures / timeouts".to_string();
+                app.panels[0].display.unit = Some("reqps".to_string());
+                app.panels[0].series = (0..12)
+                    .map(|index| SeriesView {
+                        name: format!("nexus-uar-docker-token-svc-{index}"),
+                        value: Some(1234.5 * index as f64),
+                        points: vec![(start, 0.0), (end, 0.54 * index as f64)],
+                        visible: true,
+                    })
+                    .collect();
+                let svg = render_svg(&app, Rect::new(0, 0, cells, 40));
+
+                let boxes = svg_text_boxes(&svg);
+                for (index, (a, a_text)) in boxes.iter().enumerate() {
+                    for (b, b_text) in &boxes[index + 1..] {
+                        let overlap = a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+                        assert!(
+                            !overlap,
+                            "{panel_type:?} at {cells} cells: {a_text:?} {a:?} overprints {b_text:?} {b:?}"
+                        );
+                    }
+                }
+
+                let (_, rest) = svg.split_once(r#"<rect x="10" y="72" width=""#).unwrap();
+                let (width, rest) = rest.split_once('"').unwrap();
+                let (_, rest) = rest.split_once(r#"height=""#).unwrap();
+                let (height, _) = rest.split_once('"').unwrap();
+                let (right, bottom) = (
+                    10.0 + width.parse::<f64>().unwrap(),
+                    72.0 + height.parse::<f64>().unwrap(),
+                );
+                for (bounds, text) in boxes
+                    .iter()
+                    .filter(|(bounds, _)| bounds[3] > 72.0 && bounds[1] < bottom)
+                {
+                    assert!(
+                        bounds[0] >= 10.0 && bounds[2] <= right && bounds[3] <= bottom,
+                        "{panel_type:?} at {cells} cells: {text:?} {bounds:?} leaves the panel (10, 72)-({right}, {bottom})"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
