@@ -2421,7 +2421,7 @@
         "spec": {
           "id": 24,
           "title": "Client host CPU vs reserved",
-          "description": "Actual host CPU per client as Nomad sees it; compare with the reserved bar above to spot over- or under-reservation.",
+          "description": "Actual host CPU per client as Nomad sees it, averaged over its cores; compare with the reserved bar above to spot over- or under-reservation.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -2440,7 +2440,7 @@
                         "name": "${datasource}"
                       },
                       "spec": {
-                        "expr": "nomad_client_host_cpu_total_percent * on (instance) group_left () (0 * nomad_client_allocated_cpu{node_pool=~\"$node_pool\"} + 1) / 100",
+                        "expr": "avg by (instance) (nomad_client_host_cpu_total_percent{node_pool=~\"$node_pool\"}) / 100",
                         "legendFormat": "{{instance}} used",
                         "range": true
                       }
