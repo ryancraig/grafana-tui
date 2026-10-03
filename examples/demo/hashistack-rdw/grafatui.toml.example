@@ -1,0 +1,32 @@
+# grafatui config for the hashistack-rdw dashboards.
+#
+# Do not fill in the connection by hand. `make reader-cert` in the hashistack
+# collection's terraform/live/prometheus root prints prometheus_url and the
+# [tls] table for a fresh 24h client certificate. Build the config from the
+# settings block below followed by that output. The settings must come first:
+# a key written after [tls] belongs to that table, which rejects unknown keys.
+#
+#   { sed -n '/^# --- settings/,/^# --- end/p' examples/demo/hashistack-rdw/grafatui.toml.example
+#     make -s -C <collection>/terraform/live/prometheus DC=gcloud-dc reader-cert READER=$USER
+#   } > ~/.config/grafatui/gcloud-dc.toml
+#
+# Keep the result outside this repository: it names a cluster address and
+# private key paths.
+
+# --- settings
+time_range = "3h"
+# Prometheus scrapes every 15s; $__rate_interval is derived from this.
+scrape_interval = "15s"
+step = "15s"
+# Milliseconds. The dashboards ask for 30s; the mesh dashboard (37 Envoy
+# targets) is the heaviest to refresh.
+refresh_rate = 30000
+# --- end
+
+# What `make reader-cert` prints (shape only):
+prometheus_url = "https://<prometheus node ip>:9090"
+
+[tls]
+ca_cert     = "<collection>/.secrets/<dc>/prometheus/<reader>/ca.pem"
+client_cert = "<collection>/.secrets/<dc>/prometheus/<reader>/client.pem"
+client_key  = "<collection>/.secrets/<dc>/prometheus/<reader>/client.key"

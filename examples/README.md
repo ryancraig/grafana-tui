@@ -13,6 +13,15 @@ docker-compose up -d && sleep 5 && cd ../.. && cargo run -- --grafana-json examp
 
 See [`demo/README.md`](demo/README.md) for details.
 
+## HashiStack RDW Dashboards
+
+[`demo/hashistack-rdw/`](demo/hashistack-rdw/README.md) holds eight operator
+dashboards for a Consul/Nomad/Vault platform with a Consul Connect (Envoy) mesh
+and remote developer workspaces. They are Grafana 13 V2 resources and run
+against a real datacenter's mTLS Prometheus (client certificate required), not
+the bundled demo stack. The README covers issuing the reader certificate and
+building the config.
+
 ## External Annotations
 
 [`annotations.jsonl`](annotations.jsonl) is a read-only external JSONL event

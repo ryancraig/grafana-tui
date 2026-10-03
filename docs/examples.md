@@ -79,9 +79,25 @@ docker-compose down -v
 - `examples/demo/vllm/grafana.json`: vLLM-oriented dashboard for the mock demo services.
 - `examples/demo/vllm_demo.json`: compact vLLM cluster overview for the mock demo services.
 
+## HashiStack RDW Dashboards
+
+`examples/demo/hashistack-rdw/` holds eight production operator dashboards for
+a Consul/Nomad/Vault platform with a Consul Connect (Envoy) mesh and remote
+developer workspaces: fleet overview, nodes, Nomad, Consul, Vault, service
+mesh, workspaces and Prometheus. They target a real datacenter's mTLS
+Prometheus, not the bundled demo stack. See its
+[README](https://github.com/fedexist/grafatui/blob/main/examples/demo/hashistack-rdw/README.md)
+for the reader-certificate setup:
+
+```bash
+cargo run --release -- --config ~/.config/grafatui/gcloud-dc.toml \
+  --grafana-json examples/demo/hashistack-rdw/00-overview.json
+```
+
 ## More Detail
 
 See the repository example docs:
 
 - [examples/README.md](https://github.com/fedexist/grafatui/blob/main/examples/README.md)
 - [examples/demo/README.md](https://github.com/fedexist/grafatui/blob/main/examples/demo/README.md)
+- [examples/demo/hashistack-rdw/README.md](https://github.com/fedexist/grafatui/blob/main/examples/demo/hashistack-rdw/README.md)
