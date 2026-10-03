@@ -74,15 +74,15 @@ but the tiles are cramped. Use `PgUp`/`PgDn` to move between rows.
   so it cannot be queried, and the dashboards have no DC variable. Point the
   config at another datacenter's Prometheus to switch.
 - **Grafana.** Every query references the `${datasource}` variable (a Prometheus
-  datasource picker). Legends, tooltips, table column overrides and `noValue`
-  text are set for Grafana; grafatui ignores them.
+  datasource picker). Legends, tooltips and table column overrides are set for
+  Grafana; grafatui ignores them.
 
 ### What empty or odd-looking panels mean
 
-- **"No data" can be the healthy state.** "Targets down", "Platform units not
-  active", "Upstream connect failures / timeouts", "Upstream HTTP 5xx" and "TLS
-  failures" are empty when nothing is wrong. Grafana shows their `noValue` text;
-  grafatui shows "No data".
+- **Empty can be the healthy state.** "Active alerts", "Targets down",
+  "Platform units not active", "Upstream connect failures / timeouts", "Upstream
+  HTTP 5xx" and "TLS failures" are empty when nothing is wrong, and show
+  `none (healthy)`.
 - **HTTP panels are empty for TCP services.** Many mesh services are TCP in
   Consul (gitlab-http, the postgres services, ssh). They have no HTTP statistics:
   use the TCP rows. Inbound HTTP traffic is sparse in a lab, so latency
@@ -95,9 +95,6 @@ but the tiles are cramped. Use `PgUp`/`PgDn` to move between rows.
   keep rare series such as PKI issuance, token operations and KV/txn latency.
   The cost of Consul's 1h: a gauge for something that has gone away, such as a
   deregistered service, keeps its last value for up to an hour.
-- **`⚠ warning` in a panel corner.** grafatui shows Prometheus 3's informational
-  notice `metric might not be a counter`. It fires for Envoy, node_exporter and
-  HashiCorp counters, whose names do not end in `_total`. The values are correct.
 
 ## Editing
 
