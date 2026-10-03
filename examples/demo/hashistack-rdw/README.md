@@ -87,12 +87,14 @@ but the tiles are cramped. Use `PgUp`/`PgDn` to move between rows.
   Consul (gitlab-http, the postgres services, ssh). They have no HTTP statistics:
   use the TCP rows. Inbound HTTP traffic is sparse in a lab, so latency
   quantiles use a 5m window and still show gaps.
-- **Sparse go-metrics series come and go.** Consul and Nomad export with
-  `telemetry.prometheus_retention_time = 60s`; Vault uses 30s. A counter or timer
-  that is not updated within that window disappears and later returns reset.
-  Vault PKI issuance, token operations, Nomad plan latency, and Consul KV/txn
-  latency therefore show gaps or NaN between events. Their rates undercount rare
-  events.
+- **Sparse Nomad series come and go.** A go-metrics counter or timer that is not
+  updated within its exporter's retention window disappears and later returns
+  reset. Nomad (1.11) has no retention setting: its window is a fixed 60s, so
+  Nomad plan latency and other rare Nomad counters show gaps or NaN between
+  events, and their rates undercount rare events. Vault (24h) and Consul (1h)
+  keep rare series such as PKI issuance, token operations and KV/txn latency.
+  The cost of Consul's 1h: a gauge for something that has gone away, such as a
+  deregistered service, keeps its last value for up to an hour.
 - **`⚠ warning` in a panel corner.** grafatui shows Prometheus 3's informational
   notice `metric might not be a counter`. It fires for Envoy, node_exporter and
   HashiCorp counters, whose names do not end in `_total`. The values are correct.
