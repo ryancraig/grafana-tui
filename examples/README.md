@@ -159,6 +159,15 @@ moves into the active content.
 cargo run -- --grafana-json examples/dashboards/grafana_v2_tabs.json --prometheus-url http://localhost:19090
 ```
 
+### Several dashboards
+Repeat `--grafana-json` to load several dashboards, one per tab of a tab bar
+pinned at the top. Tab / Shift+Tab switches dashboards; only the dashboard
+shown queries Prometheus.
+
+```bash
+cargo run -- --grafana-json examples/dashboards/prometheus_demo.json --grafana-json examples/dashboards/grafana_v2_tabs.json --prometheus-url http://localhost:19090
+```
+
 ### Usage
 
 ```bash

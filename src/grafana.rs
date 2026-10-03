@@ -192,6 +192,74 @@ fn parse_grafana_dashboard(data: &str) -> Result<DashboardImport> {
     import_document(data, DocumentFormat::Detect)
 }
 
+/// Several dashboards imported together, one tab each in a tab group.
+#[derive(Debug, Clone)]
+pub(crate) struct DashboardSet {
+    /// Every dashboard's panels and variables, under one tab group whose tabs
+    /// are the dashboards, in order. Dashboard variables are the tabs' variables.
+    pub(crate) combined: DashboardImport,
+    /// The tab group holding one tab per dashboard.
+    pub(crate) root: crate::dashboard::TabGroupId,
+    /// Each dashboard imported alone, in order: its title, refresh rate,
+    /// variables and diagnostics, exactly as a single dashboard.
+    pub(crate) files: Vec<DashboardFile>,
+}
+
+/// One dashboard of a [`DashboardSet`].
+#[derive(Debug, Clone)]
+pub(crate) struct DashboardFile {
+    pub(crate) path: std::path::PathBuf,
+    pub(crate) single: DashboardImport,
+}
+
+/// Imports several dashboard files as the tabs of one tab group.
+pub(crate) fn load_grafana_dashboards(paths: &[std::path::PathBuf]) -> Result<DashboardSet> {
+    let documents = paths
+        .iter()
+        .map(|path| {
+            let data = std::fs::read_to_string(path)
+                .with_context(|| format!("reading grafana dashboard: {}", path.display()))?;
+            let value = parse_document(&data, DocumentFormat::from_path(path))
+                .with_context(|| path.display().to_string())?;
+            Ok((path.clone(), value))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    import_documents(documents)
+}
+
+#[cfg(test)]
+pub(crate) fn parse_grafana_dashboards(documents: &[&str]) -> Result<DashboardSet> {
+    let documents = documents
+        .iter()
+        .enumerate()
+        .map(|(index, data)| {
+            Ok((
+                std::path::PathBuf::from(format!("dashboard-{index}.json")),
+                parse_document(data, DocumentFormat::Detect)?,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    import_documents(documents)
+}
+
+fn import_documents(documents: Vec<(std::path::PathBuf, Value)>) -> Result<DashboardSet> {
+    let mut files = Vec::with_capacity(documents.len());
+    let mut models = Vec::with_capacity(documents.len());
+    for (path, value) in documents {
+        let context = || path.display().to_string();
+        let single = import::finish(detect_and_adapt(value.clone()).with_context(context)?)
+            .with_context(context)?;
+        models.push(detect_and_adapt(value).with_context(context)?);
+        files.push(DashboardFile { path, single });
+    }
+    let (combined, root) = import::finish_many(models)?;
+    Ok(DashboardSet {
+        combined,
+        root,
+        files,
+    })
+}
+
 fn import_document(data: &str, format: DocumentFormat) -> Result<DashboardImport> {
     import::finish(detect_and_adapt(parse_document(data, format)?)?)
 }
@@ -843,6 +911,156 @@ mod tests {
             let error = v2_auto_grid(spec.clone()).unwrap_err().to_string();
             assert!(error.contains(expected), "{spec}: {error}");
         }
+    }
+
+    /// A V2 dashboard with one panel querying `expr`, refreshing every
+    /// `auto_refresh`, and an `instance` variable resolved by `instance_query`.
+    fn v2_dashboard(title: &str, auto_refresh: &str, expr: &str, instance_query: &str) -> String {
+        let mut json = valid_v2_resource();
+        make_v2_panel_importable(&mut json);
+        json["spec"]["title"] = serde_json::json!(title);
+        json["spec"]["timeSettings"]["autoRefresh"] = serde_json::json!(auto_refresh);
+        json["spec"]["elements"]["panel-1"]["spec"]["data"]["spec"]["queries"][0]["spec"]["query"]
+            ["spec"]["expr"] = serde_json::json!(expr);
+        json["spec"]["variables"] = serde_json::json!([{
+            "kind": "QueryVariable",
+            "spec": {
+                "name": "instance",
+                "query": {"kind": "DataQuery", "group": "prometheus", "version": "v0",
+                          "spec": {"query": instance_query}}
+            }
+        }]);
+        json.to_string()
+    }
+
+    #[test]
+    fn several_dashboards_import_as_one_tab_each() {
+        let set = parse_grafana_dashboards(&[
+            &v2_dashboard(
+                "Nodes",
+                "30s",
+                "up{job=\"node\"}",
+                "label_values(node_uname_info, instance)",
+            ),
+            &v2_dashboard(
+                "Consul",
+                "1m",
+                "up{job=\"consul\"}",
+                "label_values(consul_up, instance)",
+            ),
+        ])
+        .unwrap();
+
+        let root = set.root;
+        let group = set.combined.layout.tabs(root).unwrap();
+        assert_eq!(group.active, Some(0));
+        let titles: Vec<&str> = group.tabs.iter().map(|tab| tab.title.as_str()).collect();
+        assert_eq!(titles, ["Nodes", "Consul"]);
+        // Panels are numbered across dashboards, so their indices do not collide.
+        let exprs: Vec<&str> = set
+            .combined
+            .queries
+            .iter()
+            .map(|panel| panel.exprs[0].as_str())
+            .collect();
+        assert_eq!(exprs, ["up{job=\"node\"}", "up{job=\"consul\"}"]);
+        assert_eq!(set.combined.layout.visible_panel_indices(), [0]);
+
+        // Both define `instance`, each as its own tab's variable.
+        assert!(set.combined.query_vars.is_empty());
+        let instance_query = |tab| {
+            set.combined.sections[&crate::dashboard::SectionId::Tab(root, tab)][0]
+                .query
+                .as_ref()
+                .unwrap()
+                .query
+                .clone()
+        };
+        assert_eq!(instance_query(0), "label_values(node_uname_info, instance)");
+        assert_eq!(instance_query(1), "label_values(consul_up, instance)");
+
+        // Each file also imports alone, as a single dashboard would.
+        let refresh: Vec<_> = set
+            .files
+            .iter()
+            .map(|file| (file.single.title.as_str(), file.single.refresh_rate_ms))
+            .collect();
+        assert_eq!(refresh, [("Nodes", Some(30_000)), ("Consul", Some(60_000))]);
+        assert_eq!(set.files[1].single.query_vars.len(), 1);
+    }
+
+    #[test]
+    fn a_dashboard_with_tabs_nests_them_inside_its_own_tab() {
+        let set = parse_grafana_dashboards(&[
+            &v2_dashboard("Nodes", "30s", "up", "label_values(up, instance)"),
+            include_str!("../tests/fixtures/grafana/v2_tabs_layout.json"),
+        ])
+        .unwrap();
+
+        let group = set.combined.layout.tabs(set.root).unwrap();
+        assert_eq!(group.tabs[1].title, "Tabs layout");
+        let crate::dashboard::DashboardLayoutItem::Tabs(inner) = &group.tabs[1].children[0] else {
+            panic!("expected the file's own tab group");
+        };
+        assert_ne!(inner.id, set.root);
+        assert_eq!(set.combined.queries.len(), 3);
+    }
+
+    #[test]
+    fn repeats_only_see_their_own_dashboards_variables() {
+        // The second dashboard repeats over `instance`, which only the first defines.
+        let mut repeating = valid_v2_resource();
+        make_v2_panel_importable(&mut repeating);
+        repeating["spec"]["layout"]["spec"]["items"][0]["spec"]["repeat"] =
+            serde_json::json!({"mode": "variable", "value": "instance"});
+
+        let set = parse_grafana_dashboards(&[
+            &v2_dashboard("Nodes", "30s", "up", "label_values(up, instance)"),
+            &repeating.to_string(),
+        ])
+        .unwrap();
+
+        assert!(set.combined.repeats.is_empty());
+        assert_eq!(
+            set.files[1].single.diagnostics[0].code,
+            "unknown_repeat_variable"
+        );
+    }
+
+    #[test]
+    fn hashistack_dashboards_load_together() {
+        let mut paths: Vec<_> = std::fs::read_dir("examples/demo/hashistack-rdw")
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "json")
+            })
+            .collect();
+        paths.sort();
+
+        let set = load_grafana_dashboards(&paths).unwrap();
+
+        assert_eq!(set.files.len(), 8);
+        let group = set.combined.layout.tabs(set.root).unwrap();
+        assert_eq!(group.tabs.len(), 8);
+        for (index, file) in set.files.iter().enumerate() {
+            assert_eq!(group.tabs[index].title, file.single.title);
+            assert_eq!(
+                file.single.refresh_rate_ms,
+                Some(30_000),
+                "{}",
+                file.path.display()
+            );
+            let names: Vec<&str> = set.combined.sections
+                [&crate::dashboard::SectionId::Tab(set.root, index)]
+                .iter()
+                .map(|variable| variable.name.as_str())
+                .collect();
+            assert!(names.contains(&"datasource"), "{names:?}");
+        }
+        let panels: usize = set.files.iter().map(|file| file.single.queries.len()).sum();
+        assert_eq!(set.combined.queries.len(), panels);
     }
 
     #[test]

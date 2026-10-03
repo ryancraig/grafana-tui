@@ -30,7 +30,7 @@ mod ui;
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 use clap::Parser;
 use config::Config;
 use crossterm::{
@@ -74,11 +74,14 @@ async fn main() -> Result<()> {
 
     // Load config
     let config = load_startup_config(args.config.clone())?;
-    let dashboard_path = args
-        .grafana_json
-        .clone()
-        .or_else(|| config.grafana_json.clone())
-        .map(|p| config::expand_path(&p));
+    let dashboard_paths: Vec<std::path::PathBuf> = if args.grafana_json.is_empty() {
+        &config.grafana_json
+    } else {
+        &args.grafana_json
+    }
+    .iter()
+    .map(|path| config::expand_path(path))
+    .collect();
 
     let theme_name = args
         .theme
@@ -92,12 +95,36 @@ async fn main() -> Result<()> {
     }
 
     if args.validate {
-        let path = dashboard_path.ok_or_else(|| {
-            anyhow!("--validate requires --grafana-json or grafana_json in config")
-        })?;
-        let dashboard = grafana::load_grafana_dashboard(&path)?;
-        let summary = validate_dashboard_import(dashboard, config.vars.clone(), &args.var);
-        print_validation_summary(&summary, args.format, args.strict)?;
+        match dashboard_paths.as_slice() {
+            [] => bail!("--validate requires --grafana-json or grafana_json in config"),
+            [path] => {
+                let dashboard = grafana::load_grafana_dashboard(path)?;
+                let summary = validate_dashboard_import(dashboard, config.vars.clone(), &args.var);
+                print_validation_summary(&summary, args.format, args.strict)?;
+            }
+            paths => {
+                let dashboards = paths
+                    .iter()
+                    .map(|path| {
+                        let dashboard = grafana::load_grafana_dashboard(path)
+                            .with_context(|| path.display().to_string())?;
+                        Ok(FileValidationSummary {
+                            path: path.display().to_string(),
+                            summary: validate_dashboard_import(
+                                dashboard,
+                                config.vars.clone(),
+                                &args.var,
+                            ),
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                print_validation_summaries(
+                    &MultiValidationSummary { dashboards },
+                    args.format,
+                    args.strict,
+                )?;
+            }
+        }
         return Ok(());
     }
 
@@ -170,57 +197,53 @@ async fn main() -> Result<()> {
     let mut query_vars = Vec::new();
     let mut template = None;
     let mut dashboard_refresh_rate_ms = None;
+    let mut dashboard_set = None;
 
     let prom = prom::PromClient::with_tls(prometheus_url, &tls)?;
 
     // Build panels from Grafana import or simple queries.
-    let (title, panels, skipped_panels) = if let Some(path) = dashboard_path {
-        let d = grafana::load_grafana_dashboard(&path)?;
-        let import_context = build_import_context(&d, config.vars.clone(), &args.var);
-        print_import_diagnostics(&import_context.diagnostics);
-        dashboard_refresh_rate_ms = d.refresh_rate_ms;
-        variables = import_context.variables;
-        query_vars = import_context.query_vars;
+    let (title, panels, skipped_panels) = match dashboard_paths.as_slice() {
+        [] => {
+            merge_user_vars(&mut variables, config.vars.clone(), &args.var);
+            ("grafatui".to_string(), app::default_queries(args.query), 0)
+        }
+        [path] => {
+            let d = grafana::load_grafana_dashboard(path)?;
+            let import_context = build_import_context(&d, config.vars.clone(), &args.var);
+            print_import_diagnostics(&import_context.diagnostics);
+            dashboard_refresh_rate_ms = d.refresh_rate_ms;
+            variables = import_context.variables;
+            query_vars = import_context.query_vars;
 
-        let ps: Vec<_> = d
-            .queries
-            .into_iter()
-            .map(|q| app::PanelState {
-                title: q.title,
-                exprs: q.exprs,
-                legends: q.legends,
-                query_modes: q.query_modes,
-                series: vec![],
-                last_error: None,
-                last_url: None,
-                last_samples: 0,
-                grid: q.grid.map(|g| app::GridUnit {
-                    x: g.x,
-                    y: g.y,
-                    w: g.w,
-                    h: g.h,
-                }),
-                y_axis_mode: app::YAxisMode::Auto,
-                panel_type: q.panel_type,
-                thresholds: q.thresholds,
-                min: q.min,
-                max: q.max,
-                autogrid: q.autogrid,
-                display: q.display,
-                options: q.options,
-                resolution: q.resolution,
-                notices: Default::default(),
-            })
-            .collect();
-        template = Some(
-            app::DashboardTemplate::new(d.layout, d.repeats, &ps)
-                .with_conditions(d.conditions)
-                .with_sections(d.sections),
-        );
-        (format!("{} (imported)", d.title), ps, d.skipped_panels)
-    } else {
-        merge_user_vars(&mut variables, config.vars.clone(), &args.var);
-        ("grafatui".to_string(), app::default_queries(args.query), 0)
+            let ps: Vec<_> = d.queries.into_iter().map(panel_state).collect();
+            template = Some(
+                app::DashboardTemplate::new(d.layout, d.repeats, &ps)
+                    .with_conditions(d.conditions)
+                    .with_sections(d.sections),
+            );
+            (format!("{} (imported)", d.title), ps, d.skipped_panels)
+        }
+        paths => {
+            let multi = build_dashboard_set(
+                grafana::load_grafana_dashboards(paths)?,
+                config.vars.clone(),
+                &args.var,
+                args.refresh_rate,
+                config.refresh_rate,
+            );
+            variables = multi.variables;
+            template = Some(multi.template);
+            dashboard_refresh_rate_ms =
+                Some(multi.set.dashboards[0].refresh_every.as_millis() as u64);
+            let first = &multi.set.dashboards[0];
+            let heading = (
+                format!("{} (imported)", first.title),
+                multi.panels,
+                first.skipped_panels,
+            );
+            dashboard_set = Some(multi.set);
+            heading
+        }
     };
 
     let themes = theme::catalog(&theme::custom_themes(&config.themes)?);
@@ -270,6 +293,9 @@ async fn main() -> Result<()> {
     // Repeats expand from the variables, so the template is applied after them.
     if let Some(template) = template {
         state.apply_template(template);
+    }
+    if let Some(set) = dashboard_set {
+        state.set_dashboards(set);
     }
     // The first refresh starts once the dashboard is drawn. Stopping on a
     // signal drops the app, which aborts refreshes and kills annotation
@@ -417,6 +443,134 @@ fn load_startup_config(path: Option<std::path::PathBuf>) -> Result<Config> {
     Config::load(path)
 }
 
+/// A panel to show for an imported Grafana panel, before any data.
+fn panel_state(q: grafana::QueryPanel) -> app::PanelState {
+    app::PanelState {
+        title: q.title,
+        exprs: q.exprs,
+        legends: q.legends,
+        query_modes: q.query_modes,
+        series: vec![],
+        last_error: None,
+        last_url: None,
+        last_samples: 0,
+        grid: q.grid.map(|g| app::GridUnit {
+            x: g.x,
+            y: g.y,
+            w: g.w,
+            h: g.h,
+        }),
+        y_axis_mode: app::YAxisMode::Auto,
+        panel_type: q.panel_type,
+        thresholds: q.thresholds,
+        min: q.min,
+        max: q.max,
+        autogrid: q.autogrid,
+        display: q.display,
+        options: q.options,
+        resolution: q.resolution,
+        notices: Default::default(),
+    }
+}
+
+/// Several dashboards ready to show, one per tab.
+struct DashboardSetup {
+    panels: Vec<app::PanelState>,
+    template: app::DashboardTemplate,
+    variables: VariableState,
+    set: app::DashboardSet,
+}
+
+/// Prepares several dashboards to show, one per tab. Each dashboard's
+/// variables stay its own; config and `--var` values pin a variable in every
+/// dashboard that defines it. Diagnostics are printed per dashboard.
+fn build_dashboard_set(
+    set: grafana::DashboardSet,
+    config_vars: Option<HashMap<String, String>>,
+    cli_vars: &[(String, String)],
+    cli_refresh_rate: Option<u64>,
+    config_refresh_rate: Option<u64>,
+) -> DashboardSetup {
+    let grafana::DashboardSet {
+        mut combined,
+        root,
+        files,
+    } = set;
+    let mut names = HashSet::new();
+    let mut dashboards = Vec::with_capacity(files.len());
+    for file in files {
+        let context = build_import_context(&file.single, config_vars.clone(), cli_vars);
+        print_import_diagnostics_for(Some(&file.path), &context.diagnostics);
+        names.extend(file.single.variable_names);
+        let refresh_rate = resolve_refresh_rate_ms(
+            cli_refresh_rate,
+            config_refresh_rate,
+            file.single.refresh_rate_ms,
+        );
+        dashboards.push(app::DashboardInfo {
+            title: file.single.title,
+            path: file.path,
+            refresh_every: Duration::from_millis(refresh_rate),
+            skipped_panels: file.single.skipped_panels,
+        });
+    }
+
+    let mut variables = VariableState::default();
+    let pinned = merge_user_vars(&mut variables, config_vars, cli_vars);
+    variables.names.extend(names);
+    pin_section_variables(&mut combined.sections, root, &pinned, &variables.var_values);
+
+    let titles: Vec<String> = dashboards.iter().map(|info| info.title.clone()).collect();
+    if let Some(crate::dashboard::DashboardLayoutItem::Tabs(group)) =
+        combined.layout.items.first_mut()
+    {
+        for (tab, label) in group
+            .tabs
+            .iter_mut()
+            .zip(app::dashboard_tab_labels(&titles))
+        {
+            tab.title = label;
+        }
+    }
+    let section_owner = combined.layout.section_owners(root);
+    let panels: Vec<_> = combined.queries.into_iter().map(panel_state).collect();
+    let template = app::DashboardTemplate::new(combined.layout, combined.repeats, &panels)
+        .with_conditions(combined.conditions)
+        .with_sections(combined.sections);
+    DashboardSetup {
+        panels,
+        template,
+        variables,
+        set: app::DashboardSet::new(root, dashboards, section_owner),
+    }
+}
+
+/// Pins variables of every dashboard in tab group `root` to the user's values,
+/// as `merge_user_vars` pins a single dashboard's.
+fn pin_section_variables(
+    sections: &mut HashMap<crate::dashboard::SectionId, Vec<grafana::SectionVariable>>,
+    root: crate::dashboard::TabGroupId,
+    pinned: &HashSet<String>,
+    values: &HashMap<String, Vec<String>>,
+) {
+    for (section, variables) in sections.iter_mut() {
+        if !matches!(section, crate::dashboard::SectionId::Tab(group, _) if *group == root) {
+            continue;
+        }
+        for variable in variables {
+            if !pinned.contains(&variable.name) {
+                continue;
+            }
+            let pinned_values = values.get(&variable.name).cloned().unwrap_or_default();
+            variable.regex = pinned_values.len() > 1;
+            variable.values = pinned_values;
+            variable.all = false;
+            variable.all_value = None;
+            variable.query = None;
+        }
+    }
+}
+
 fn resolve_refresh_rate_ms(
     cli_refresh_rate: Option<u64>,
     config_refresh_rate: Option<u64>,
@@ -505,6 +659,19 @@ struct VariableState {
     regex_vars: HashSet<String>,
     all_vars: HashSet<String>,
     names: HashSet<String>,
+}
+
+/// Validation of several dashboards, one entry per file.
+#[derive(Debug, Serialize)]
+struct MultiValidationSummary {
+    dashboards: Vec<FileValidationSummary>,
+}
+
+#[derive(Debug, Serialize)]
+struct FileValidationSummary {
+    path: String,
+    #[serde(flatten)]
+    summary: ImportValidationSummary,
 }
 
 #[derive(Debug, Serialize)]
@@ -600,20 +767,76 @@ fn merge_user_vars(
 }
 
 fn print_import_diagnostics(diagnostics: &[grafana::ImportDiagnostic]) {
+    print_import_diagnostics_for(None, diagnostics);
+}
+
+/// Prints import diagnostics, naming the dashboard file when several load.
+fn print_import_diagnostics_for(
+    file: Option<&std::path::Path>,
+    diagnostics: &[grafana::ImportDiagnostic],
+) {
     if diagnostics.is_empty() {
         return;
     }
 
-    eprintln!(
-        "Grafana import diagnostics: {} warning(s)",
-        diagnostics.len()
-    );
+    let file = file.map(|path| path.display().to_string());
+    match &file {
+        Some(file) => eprintln!(
+            "Grafana import diagnostics ({file}): {} warning(s)",
+            diagnostics.len()
+        ),
+        None => eprintln!(
+            "Grafana import diagnostics: {} warning(s)",
+            diagnostics.len()
+        ),
+    }
     for diagnostic in diagnostics {
+        let path = match &file {
+            Some(file) => format!("{file}:{}", diagnostic.path),
+            None => diagnostic.path.clone(),
+        };
         eprintln!(
-            "warning[grafana.import.{}] {}: {}",
-            diagnostic.code, diagnostic.path, diagnostic.message
+            "warning[grafana.import.{}] {path}: {}",
+            diagnostic.code, diagnostic.message
         );
     }
+}
+
+/// Prints the validation of several dashboards: every file's diagnostics and
+/// result, then fails under `strict` if any file had warnings.
+fn print_validation_summaries(
+    summaries: &MultiValidationSummary,
+    format: cli::ValidateFormat,
+    strict: bool,
+) -> Result<()> {
+    match format {
+        cli::ValidateFormat::Text => {
+            for file in &summaries.dashboards {
+                print_import_diagnostics_for(
+                    Some(std::path::Path::new(&file.path)),
+                    &file.summary.diagnostics,
+                );
+            }
+            for file in &summaries.dashboards {
+                println!(
+                    "Grafana dashboard is importable: {} ({} panel(s)) [{}]",
+                    file.summary.title, file.summary.panel_count, file.path
+                );
+            }
+        }
+        cli::ValidateFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(summaries)?);
+        }
+    }
+    let warnings: usize = summaries
+        .dashboards
+        .iter()
+        .map(|file| file.summary.diagnostics.len())
+        .sum();
+    if strict && warnings > 0 {
+        bail!("validation failed with {warnings} warning(s)");
+    }
+    Ok(())
 }
 
 fn print_validation_summary(
@@ -908,6 +1131,93 @@ mod tests {
         );
         assert!(pinned.contains("job"));
         assert!(pinned.contains("instance"));
+    }
+
+    #[test]
+    fn several_dashboards_keep_their_own_variables_and_refresh_rates() {
+        use crate::app::dashboard_test_support::v2_dashboard;
+        let nodes = v2_dashboard(
+            "Ops / Nodes",
+            "30s",
+            "up",
+            "label_values(node_uname_info, instance)",
+        );
+        let consul = v2_dashboard(
+            "Ops / Consul",
+            "1m",
+            "up",
+            "label_values(consul_up, instance)",
+        );
+        let set = grafana::parse_grafana_dashboards(&[&nodes, &consul]).unwrap();
+
+        let setup = build_dashboard_set(set, None, &[], None, None);
+
+        let refresh: Vec<Duration> = setup
+            .set
+            .dashboards
+            .iter()
+            .map(|info| info.refresh_every)
+            .collect();
+        assert_eq!(refresh, [Duration::from_secs(30), Duration::from_secs(60)]);
+        assert!(setup.variables.vars.is_empty());
+        assert!(setup.variables.names.contains("instance"));
+        let titles: Vec<String> = setup
+            .set
+            .dashboards
+            .iter()
+            .map(|info| info.title.clone())
+            .collect();
+        assert_eq!(titles, ["Ops / Nodes", "Ops / Consul"]);
+
+        // The CLI and config refresh rates apply to every dashboard.
+        let set = grafana::parse_grafana_dashboards(&[&nodes, &consul]).unwrap();
+        let setup = build_dashboard_set(set, None, &[], Some(5_000), Some(10_000));
+        assert!(
+            setup
+                .set
+                .dashboards
+                .iter()
+                .all(|info| info.refresh_every == Duration::from_secs(5))
+        );
+    }
+
+    #[test]
+    fn pinned_variables_apply_in_every_dashboard() {
+        use crate::app::dashboard_test_support::v2_dashboard;
+        use crate::dashboard::SectionId;
+        let nodes = v2_dashboard(
+            "Nodes",
+            "30s",
+            "up",
+            "label_values(node_uname_info, instance)",
+        );
+        let consul = v2_dashboard("Consul", "30s", "up", "label_values(consul_up, instance)");
+        let mut set = grafana::parse_grafana_dashboards(&[&nodes, &consul]).unwrap();
+        let root = set.root;
+        let mut variables = VariableState::default();
+        let pinned = merge_user_vars(
+            &mut variables,
+            None,
+            &[
+                ("instance".to_string(), "host-1".to_string()),
+                ("instance".to_string(), "host-2".to_string()),
+            ],
+        );
+
+        pin_section_variables(
+            &mut set.combined.sections,
+            root,
+            &pinned,
+            &variables.var_values,
+        );
+
+        for tab in 0..2 {
+            let instance = &set.combined.sections[&SectionId::Tab(root, tab)][0];
+            assert_eq!(instance.name, "instance");
+            assert_eq!(instance.values, ["host-1", "host-2"]);
+            assert!(instance.regex);
+            assert!(instance.query.is_none(), "pinned variables are not queried");
+        }
     }
 
     #[test]

@@ -80,9 +80,24 @@ pub(crate) struct RefreshTasks {
     reload_requested: bool,
     /// Why each query variable last failed, by name.
     variable_errors: BTreeMap<String, String>,
+    /// Panel fetches started outside a refresh, such as for an expanded row.
+    loose: Vec<AbortHandle>,
+    /// Another dashboard became active: its variables reload, as on opening
+    /// it, until a refresh completes.
+    load_dashboard: bool,
 }
 
 impl RefreshTasks {
+    /// Another dashboard is shown: the previous one's fetches stop, its
+    /// variable errors no longer apply, and the next refresh loads variables.
+    pub(super) fn dashboard_switched(&mut self) {
+        for fetch in self.loose.drain(..) {
+            fetch.abort();
+        }
+        self.variable_errors.clear();
+        self.load_dashboard = true;
+    }
+
     /// Invalidates panel fetches started before the layout was rebuilt.
     pub(super) fn layout_changed(&mut self) {
         self.layout_epoch += 1;
@@ -225,6 +240,7 @@ impl AppState {
         let variables_window = (self.range, self.time_offset);
         let variable_update = match self.refreshes.variables_window {
             None => VariableUpdate::Load,
+            Some(_) if self.refreshes.load_dashboard => VariableUpdate::Load,
             Some(window) if window != variables_window || self.refreshes.reload_requested => {
                 VariableUpdate::TimeRangeChange
             }
@@ -444,11 +460,16 @@ impl AppState {
         if pipeline.variables_changed {
             self.materialize_layout();
         }
-        if self.section_instances.is_empty() {
+        let instances = self.live_section_instances();
+        if instances.is_empty() {
             self.continue_refresh(pipeline);
         } else {
-            pipeline.abort =
-                self.spawn_section_refresh(generation, pipeline.end_ts, pipeline.variable_update);
+            pipeline.abort = self.spawn_section_refresh(
+                generation,
+                pipeline.end_ts,
+                pipeline.variable_update,
+                instances,
+            );
             self.refreshes.pipeline = Some(pipeline);
         }
         true
@@ -517,6 +538,7 @@ impl AppState {
     fn complete_refresh(&mut self, pipeline: Pipeline) {
         self.reconcile_visible_annotation_targets();
         self.last_refresh = Instant::now();
+        self.refreshes.load_dashboard = false;
         let counts = pipeline.counts;
         let unreachable = counts.unreachable > 0 && counts.succeeded == 0;
         self.refreshes.status = if unreachable {
@@ -551,9 +573,9 @@ impl AppState {
         generation: u64,
         end_ts: i64,
         update: VariableUpdate,
+        instances: Vec<SectionInstance>,
     ) -> AbortHandle {
         let prometheus = self.prometheus.clone();
-        let instances = self.section_instances.clone();
         let vars = self.vars.clone();
         let mut values = self.section_values.clone();
         let window = self.query_window(end_ts);
@@ -582,7 +604,7 @@ impl AppState {
         let prometheus = self.prometheus.clone();
         let vars = self.vars.clone();
         let window = self.query_window(end_ts);
-        self.refreshes.tasks.spawn(async move {
+        let fetch = self.refreshes.tasks.spawn(async move {
             let (fetches, counts) = fetch_panels(&prometheus, window, &vars, jobs).await;
             RefreshMessage::Panels(PanelBatch {
                 seq,
@@ -591,7 +613,12 @@ impl AppState {
                 fetches,
                 counts,
             })
-        })
+        });
+        if pipeline.is_none() {
+            self.refreshes.loose.retain(|fetch| !fetch.is_finished());
+            self.refreshes.loose.push(fetch.clone());
+        }
+        fetch
     }
 
     fn query_window(&self, end_ts: i64) -> QueryWindow {
@@ -1199,6 +1226,199 @@ mod tests {
             EMPTY_VECTOR
         };
         ("200 OK", body)
+    }
+
+    use crate::app::state::dashboards::test_support::{dashboards_app, v2_dashboard};
+
+    fn nodes_and_consul() -> [String; 2] {
+        [
+            v2_dashboard(
+                "Ops / Nodes",
+                "30s",
+                "up{job=\"node\"}",
+                "label_values(node_uname_info, instance)",
+            ),
+            v2_dashboard(
+                "Ops / Consul",
+                "1m",
+                "up{job=\"consul\"}",
+                "label_values(consul_up, instance)",
+            ),
+        ]
+    }
+
+    fn requests_since(requests: &Mutex<Vec<String>>, start: usize) -> Vec<String> {
+        requests.lock().unwrap()[start..].to_vec()
+    }
+
+    fn mentions(requests: &[String], text: &str) -> bool {
+        requests.iter().any(|request| request.contains(text))
+    }
+
+    fn instances(path: &str) -> (&'static str, &'static str) {
+        if path.starts_with("/api/v1/label/instance/") {
+            ("200 OK", r#"{"status":"success","data":["host-1"]}"#)
+        } else {
+            (
+                "200 OK",
+                r#"{"status":"success","data":{"resultType":"matrix","result":[]}}"#,
+            )
+        }
+    }
+
+    #[tokio::test]
+    async fn only_the_active_dashboard_queries_prometheus() {
+        let (url, requests) = recording_prometheus(instances).await;
+        let [nodes, consul] = nodes_and_consul();
+        let mut app = dashboards_app(&url, &[&nodes, &consul]);
+
+        app.refresh().await.unwrap();
+        app.refresh().await.unwrap();
+        let first = requests_since(&requests, 0);
+        assert!(mentions(&first, "match[]=node_uname_info"), "{first:?}");
+        assert!(mentions(&first, r#"job="node""#), "{first:?}");
+        assert!(!mentions(&first, "consul"), "{first:?}");
+
+        let start = requests.lock().unwrap().len();
+        app.cycle_dashboard(1).unwrap();
+        app.settle_refreshes().await;
+        app.refresh().await.unwrap();
+        let second = requests_since(&requests, start);
+        assert!(mentions(&second, "match[]=consul_up"), "{second:?}");
+        assert!(mentions(&second, r#"job="consul""#), "{second:?}");
+        assert!(!mentions(&second, "node"), "{second:?}");
+        assert_eq!(app.active_dashboard(), Some(1));
+        assert_eq!(app.title, "Ops / Consul (imported)");
+
+        // Coming back opens the dashboard again: its variables reload.
+        let start = requests.lock().unwrap().len();
+        app.cycle_dashboard(1).unwrap();
+        app.settle_refreshes().await;
+        let third = requests_since(&requests, start);
+        assert!(mentions(&third, "match[]=node_uname_info"), "{third:?}");
+        assert!(!mentions(&third, "consul"), "{third:?}");
+    }
+
+    #[tokio::test]
+    async fn hashistack_dashboards_query_only_the_one_shown() {
+        let (url, requests) = recording_prometheus(instances).await;
+        let mut paths: Vec<_> = std::fs::read_dir("examples/demo/hashistack-rdw")
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "json")
+            })
+            .collect();
+        paths.sort();
+        let documents: Vec<String> = paths
+            .iter()
+            .map(|path| std::fs::read_to_string(path).unwrap())
+            .collect();
+        let documents: Vec<&str> = documents.iter().map(String::as_str).collect();
+        let mut app = dashboards_app(&url, &documents);
+
+        // The fleet overview has no query variables.
+        app.refresh().await.unwrap();
+        let overview = requests_since(&requests, 0);
+        assert!(!overview.is_empty());
+        assert!(!mentions(&overview, "/api/v1/label/"), "{overview:?}");
+
+        let start = requests.lock().unwrap().len();
+        app.cycle_dashboard(1).unwrap();
+        app.settle_refreshes().await;
+        let nodes = requests_since(&requests, start);
+        assert_eq!(app.title, "HashiStack / Nodes (imported)");
+        assert!(mentions(&nodes, "match[]=node_uname_info"), "{nodes:?}");
+        // Consul's dashboard defines `instance` too, with its own query.
+        let all = requests_since(&requests, 0);
+        assert!(!mentions(&all, "consul_runtime_num_goroutines"), "{all:?}");
+    }
+
+    #[tokio::test]
+    async fn panels_kept_by_data_conditions_follow_the_dashboard_shown() {
+        // Nodes' panel shows only with data, so it is fetched while hidden.
+        let mut nodes: serde_json::Value = serde_json::from_str(&nodes_and_consul()[0]).unwrap();
+        nodes["spec"]["layout"] = serde_json::json!({
+            "kind": "AutoGridLayout",
+            "spec": {"items": [{"kind": "AutoGridLayoutItem", "spec": {
+                "element": {"kind": "ElementReference", "name": "panel-1"},
+                "conditionalRendering": {"kind": "ConditionalRenderingGroup", "spec": {
+                    "visibility": "show", "condition": "and",
+                    "items": [{"kind": "ConditionalRenderingData", "spec": {"value": true}}]
+                }}
+            }}]}
+        });
+        let (url, _) = recording_prometheus(instances).await;
+        let consul = nodes_and_consul()[1].clone();
+        let mut app = dashboards_app(&url, &[&nodes.to_string(), &consul]);
+        app.refresh().await.unwrap();
+        assert!(app.visible_panel_indices().is_empty());
+        assert_eq!(app.panels_to_fetch(), [0]);
+
+        app.cycle_dashboard(1).unwrap();
+
+        assert_eq!(app.panels_to_fetch(), [1]);
+    }
+
+    #[tokio::test]
+    async fn variable_errors_belong_to_the_dashboard_shown() {
+        fn failing_nodes(path: &str) -> (&'static str, &'static str) {
+            if path.contains("node_uname_info") {
+                (
+                    "400 Bad Request",
+                    r#"{"status":"error","errorType":"bad_data","error":"bad"}"#,
+                )
+            } else {
+                instances(path)
+            }
+        }
+        let (url, _) = recording_prometheus(failing_nodes).await;
+        let [nodes, consul] = nodes_and_consul();
+        let mut app = dashboards_app(&url, &[&nodes, &consul]);
+
+        app.refresh().await.unwrap();
+        assert_eq!(app.variable_errors().count(), 1);
+
+        app.cycle_dashboard(1).unwrap();
+        app.settle_refreshes().await;
+        assert_eq!(app.variable_errors().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn the_active_dashboard_sets_the_refresh_interval_and_counts() {
+        let (url, _) = recording_prometheus(instances).await;
+        let [nodes, consul] = nodes_and_consul();
+        let mut app = dashboards_app(&url, &[&nodes, &consul]);
+        assert_eq!(app.refresh_every, Duration::from_secs(30));
+        assert_eq!(app.dashboard_panel_indices(), [0]);
+
+        app.cycle_dashboard(-1).unwrap();
+        app.settle_refreshes().await;
+        assert_eq!(app.active_dashboard(), Some(1));
+        assert_eq!(app.refresh_every, Duration::from_secs(60));
+        assert_eq!(app.dashboard_panel_indices(), [1]);
+        assert_eq!(app.panel_count_label(), "1");
+    }
+
+    #[tokio::test]
+    async fn switching_dashboards_stops_the_previous_ones_queries() {
+        let [nodes, consul] = nodes_and_consul();
+        let mut app = dashboards_app(&hung_prometheus().await, &[&nodes, &consul]);
+        app.start_refresh();
+        // A fetch outside the refresh, as for a row that was just expanded.
+        app.fetch_panels(&[0]);
+        assert_eq!(app.refreshes.loose.len(), 1);
+
+        app.cycle_dashboard(1).unwrap();
+        assert!(app.refreshes.loose.is_empty());
+        for _ in 0..2 {
+            let stopped = tokio::time::timeout(Duration::from_secs(1), app.join_refresh_task())
+                .await
+                .expect("the previous dashboard's query kept running")
+                .unwrap();
+            assert!(stopped.unwrap_err().is_cancelled());
+        }
     }
 
     #[tokio::test]

@@ -25,11 +25,14 @@ pub(crate) use data::{
     DEFAULT_SCRAPE_INTERVAL, default_queries, parse_duration, parse_min_interval,
 };
 pub(crate) use event_loop::{finalize_recording_before_quit, run_app};
+#[cfg(test)]
+pub(crate) use state::dashboard_test_support;
 #[allow(unused_imports)]
 pub(crate) use state::{
-    AppMode, AppState, BackendIndicator, BackendStatus, GraphAxisPlacement, GraphDrawStyle,
-    GraphOptions, GraphPointMode, GraphStackingMode, GridUnit, PanelOptions, PanelState, PanelType,
-    QueryMode, QueryResolution, SeriesView, ThresholdMode, ThresholdStep, Thresholds, YAxisMode,
+    AppMode, AppState, BackendIndicator, BackendStatus, DashboardInfo, DashboardSet,
+    GraphAxisPlacement, GraphDrawStyle, GraphOptions, GraphPointMode, GraphStackingMode, GridUnit,
+    PanelOptions, PanelState, PanelType, QueryMode, QueryResolution, SeriesView, ThresholdMode,
+    ThresholdStep, Thresholds, YAxisMode, dashboard_tab_labels,
 };
 pub(crate) use template::{DashboardTemplate, ScopeBinding, find_binding};
 pub(crate) use variables::{format_prometheus_values, parse_custom_variable_values};

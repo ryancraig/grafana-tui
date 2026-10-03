@@ -37,10 +37,13 @@ file explains why. Keep the result outside this repository.
 } > ~/.config/grafatui/gcloud-dc.toml
 
 cargo run --release -- --config ~/.config/grafatui/gcloud-dc.toml \
-  --grafana-json examples/demo/hashistack-rdw/00-overview.json
+  $(printf -- '--grafana-json %s ' examples/demo/hashistack-rdw/*.json)
 ```
 
-Swap `--grafana-json` for any dashboard below. A terminal of 160 columns or more
+This opens all eight dashboards, one per tab of the bar at the top: Tab and
+Shift+Tab switch between them. Only the dashboard shown queries Prometheus, so
+eight cost no more than one. To open just one, pass a single `--grafana-json`.
+A terminal of 160 columns or more
 shows a full row of stat tiles legibly. At 100 columns every panel still renders,
 but the tiles are cramped. Use `PgUp`/`PgDn` to move between rows.
 

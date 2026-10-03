@@ -157,9 +157,9 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
                         );
                     }
                 }
-                DashboardRectKind::TabEmpty { .. } => frame.render_widget(
+                DashboardRectKind::TabEmpty { group_id } => frame.render_widget(
                     Line::styled(
-                        "  No supported panels in this tab",
+                        format!("  {}", app.empty_tab_message(group_id)),
                         Style::default().fg(app.theme.text),
                     ),
                     item.rect,
@@ -190,10 +190,14 @@ pub(crate) fn draw_ui(frame: &mut Frame, app: &mut AppState) {
         AppMode::FullscreenInspect => "FULLSCREEN INSPECT",
     };
 
-    let navigation_hint = if app.selected_tab_group_id().is_some() {
-        "←/→ switch tab, Enter enter, ↑/↓ navigate"
-    } else {
-        "↑/↓ navigate"
+    let navigation_hint = match (
+        app.selected_tab_group_id().is_some(),
+        app.dashboards.is_some(),
+    ) {
+        (true, true) => "Tab/⇧Tab dashboard, ←/→ switch tab, Enter enter, ↑/↓ navigate",
+        (true, false) => "←/→ switch tab, Enter enter, ↑/↓ navigate",
+        (false, true) => "Tab/⇧Tab dashboard, ↑/↓ navigate",
+        (false, false) => "↑/↓ navigate",
     };
     let mut summary = vec![Span::raw(format!("Mode: {mode_display}"))];
     if app.recording.is_some() {
@@ -1043,6 +1047,27 @@ mod tests {
         let text = terminal_text(&terminal);
         assert!(text.contains("Requests ⚠ warning"), "{text}");
         assert!(text.contains("Requests: warning: partial response"));
+    }
+
+    #[tokio::test]
+    async fn several_dashboards_show_the_active_title_and_a_pinned_bar() {
+        use crate::app::dashboard_test_support::{dashboards_app, v2_dashboard};
+        let nodes = v2_dashboard("Ops / Nodes", "30s", "up", "label_values(up, instance)");
+        let consul = v2_dashboard("Ops / Consul", "30s", "up", "label_values(up, instance)");
+        let mut app = dashboards_app("http://127.0.0.1:9", &[&nodes, &consul]);
+        app.cycle_dashboard(1).unwrap();
+        app.vertical_scroll = 3;
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+
+        let text = terminal_text(&terminal);
+        assert!(text.contains("Ops / Consul (imported)"), "{text}");
+        assert!(
+            text.contains("Nodes") && text.contains("* Consul"),
+            "{text}"
+        );
+        assert!(text.contains("Tab/⇧Tab dashboard"), "{text}");
     }
 
     #[test]

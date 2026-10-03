@@ -258,6 +258,41 @@ grafatui --validate --strict --grafana-json ./dash.json
 grafatui --validate --format json --grafana-json ./dash.json
 ```
 
+## Several Dashboards
+
+Repeat `--grafana-json` to load several dashboards in one session, or list them
+in the configuration file as `grafana_json = ["a.json", "b.json"]`:
+
+```bash
+grafatui --grafana-json ./nodes.json --grafana-json ./consul.json --grafana-json ./vault.yaml
+```
+
+Each dashboard is a tab of a tab bar pinned above the dashboards, labelled with
+its title. When every title starts with the same `Prefix / `, the labels leave
+it out. Press `Tab` / `Shift+Tab` to show the next or previous dashboard, or
+click a label. The header shows the dashboard's full title.
+
+Only the dashboard shown queries Prometheus: its panels and its variables, so
+several dashboards cost Prometheus no more than the one on screen. Switching
+refreshes the dashboard at once and reloads its variables, as opening it in
+Grafana does. It refreshes at its own auto-refresh interval, unless
+`--refresh-rate` or `refresh_rate` sets one for every dashboard.
+
+Each dashboard keeps its own variables, even when two dashboards define a
+variable of the same name with different queries. `--var` and `[vars]` set a
+variable in every dashboard that defines it.
+
+`--validate` checks every file. With `--format json`, it prints one object with
+an entry per file; warnings name their file:
+
+```json
+{
+  "dashboards": [
+    {"path": "./nodes.json", "title": "Nodes", "panel_count": 39, "diagnostics": []}
+  ]
+}
+```
+
 ## Hidden Targets
 
 Grafatui skips hidden queries during import: `targets[].hide` in Classic JSON

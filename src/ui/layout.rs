@@ -276,30 +276,99 @@ pub(crate) fn visible_dashboard_rects(area: Rect, app: &AppState) -> Vec<Dashboa
             .collect();
     }
 
-    let (projected, cell_h) = projected_dashboard_rects(inner_area, app);
+    let projection = project_dashboard(inner_area, app);
 
     let scroll_offset = u16::try_from(app.vertical_scroll)
         .unwrap_or(u16::MAX)
-        .saturating_mul(cell_h);
-    projected
+        .saturating_mul(projection.cell_h);
+    projection
+        .pinned
         .into_iter()
-        .filter_map(|item| clip_scrolled_rect(item, inner_area, scroll_offset))
+        .chain(
+            projection
+                .items
+                .into_iter()
+                .filter_map(|item| clip_scrolled_rect(item, projection.content, scroll_offset)),
+        )
         .collect()
 }
 
-fn projected_dashboard_rects(area: Rect, app: &AppState) -> (Vec<DashboardRect>, u16) {
+/// The dashboard laid out before scrolling.
+struct Projection {
+    /// The bar of the tab group holding one tab per dashboard, which stays at
+    /// the top when several dashboards are loaded.
+    pinned: Option<DashboardRect>,
+    /// Where the scrolled items show: the area below the pinned bar.
+    content: Rect,
+    /// The items, positioned as if `content` were tall enough for them all.
+    items: Vec<DashboardRect>,
+    cell_h: u16,
+}
+
+fn project_dashboard(area: Rect, app: &AppState) -> Projection {
+    if let Some(group) = pinned_dashboard_group(app) {
+        let bar = Rect::new(area.x, area.y, area.width, area.height.min(1));
+        let content = Rect::new(
+            area.x,
+            area.y.saturating_add(bar.height),
+            area.width,
+            area.height.saturating_sub(bar.height),
+        );
+        let cell_h = std::cmp::max(3, content.height / 24);
+        let mut items = Vec::new();
+        // The shown dashboard's items, laid out as a dashboard of its own.
+        match group.active.and_then(|index| group.tabs.get(index)) {
+            Some(tab) if !tab.children.is_empty() => {
+                project_layout_items(
+                    &tab.children,
+                    0,
+                    content,
+                    content.y,
+                    cell_h,
+                    app,
+                    &mut items,
+                );
+            }
+            _ => items.push(DashboardRect {
+                id: DashboardItemId::Tabs(group.id),
+                rect: Rect::new(content.x, content.y, content.width, 1),
+                disclosure_rect: None,
+                kind: DashboardRectKind::TabEmpty { group_id: group.id },
+            }),
+        }
+        return Projection {
+            pinned: Some(DashboardRect {
+                id: DashboardItemId::Tabs(group.id),
+                rect: bar,
+                disclosure_rect: None,
+                kind: DashboardRectKind::Tabs {
+                    group_id: group.id,
+                    depth: 0,
+                },
+            }),
+            content,
+            items,
+            cell_h,
+        };
+    }
     let cell_h = std::cmp::max(3, area.height / 24);
-    let mut projected = Vec::new();
-    project_layout_items(
-        &app.layout.items,
-        0,
-        area,
-        area.y,
+    let mut items = Vec::new();
+    project_layout_items(&app.layout.items, 0, area, area.y, cell_h, app, &mut items);
+    Projection {
+        pinned: None,
+        content: area,
+        items,
         cell_h,
-        app,
-        &mut projected,
-    );
-    (projected, cell_h)
+    }
+}
+
+/// The tab group of several loaded dashboards, which is pinned above them.
+fn pinned_dashboard_group(app: &AppState) -> Option<&crate::dashboard::DashboardTabs> {
+    let group = app.dashboard_group()?;
+    match app.layout.items.as_slice() {
+        [DashboardLayoutItem::Tabs(tabs)] if tabs.id == group => Some(tabs),
+        _ => None,
+    }
 }
 
 pub(crate) fn scroll_selected_into_view(area: Rect, app: &mut AppState) {
@@ -315,11 +384,23 @@ pub(crate) fn scroll_selected_into_view(area: Rect, app: &mut AppState) {
         app.scroll_to_selected_panel();
         return;
     }
+    if app.dashboard_group().map(DashboardItemId::Tabs) == Some(selected) {
+        // The dashboards' tab bar is pinned, so it is always in view.
+        return;
+    }
     let inner = dashboard_inner_area(area);
     if inner.is_empty() {
         return;
     }
-    let (items, cell_h) = projected_dashboard_rects(inner, app);
+    let Projection {
+        content: inner,
+        items,
+        cell_h,
+        ..
+    } = project_dashboard(inner, app);
+    if inner.is_empty() {
+        return;
+    }
     let Some(item) = items.into_iter().find(|item| {
         item.id == selected && !matches!(item.kind, DashboardRectKind::TabEmpty { .. })
     }) else {
@@ -929,6 +1010,42 @@ mod tests {
         assert_eq!(rects[0].id, DashboardItemId::Panel(0));
         assert_eq!(rects[1].id, DashboardItemId::Panel(1));
         assert!(rects[0].rect.bottom() <= rects[1].rect.y);
+    }
+
+    #[test]
+    fn several_dashboards_pin_their_tab_bar_above_the_scrolled_content() {
+        use crate::app::dashboard_test_support::{dashboards_app, v2_dashboard};
+        let nodes = v2_dashboard("Ops / Nodes", "30s", "up", "label_values(up, instance)");
+        let consul = v2_dashboard("Ops / Consul", "30s", "up", "label_values(up, instance)");
+        let mut app = dashboards_app("http://127.0.0.1:9", &[&nodes, &consul]);
+        let group = app.dashboard_group().unwrap();
+        let area = Rect::new(0, 0, 120, 50);
+        let inner = dashboard_inner_area(area);
+
+        let rects = visible_dashboard_rects(area, &app);
+        assert!(matches!(
+            rects[0].kind,
+            DashboardRectKind::Tabs { group_id, depth: 0 } if group_id == group
+        ));
+        assert_eq!(rects[0].rect, Rect::new(inner.x, inner.y, inner.width, 1));
+        // The dashboard's own items follow, laid out as a dashboard of their own.
+        assert_eq!(rects[1].id, DashboardItemId::Panel(0));
+        assert_eq!(rects[1].rect.y, inner.y + 1);
+        let panel = rects[1].rect;
+
+        // Scrolling moves the content under the bar, which stays.
+        app.vertical_scroll = 1;
+        let rects = visible_dashboard_rects(area, &app);
+        assert_eq!(rects[0].rect, Rect::new(inner.x, inner.y, inner.width, 1));
+        assert_eq!(rects[1].rect.y, inner.y + 1);
+        assert!(rects[1].rect.height < panel.height);
+        let hit = hit_test(&app, area, inner.x + 3, inner.y).unwrap();
+        assert_eq!(hit.id, DashboardItemId::Tabs(group));
+
+        // The bar is always in view, so selecting it does not scroll.
+        app.selected_item = Some(DashboardItemId::Tabs(group));
+        scroll_selected_into_view(area, &mut app);
+        assert_eq!(app.vertical_scroll, 1);
     }
 
     #[test]

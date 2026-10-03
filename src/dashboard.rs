@@ -233,23 +233,53 @@ impl DashboardLayout {
     /// Every panel in the layout, including those in collapsed rows and
     /// inactive tabs.
     pub(crate) fn panel_indices(&self) -> Vec<usize> {
-        fn collect(items: &[DashboardLayoutItem], panels: &mut Vec<usize>) {
+        let mut panels = Vec::new();
+        collect_panel_indices(&self.items, &mut panels);
+        panels
+    }
+
+    /// Every panel in one tab of a tab group, including those in its collapsed
+    /// rows and inactive inner tabs.
+    pub(crate) fn tab_panel_indices(&self, id: TabGroupId, index: usize) -> Vec<usize> {
+        let mut panels = Vec::new();
+        if let Some(tab) = self.tabs(id).and_then(|group| group.tabs.get(index)) {
+            collect_panel_indices(&tab.children, &mut panels);
+        }
+        panels
+    }
+
+    /// The tab of group `id` that each row and tab section belongs to: the
+    /// group's own tabs, and every row and tab nested inside them.
+    pub(crate) fn section_owners(&self, id: TabGroupId) -> HashMap<SectionId, usize> {
+        fn collect(
+            items: &[DashboardLayoutItem],
+            owner: usize,
+            owners: &mut HashMap<SectionId, usize>,
+        ) {
             for item in items {
                 match item {
-                    DashboardLayoutItem::Panel(index) => panels.push(*index),
-                    DashboardLayoutItem::AutoGrid(grid) => panels.extend(&grid.panels),
-                    DashboardLayoutItem::Row(row) => collect(&row.children, panels),
+                    DashboardLayoutItem::Row(row) => {
+                        owners.insert(SectionId::Row(row.id), owner);
+                        collect(&row.children, owner, owners);
+                    }
                     DashboardLayoutItem::Tabs(group) => {
-                        for tab in &group.tabs {
-                            collect(&tab.children, panels);
+                        for (index, tab) in group.tabs.iter().enumerate() {
+                            owners.insert(SectionId::Tab(group.id, index), owner);
+                            collect(&tab.children, owner, owners);
                         }
                     }
+                    DashboardLayoutItem::Panel(_) | DashboardLayoutItem::AutoGrid(_) => {}
                 }
             }
         }
-        let mut panels = Vec::new();
-        collect(&self.items, &mut panels);
-        panels
+        let mut owners = HashMap::new();
+        if let Some(group) = self.tabs(id) {
+            for (index, tab) in group.tabs.iter().enumerate() {
+                owners.insert(SectionId::Tab(id, index), index);
+                collect(&tab.children, index, &mut owners);
+            }
+        }
+        owners
     }
 
     pub(crate) fn toggle_row(&mut self, id: RowId) -> Option<LayoutChange> {
@@ -495,6 +525,21 @@ fn apply_state(
     }
 }
 
+fn collect_panel_indices(items: &[DashboardLayoutItem], panels: &mut Vec<usize>) {
+    for item in items {
+        match item {
+            DashboardLayoutItem::Panel(index) => panels.push(*index),
+            DashboardLayoutItem::AutoGrid(grid) => panels.extend(&grid.panels),
+            DashboardLayoutItem::Row(row) => collect_panel_indices(&row.children, panels),
+            DashboardLayoutItem::Tabs(group) => {
+                for tab in &group.tabs {
+                    collect_panel_indices(&tab.children, panels);
+                }
+            }
+        }
+    }
+}
+
 fn find_row(items: &[DashboardLayoutItem], id: RowId) -> Option<&DashboardRow> {
     for item in items {
         if let DashboardLayoutItem::Row(row) = item {
@@ -707,6 +752,59 @@ mod tests {
         assert_eq!(
             layout.nearest_visible_ancestor(DashboardItemId::Panel(0)),
             Some(DashboardItemId::Tabs(id))
+        );
+    }
+
+    #[test]
+    fn tab_panels_and_section_owners_cover_everything_nested_in_a_tab() {
+        let root = TabGroupId::new(0);
+        let inner = TabGroupId::new(1);
+        let layout = DashboardLayout::new(vec![DashboardLayoutItem::Tabs(DashboardTabs::new(
+            root,
+            vec![
+                DashboardTab {
+                    title: "Nodes".into(),
+                    children: vec![DashboardLayoutItem::Row(DashboardRow::new(
+                        RowId::new(0),
+                        "Collapsed",
+                        true,
+                        false,
+                        vec![DashboardLayoutItem::Panel(0)],
+                    ))],
+                },
+                DashboardTab {
+                    title: "Consul".into(),
+                    children: vec![DashboardLayoutItem::Tabs(DashboardTabs::new(
+                        inner,
+                        vec![
+                            DashboardTab {
+                                title: "Active".into(),
+                                children: vec![DashboardLayoutItem::Panel(1)],
+                            },
+                            DashboardTab {
+                                title: "Inactive".into(),
+                                children: vec![DashboardLayoutItem::Panel(2)],
+                            },
+                        ],
+                    ))],
+                },
+            ],
+        ))]);
+
+        assert_eq!(layout.tab_panel_indices(root, 0), [0]);
+        assert_eq!(layout.tab_panel_indices(root, 1), [1, 2]);
+        assert!(layout.tab_panel_indices(root, 2).is_empty());
+
+        let owners = layout.section_owners(root);
+        assert_eq!(
+            owners,
+            HashMap::from([
+                (SectionId::Tab(root, 0), 0),
+                (SectionId::Row(RowId::new(0)), 0),
+                (SectionId::Tab(root, 1), 1),
+                (SectionId::Tab(inner, 0), 1),
+                (SectionId::Tab(inner, 1), 1),
+            ])
         );
     }
 
