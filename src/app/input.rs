@@ -408,6 +408,12 @@ async fn handle_normal_key(
             ensure_selected_item_visible(terminal_size, app);
             InputAction::Redraw
         }
+        KeyCode::Tab | KeyCode::BackTab if app.dashboards.is_some() => {
+            let direction = if key.code == KeyCode::BackTab { -1 } else { 1 };
+            app.cycle_dashboard(direction)?;
+            ensure_selected_item_visible(terminal_size, app);
+            InputAction::Redraw
+        }
         KeyCode::PageUp => {
             app.vertical_scroll = app.vertical_scroll.saturating_sub(10);
             InputAction::Redraw
@@ -780,6 +786,86 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(app.selected_item, Some(DashboardItemId::Panel(1)));
+    }
+
+    #[tokio::test]
+    async fn tab_keys_cycle_dashboards_and_their_tabs_switch_on_click() {
+        use crate::app::dashboard_test_support::{dashboards_app, v2_dashboard};
+        let dashboards = ["Nodes", "Consul", "Vault"].map(|title| {
+            v2_dashboard(
+                &format!("Ops / {title}"),
+                "30s",
+                "up",
+                "label_values(up, instance)",
+            )
+        });
+        let mut app = dashboards_app(
+            "http://127.0.0.1:9",
+            &dashboards.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+        let group = app.dashboard_group().unwrap();
+        let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        let back_tab = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
+
+        handle_key(tab, size(), &mut app).await.unwrap();
+        assert_eq!(app.active_dashboard(), Some(1));
+        assert_eq!(app.selected_item, Some(DashboardItemId::Panel(1)));
+        handle_key(back_tab, size(), &mut app).await.unwrap();
+        handle_key(back_tab, size(), &mut app).await.unwrap();
+        assert_eq!(app.active_dashboard(), Some(2), "Shift+Tab wraps around");
+
+        // Fullscreen shows one panel, so Tab leaves it alone.
+        app.mode = AppMode::Fullscreen;
+        handle_key(tab, size(), &mut app).await.unwrap();
+        assert_eq!(app.active_dashboard(), Some(2));
+        app.mode = AppMode::Normal;
+
+        // Clicking a label in the pinned bar shows that dashboard.
+        let area = Rect::new(0, 0, size().width, size().height);
+        let bar = ui::visible_dashboard_rects(area, &app)[0];
+        let titles: Vec<String> = app
+            .layout
+            .tabs(group)
+            .unwrap()
+            .tabs
+            .iter()
+            .map(|tab| tab.title.clone())
+            .collect();
+        assert_eq!(titles, ["Nodes", "Consul", "Vault"]);
+        let geometry = ui::tab_bar_geometry(bar.rect, &titles, Some(2), 0);
+        let nodes = geometry
+            .segments
+            .iter()
+            .find(|segment| segment.activate == Some(0))
+            .unwrap()
+            .rect;
+        handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: nodes.x,
+                row: nodes.y,
+                modifiers: KeyModifiers::NONE,
+            },
+            size(),
+            &mut app,
+        )
+        .await
+        .unwrap();
+        assert_eq!(app.active_dashboard(), Some(0));
+        assert_eq!(app.selected_item, Some(DashboardItemId::Tabs(group)));
+        assert_eq!(app.title, "Ops / Nodes (imported)");
+    }
+
+    #[tokio::test]
+    async fn tab_does_nothing_with_one_dashboard() {
+        let mut app = test_app();
+        let selected = app.selected_item;
+        let tab = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+
+        handle_key(tab, size(), &mut app).await.unwrap();
+
+        assert_eq!(app.selected_item, selected);
+        assert!(app.dashboards.is_none());
     }
 
     #[tokio::test]

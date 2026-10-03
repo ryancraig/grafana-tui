@@ -30,8 +30,9 @@ pub(crate) struct Config {
     pub(crate) scrape_interval: Option<String>,
     pub(crate) theme: Option<String>,
     pub(crate) transparent_background: Option<bool>,
-    #[serde(alias = "grafana_dashboard")]
-    pub(crate) grafana_json: Option<PathBuf>,
+    /// One dashboard file, or a list of them shown one per tab.
+    #[serde(default, alias = "grafana_dashboard", deserialize_with = "one_or_many")]
+    pub(crate) grafana_json: Vec<PathBuf>,
     pub(crate) annotations_file: Option<PathBuf>,
     #[allow(dead_code)]
     pub(crate) annotations_command: Option<crate::annotations::AnnotationCommandConfig>,
@@ -87,6 +88,22 @@ impl Config {
 }
 
 /// Expands a path starting with `~` to the user's home directory.
+/// Reads a path, or a list of paths, as a list.
+fn one_or_many<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<PathBuf>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(PathBuf),
+        Many(Vec<PathBuf>),
+    }
+    Ok(match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(path) => vec![path],
+        OneOrMany::Many(paths) => paths,
+    })
+}
+
 pub(crate) fn expand_path(path: &std::path::Path) -> PathBuf {
     let path_str = path.to_string_lossy();
     if path_str.starts_with("~")
@@ -232,7 +249,20 @@ mod tests {
     fn grafana_dashboard_is_an_alias_for_grafana_json() {
         let config: Config = toml::from_str(r#"grafana_dashboard = "dash.yaml""#).unwrap();
 
-        assert_eq!(config.grafana_json, Some(PathBuf::from("dash.yaml")));
+        assert_eq!(config.grafana_json, [PathBuf::from("dash.yaml")]);
+    }
+
+    #[test]
+    fn grafana_json_takes_one_file_or_a_list() {
+        let config: Config =
+            toml::from_str(r#"grafana_json = ["nodes.json", "consul.yaml"]"#).unwrap();
+        assert_eq!(
+            config.grafana_json,
+            [PathBuf::from("nodes.json"), PathBuf::from("consul.yaml")]
+        );
+
+        let config: Config = toml::from_str("").unwrap();
+        assert!(config.grafana_json.is_empty());
     }
 
     #[test]

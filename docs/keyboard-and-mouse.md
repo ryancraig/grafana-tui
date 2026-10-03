@@ -12,8 +12,9 @@ Grafatui is designed for keyboard-first dashboard inspection.
 | `Shift+Left` / `Shift+Right` | Pan left / right in time |
 | `0` | Reset to live mode in fullscreen; show every series in normal mode |
 | `Up` / `Down` or `k` / `j` | Select previous or next visible row or panel |
-| `Enter` / `Space` | Toggle the selected row |
-| `Left` / `Right` | Collapse / expand the selected row |
+| `Enter` / `Space` | Toggle the selected row, or enter the selected tab bar's active tab |
+| `Left` / `Right` | Collapse / expand the selected row, or switch tabs on the selected tab bar |
+| `Tab` / `Shift+Tab` | Show the next / previous dashboard, with [several dashboards](grafana-dashboard-import.md#several-dashboards) |
 | `PgUp` / `PgDn` | Scroll vertically, or select panels in fullscreen |
 | `Home` / `End` | Jump to top or bottom |
 | `y` | Toggle Y-axis mode |
@@ -39,7 +40,7 @@ Grafatui is designed for keyboard-first dashboard inspection.
 
 | Action | Behavior |
 |---|---|
-| Click | Select a row or panel; click a row disclosure marker to toggle it; move the cursor in fullscreen inspect mode |
+| Click | Select a row or panel; click a row disclosure marker to toggle it; click a tab to show it; move the cursor in fullscreen inspect mode |
 | Drag | Move the cursor in fullscreen inspect mode |
 | Scroll | Scroll the dashboard vertically |
 

@@ -31,7 +31,12 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
+mod dashboards;
 mod refresh;
+
+#[cfg(test)]
+pub(crate) use dashboards::test_support as dashboard_test_support;
+pub(crate) use dashboards::{DashboardFocus, DashboardInfo, DashboardSet, dashboard_tab_labels};
 
 pub(crate) use refresh::{BackendIndicator, BackendStatus};
 
@@ -455,6 +460,8 @@ pub(crate) struct AppState {
     pub(crate) recording: Option<RecordingState>,
     /// Last export or recording status message.
     pub(crate) export_status: Option<String>,
+    /// Dashboards loaded together, one per tab, when there are several.
+    pub(crate) dashboards: Option<DashboardSet>,
 }
 
 impl AppState {
@@ -532,6 +539,7 @@ impl AppState {
             export,
             recording: None,
             export_status: None,
+            dashboards: None,
         }
     }
 
@@ -802,10 +810,13 @@ impl AppState {
     }
 
     /// Panels the dashboard currently has, including ones in collapsed rows,
-    /// inactive tabs, or hidden by conditions. `panels` may also hold free slots
-    /// for repeat copies, which are not part of the dashboard.
+    /// inactive tabs, or hidden by conditions; with several dashboards, the
+    /// shown one's. `panels` may also hold free slots for repeat copies, which
+    /// are not part of the dashboard.
     pub(crate) fn dashboard_panel_indices(&self) -> Vec<usize> {
-        if self.template.is_some() {
+        if let Some(panels) = self.active_dashboard_panel_indices() {
+            panels
+        } else if self.template.is_some() {
             self.unfiltered_layout.panel_indices()
         } else {
             (0..self.panels.len()).collect()
@@ -922,6 +933,9 @@ impl AppState {
     }
 
     pub(crate) fn activate_tab(&mut self, id: TabGroupId, index: usize) -> Result<()> {
+        if self.dashboard_group() == Some(id) {
+            return self.activate_dashboard(index, DashboardFocus::Bar);
+        }
         let Some(change) = self.layout.set_active_tab(id, index) else {
             return Ok(());
         };

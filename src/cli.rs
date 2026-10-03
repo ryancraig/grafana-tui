@@ -54,9 +54,10 @@ pub(crate) struct Args {
     pub(crate) scrape_interval: Option<String>,
 
     /// Grafana dashboard file to import: Classic JSON, or V2 resource JSON or YAML
-    /// (e.g., ./dashboard.json, ./dashboard.yaml)
+    /// (e.g., ./dashboard.json, ./dashboard.yaml). Repeat it to load several
+    /// dashboards, one per tab; only the shown one queries Prometheus
     #[arg(long, visible_alias = "grafana-dashboard", value_name = "FILE")]
-    pub(crate) grafana_json: Option<PathBuf>,
+    pub(crate) grafana_json: Vec<PathBuf>,
 
     /// Optional JSONL point-event file to overlay on graph panels.
     #[arg(
@@ -218,14 +219,30 @@ mod tests {
         let args = Args::parse_from(["grafatui", "--validate", "--grafana-json", "dashboard.json"]);
 
         assert!(args.validate);
-        assert_eq!(args.grafana_json, Some(PathBuf::from("dashboard.json")));
+        assert_eq!(args.grafana_json, [PathBuf::from("dashboard.json")]);
+    }
+
+    #[test]
+    fn grafana_json_repeats_for_several_dashboards() {
+        let args = Args::parse_from([
+            "grafatui",
+            "--grafana-json",
+            "nodes.json",
+            "--grafana-dashboard",
+            "consul.yaml",
+        ]);
+
+        assert_eq!(
+            args.grafana_json,
+            [PathBuf::from("nodes.json"), PathBuf::from("consul.yaml")]
+        );
     }
 
     #[test]
     fn grafana_dashboard_is_an_alias_for_grafana_json() {
         let args = Args::parse_from(["grafatui", "--grafana-dashboard", "dashboard.yaml"]);
 
-        assert_eq!(args.grafana_json, Some(PathBuf::from("dashboard.yaml")));
+        assert_eq!(args.grafana_json, [PathBuf::from("dashboard.yaml")]);
     }
 
     #[test]

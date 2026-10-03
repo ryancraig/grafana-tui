@@ -18,9 +18,8 @@ time_range = "3h"
 # Prometheus scrapes every 15s; $__rate_interval is derived from this.
 scrape_interval = "15s"
 step = "15s"
-# Milliseconds. The dashboards ask for 30s; the mesh dashboard (37 Envoy
-# targets) is the heaviest to refresh.
-refresh_rate = 30000
+# Each dashboard refreshes at its own auto-refresh, 30s; refresh_rate (in
+# milliseconds) would override it for all of them.
 # --- end
 
 # What `make reader-cert` prints (shape only):

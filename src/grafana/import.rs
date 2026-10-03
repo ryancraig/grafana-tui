@@ -37,6 +37,43 @@ pub(super) fn finish(dashboard: model::Dashboard) -> Result<DashboardImport> {
     Ok(out)
 }
 
+/// Imports several dashboards as the tabs of one tab group, one tab per
+/// dashboard. Each dashboard's variables become its tab's variables, so they
+/// apply only inside that tab. Returns the import and the group's id.
+pub(super) fn finish_many(
+    dashboards: Vec<model::Dashboard>,
+) -> Result<(DashboardImport, crate::dashboard::TabGroupId)> {
+    let mut out = DashboardImport::default();
+    let mut ids = LayoutIds::default();
+    let root = crate::dashboard::TabGroupId::new(ids.next_tabs);
+    ids.next_tabs += 1;
+    let mut tabs = Vec::with_capacity(dashboards.len());
+    for (index, dashboard) in dashboards.into_iter().enumerate() {
+        out.skipped_panels += dashboard.skipped_panels;
+        // Each dashboard's repeats can only use its own variables.
+        ids.variable_names = dashboard
+            .variables
+            .iter()
+            .map(|variable| variable.name.clone())
+            .collect();
+        if !dashboard.variables.is_empty() {
+            out.sections.insert(
+                SectionId::Tab(root, index),
+                import_section_variables(dashboard.variables),
+            );
+        }
+        tabs.push(crate::dashboard::DashboardTab {
+            title: dashboard.title,
+            children: import_layout_nodes(dashboard.layout, &mut out, &mut ids)?,
+        });
+    }
+    out.layout =
+        crate::dashboard::DashboardLayout::new(vec![crate::dashboard::DashboardLayoutItem::Tabs(
+            crate::dashboard::DashboardTabs::new(root, tabs),
+        )]);
+    Ok((out, root))
+}
+
 fn import_variables(out: &mut DashboardImport, variables: Vec<model::Variable>) {
     for variable in variables {
         let select_all = current_is_all(variable.current.as_ref());

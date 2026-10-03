@@ -76,6 +76,12 @@ docker-compose down -v
   cargo run -- --grafana-json examples/dashboards/grafana_v2_tabs.json --prometheus-url http://localhost:19090
   ```
 
+- Several dashboards at once, one per tab: repeat `--grafana-json`. Press Tab / Shift+Tab to switch; only the dashboard shown queries Prometheus. Run it with:
+
+  ```bash
+  cargo run -- --grafana-json examples/dashboards/prometheus_demo.json --grafana-json examples/dashboards/grafana_v2_tabs.json --prometheus-url http://localhost:19090
+  ```
+
 - `examples/demo/vllm/grafana.json`: vLLM-oriented dashboard for the mock demo services.
 - `examples/demo/vllm_demo.json`: compact vLLM cluster overview for the mock demo services.
 
@@ -87,11 +93,11 @@ developer workspaces: fleet overview, nodes, Nomad, Consul, Vault, service
 mesh, workspaces and Prometheus. They target a real datacenter's mTLS
 Prometheus, not the bundled demo stack. See its
 [README](https://github.com/fedexist/grafatui/blob/main/examples/demo/hashistack-rdw/README.md)
-for the reader-certificate setup:
+for the reader-certificate setup. Open all eight at once, one per tab:
 
 ```bash
 cargo run --release -- --config ~/.config/grafatui/gcloud-dc.toml \
-  --grafana-json examples/demo/hashistack-rdw/00-overview.json
+  $(printf -- '--grafana-json %s ' examples/demo/hashistack-rdw/*.json)
 ```
 
 ## More Detail

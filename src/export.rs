@@ -377,13 +377,13 @@ pub(crate) fn render_svg(app: &AppState, viewport: Rect) -> String {
                     }
                 }
             }
-            ui::DashboardRectKind::TabEmpty { .. } => {
+            ui::DashboardRectKind::TabEmpty { group_id } => {
                 let rect = scaled_rect(item.rect);
                 write_text(
                     &mut out,
                     rect.left + 16.0,
                     rect.top + FONT_SIZE,
-                    "No supported panels in this tab",
+                    app.empty_tab_message(group_id),
                     &text,
                     "start",
                     FONT_SIZE,
@@ -2264,6 +2264,24 @@ mod tests {
     #[test]
     fn system_fonts_are_loaded_once() {
         assert!(Arc::ptr_eq(&system_fonts(), &system_fonts()));
+    }
+
+    #[tokio::test]
+    async fn svg_exports_show_the_pinned_dashboards_bar_and_active_title() {
+        use crate::app::dashboard_test_support::{dashboards_app, v2_dashboard};
+        let nodes = v2_dashboard("Ops / Nodes", "30s", "up", "label_values(up, instance)");
+        let consul = v2_dashboard("Ops / Consul", "30s", "up", "label_values(up, instance)");
+        let mut app = dashboards_app("http://127.0.0.1:9", &[&nodes, &consul]);
+        app.cycle_dashboard(1).unwrap();
+        app.vertical_scroll = 3;
+
+        let svg = render_svg(&app, Rect::new(0, 0, 120, 40));
+
+        assert!(svg.contains("Ops / Consul (imported)"), "{svg}");
+        assert!(
+            svg.contains(">Nodes<") && svg.contains(">* Consul<"),
+            "{svg}"
+        );
     }
 
     #[test]

@@ -10,7 +10,7 @@ Grafatui can be configured with CLI options, a TOML configuration file, or both.
 | `--ca-cert <FILE>` | PEM CA certificates to trust instead of the built-in roots (see [TLS](#connecting-to-an-mtls-prometheus)) | built-in roots |
 | `--client-cert <FILE>` | PEM client certificate for mutual TLS, followed by any intermediate CAs; needs `--client-key` | none |
 | `--client-key <FILE>` | PEM private key for `--client-cert` | none |
-| `--grafana-json <FILE>` | Grafana dashboard file: Classic JSON, or V2 resource JSON or YAML (alias `--grafana-dashboard`) | none |
+| `--grafana-json <FILE>` | Grafana dashboard file: Classic JSON, or V2 resource JSON or YAML (alias `--grafana-dashboard`). Repeat it to load [several dashboards](grafana-dashboard-import.md#several-dashboards), one per tab | none |
 | `--annotations-file <FILE>` | Read-only external JSONL point-event file | none |
 | `--annotations-command <PROGRAM>` | Read-only executable annotation provider | none |
 | `--annotations-command-arg <ARG>` | Argument for `--annotations-command`; repeat to preserve order | none |
@@ -21,7 +21,7 @@ Grafatui can be configured with CLI options, a TOML configuration file, or both.
 | `--range <DURATION>` | Time range window, such as `5m`, `1h`, or `24h` | `5m` |
 | `--step <DURATION>` | Finest query step, such as `5s` or `30s`; longer ranges use a coarser step (see [Query resolution](#query-resolution)) | `5s` |
 | `--scrape-interval <DURATION>` | Prometheus scrape interval, used for `$__rate_interval` | `15s` |
-| `--var <KEY=VALUE>` | Override a dashboard variable (not a V2 row or tab variable); repeat a key to select several values | none |
+| `--var <KEY=VALUE>` | Override a dashboard variable (not a V2 row or tab variable), in every dashboard that defines it; repeat a key to select several values | none |
 | `--theme <NAME>` | UI theme | `tokyo-night` |
 | `--list-themes` | Print the available theme names and exit | |
 | `--transparent-background` | Keep the terminal's background instead of painting the theme's | `false` |
@@ -30,7 +30,7 @@ Grafatui can be configured with CLI options, a TOML configuration file, or both.
 | `--export-dir <DIR>` | Directory for exports and recordings | `./grafatui-exports` |
 | `--export-format <FORMAT>` | `svg`, `png`, or `both` | `svg` |
 | `--record-max-frames <COUNT>` | Maximum changed frames per recording | `300` |
-| `--refresh-rate <MS>` | Data fetch interval in milliseconds | `1000` |
+| `--refresh-rate <MS>` | Data fetch interval in milliseconds, for every dashboard | the dashboard's auto-refresh, else `1000` |
 | `--config <FILE>` | Configuration file path | none |
 
 Run the full help output with:
@@ -57,7 +57,7 @@ export_format = "svg"
 record_max_frames = 300
 autogrid = true
 autogrid_color = "dark-gray"  # omit to use the theme's grid color
-grafana_json = "~/.config/grafatui/my-dashboard.json"
+grafana_json = "~/.config/grafatui/my-dashboard.json"  # or a list: ["a.json", "b.json"]
 annotations_file = "./events.jsonl"
 
 [vars]

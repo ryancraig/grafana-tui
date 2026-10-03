@@ -477,3 +477,88 @@ fn validate_strict_accepts_every_hashistack_rdw_dashboard() {
         );
     }
 }
+
+#[test]
+fn validate_strict_accepts_all_hashistack_rdw_dashboards_at_once() {
+    let mut paths: Vec<PathBuf> = fs::read_dir(demo_dir("hashistack-rdw"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    paths.sort();
+
+    let mut command = Command::new(env!("CARGO_BIN_EXE_grafatui"));
+    command.args(["--validate", "--strict", "--format", "json"]);
+    for path in &paths {
+        command.arg("--grafana-json").arg(path);
+    }
+    let output = command.output().unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let dashboards = summary["dashboards"].as_array().unwrap();
+    assert_eq!(dashboards.len(), paths.len());
+    for (dashboard, path) in dashboards.iter().zip(&paths) {
+        assert_eq!(dashboard["path"], path.display().to_string());
+        assert!(
+            dashboard["title"]
+                .as_str()
+                .unwrap()
+                .starts_with("HashiStack / ")
+        );
+        assert!(dashboard["diagnostics"].as_array().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn validate_names_the_file_of_each_warning_with_several_dashboards() {
+    let clean = write_dashboard(
+        "several-clean",
+        r#"{"title": "Clean", "panels": [{"type": "timeseries", "title": "CPU", "targets": [{"expr": "up"}]}]}"#,
+    );
+    let warning = write_dashboard(
+        "several-warning",
+        r#"{"title": "Warnings", "panels": [{"type": "text", "title": "Notes"}]}"#,
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+        .args(["--validate", "--strict", "--grafana-json"])
+        .arg(&clean)
+        .arg("--grafana-json")
+        .arg(&warning)
+        .output()
+        .unwrap();
+    fs::remove_file(&clean).unwrap();
+    fs::remove_file(&warning).unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let warning = warning.display().to_string();
+    assert!(
+        stderr.contains(&format!(
+            "Grafana import diagnostics ({warning}): 1 warning(s)"
+        )),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("warning[grafana.import.skipped_panel] {warning}:")),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("validation failed with 1 warning(s)"),
+        "{stderr}"
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("Grafana dashboard is importable: Clean (1 panel(s))"),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("Grafana dashboard is importable: Warnings (0 panel(s))"),
+        "{stdout}"
+    );
+}

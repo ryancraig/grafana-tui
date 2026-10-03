@@ -75,6 +75,9 @@ Rust API documentation is available on [docs.rs](https://docs.rs/grafatui).
 # Import a Grafana dashboard
 grafatui --prometheus-url http://localhost:9090 --grafana-json ./dashboard.json
 
+# Load several dashboards, one per tab (Tab / Shift+Tab to switch)
+grafatui --grafana-json ./nodes.json --grafana-json ./consul.json
+
 # Override Grafana template variables
 grafatui --grafana-json ./dash.json --var job=node --var instance=server-01
 
