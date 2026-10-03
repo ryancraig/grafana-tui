@@ -33,9 +33,11 @@ use thresholds::{prepare_thresholds, render_raw_threshold_lines, threshold_marke
 use crate::annotations::format_cluster_detail_lines;
 use crate::app::{AppState, PanelState};
 use crate::ui::format::{format_axis_time, get_hash_color};
+use crate::ui::legend::{LegendLayout, LegendMetrics, layout_legend};
+use crate::ui::tabs::truncate_title;
 use ratatui::{
     prelude::*,
-    widgets::{Axis, Chart, Dataset, GraphType, Paragraph, Wrap},
+    widgets::{Axis, Chart, Dataset, GraphType, Paragraph},
 };
 use std::collections::HashMap;
 
@@ -172,6 +174,46 @@ fn render_forced_point_markers(
     }
 }
 
+/// The legend's rows: each entry's swatch and label at its place, and
+/// "+N more" in muted text after the last.
+fn legend_lines(
+    legend: &LegendLayout,
+    colors: &[Color],
+    theme: &crate::theme::Theme,
+) -> Vec<Line<'static>> {
+    let mut lines: Vec<Vec<Span<'static>>> = vec![Vec::new(); legend.rows];
+    let mut place = |row: usize, x: f64, spans: Vec<Span<'static>>| {
+        let line = &mut lines[row];
+        let used: usize = line.iter().map(Span::width).sum();
+        let indent = (x as usize).saturating_sub(used);
+        if indent > 0 {
+            line.push(Span::raw(" ".repeat(indent)));
+        }
+        line.extend(spans);
+    };
+    for entry in &legend.entries {
+        place(
+            entry.row,
+            entry.x,
+            vec![
+                Span::styled("■ ", Style::default().fg(colors[entry.index])),
+                Span::styled(entry.label.clone(), Style::default().fg(theme.text)),
+            ],
+        );
+    }
+    if let Some((x, more)) = &legend.more {
+        place(
+            legend.rows - 1,
+            *x,
+            vec![Span::styled(
+                more.clone(),
+                Style::default().fg(theme.text_muted),
+            )],
+        );
+    }
+    lines.into_iter().map(Line::from).collect()
+}
+
 pub(super) fn render_graph_panel(
     frame: &mut Frame,
     area: Rect,
@@ -232,11 +274,55 @@ pub(super) fn render_graph_panel(
         HashMap::new()
     };
 
+    let series_colors: Vec<Color> = p
+        .series
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            if use_hash_colors {
+                get_hash_color(&s.name)
+            } else {
+                theme.palette[i % theme.palette.len()]
+            }
+        })
+        .collect();
+    let legend_labels = p
+        .series
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let mut name = s.name.clone();
+            if let Some(val) = cursor_values.get(&s.name) {
+                name.push_str(&format!(" ({})", p.display.format_number(*val)));
+            } else if let Some(val) = s.value {
+                name.push_str(&format!(" ({})", p.display.format_number(val)));
+            }
+            if name.is_empty() {
+                name = format!("Series {}", i);
+            }
+            (i, name)
+        })
+        .collect();
+    // The legend takes the rows it needs, up to a third of the panel and at
+    // least the two that annotation details use. What does not fit is
+    // counted as "+N more".
+    let legend = layout_legend(
+        legend_labels,
+        f64::from(area.width),
+        usize::from(area.height / 3).max(2),
+        &LegendMetrics {
+            swatch: 2.0,
+            gap: 2.0,
+            width: &|label| Span::raw(label).width() as f64,
+            shorten: &|label, width| truncate_title(label, width as u16),
+        },
+    );
+
     // Split inner area into chart and legend
     // If we have series or annotations, reserve space for legend or annotation details.
     let legend_height =
         if (!p.series.is_empty() || !annotation_events.is_empty()) && area.height > 5 {
-            2
+            legend.rows.max(2) as u16
         } else {
             0
         };
@@ -258,7 +344,6 @@ pub(super) fn render_graph_panel(
     // Prepare datasets (without names for the chart itself to avoid built-in legend)
     let mut chart_datasets = Vec::new();
     let mut strong_data_datasets = Vec::new();
-    let mut legend_items = Vec::new();
     let mut forced_point_markers = Vec::new();
 
     // Declare helper datasets to extend their lifetimes
@@ -285,30 +370,9 @@ pub(super) fn render_graph_panel(
     }
 
     for (i, s) in p.series.iter().enumerate() {
-        let color = if use_hash_colors {
-            get_hash_color(&s.name)
-        } else {
-            theme.palette[i % theme.palette.len()]
-        };
+        let color = series_colors[i];
 
         let data = if s.visible { s.points.as_slice() } else { &[] };
-
-        // For legend display
-        let mut name = s.name.clone();
-        if let Some(val) = cursor_values.get(&s.name) {
-            name.push_str(&format!(" ({})", p.display.format_number(*val)));
-        } else if let Some(val) = s.value {
-            name.push_str(&format!(" ({})", p.display.format_number(val)));
-        }
-        if name.is_empty() {
-            name = format!("Series {}", i);
-        }
-
-        legend_items.push(Span::styled("■ ".to_string(), Style::default().fg(color)));
-        legend_items.push(Span::styled(
-            format!("{}  ", name),
-            Style::default().fg(theme.text),
-        ));
 
         // For chart (no name to avoid legend)
         let mut dataset = Dataset::default()
@@ -631,8 +695,10 @@ pub(super) fn render_graph_panel(
             ]);
             frame.render_widget(annotation_detail, legend_area);
         } else {
-            let legend = Paragraph::new(Line::from(legend_items)).wrap(Wrap { trim: true });
-            frame.render_widget(legend, legend_area);
+            frame.render_widget(
+                Paragraph::new(legend_lines(&legend, &series_colors, theme)),
+                legend_area,
+            );
         }
     }
 

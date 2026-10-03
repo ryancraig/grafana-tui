@@ -18,6 +18,19 @@ Supported formats:
 - `png`
 - `both`
 
+## Narrow Panels and Long Legends
+
+An export keeps each panel's text inside the panel. Stat values shrink to fit,
+and labels too long for their space end in `…`. Axis labels that would collide
+with the start and end times, or with the top and bottom values, are left out;
+their grid lines stay.
+
+A graph's legend takes the rows it needs, up to a third of the panel. Series
+that do not fit are counted as `+N more`, in the terminal as well as in exports.
+To see or export more of them, select the panel and press `f` for fullscreen,
+then `e`: the export holds only that panel, and its legend gets a third of the
+screen. Press `f` or `Esc` to return to the dashboard.
+
 ## Record Changed Frames
 
 Press `Ctrl+E` to start recording. Press `Ctrl+E` again, or quit with `q`, to finalize the bundle.

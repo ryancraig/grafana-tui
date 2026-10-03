@@ -278,7 +278,7 @@ tooltips.
 | JSON Field | Status | Notes |
 |---|---|---|
 | `options` | ❌ Not Implemented | Panel-specific options object is ignored |
-| `options.legend` | ❌ Not Implemented | Grafatui uses its own compact legend |
+| `options.legend` | ❌ Not Implemented | Grafatui uses its own compact legend: up to a third of the panel, then `+N more`. Fullscreen (`f`) gives it a third of the screen |
 | `options.legend.displayMode` | ❌ Not Implemented | Always shows inline legend |
 | `options.legend.placement` | ❌ Not Implemented | Always bottom |
 | `options.legend.calcs` | ❌ Not Implemented | No calculated legend values (min/max/avg) |

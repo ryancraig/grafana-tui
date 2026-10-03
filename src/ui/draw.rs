@@ -1046,6 +1046,44 @@ mod tests {
     }
 
     #[test]
+    fn legends_count_what_does_not_fit_and_show_everything_fullscreen() {
+        let mut app = test_app();
+        let mut panel = panel_with_data("Allocations running per client");
+        let points = panel.series[0].points.clone();
+        panel.series = (1..=10)
+            .map(|index| SeriesView {
+                name: format!("nomad-client-{index}"),
+                value: Some(index as f64),
+                points: points.clone(),
+                visible: true,
+            })
+            .collect();
+        app.panels = vec![panel];
+        app.apply_layout(crate::dashboard::DashboardLayout::flat(1));
+        app.view_end_ts = 1_700_000_000;
+        let mut terminal = Terminal::new(TestBackend::new(100, 24)).unwrap();
+        let shown = |text: &str| {
+            (1..=10)
+                .filter(|index| text.contains(&format!("nomad-client-{index} (")))
+                .count()
+        };
+
+        // In the grid, the legend says how many entries it left out.
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+        let text = terminal_text(&terminal);
+        let left_out = 10 - shown(&text);
+        assert!(left_out > 0, "{text}");
+        assert!(text.contains(&format!("+{left_out} more")), "{text}");
+
+        // Fullscreen, there is room for all ten.
+        app.mode = AppMode::Fullscreen;
+        terminal.draw(|frame| draw_ui(frame, &mut app)).unwrap();
+        let text = terminal_text(&terminal);
+        assert_eq!(shown(&text), 10, "{text}");
+        assert!(!text.contains(" more"), "{text}");
+    }
+
+    #[test]
     fn narrow_panels_shorten_the_title_to_keep_the_notice() {
         let mut app = test_app();
         let mut panel = panel_with_data("Upstream connect failures / timeouts");
