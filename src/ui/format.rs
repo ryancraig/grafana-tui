@@ -30,6 +30,12 @@ impl DisplayFormat {
             .unwrap_or_else(|| self.no_value.clone().unwrap_or_else(|| "-".to_string()))
     }
 
+    /// What a panel shows when its queries returned nothing: Grafana's
+    /// `noValue`, or `No data`.
+    pub(crate) fn no_data_text(&self) -> &str {
+        self.no_value.as_deref().unwrap_or("No data")
+    }
+
     pub(crate) fn format_number(&self, value: f64) -> String {
         // Grafana's common units; unknown units keep the compact SI format.
         let decimals = self.decimals;
@@ -363,9 +369,11 @@ mod tests {
         };
         assert_eq!(rate.format_number(1234.56), "1k req/s");
         assert_eq!(rate.format_value(None), "n/a");
+        assert_eq!(rate.no_data_text(), "n/a");
 
         let default = DisplayFormat::default();
         assert_eq!(default.format_value(None), "-");
+        assert_eq!(default.no_data_text(), "No data");
     }
 
     #[test]

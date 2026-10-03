@@ -17,23 +17,22 @@
 use crate::app::{AppState, PanelState};
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Gauge},
+    widgets::{Block, Borders, Gauge, Paragraph},
 };
 
 pub(super) fn render_gauge(frame: &mut Frame, area: Rect, p: &PanelState, app: &AppState) {
     let theme = &app.theme;
 
     // Find the latest value from the first visible series
-    let (value, name) = p
-        .series
-        .iter()
-        .filter(|s| s.visible)
-        .find_map(|s| {
-            s.value
-                .filter(|v| v.is_finite())
-                .map(|v| (v, s.name.clone()))
-        })
-        .unwrap_or((0.0, "No data".to_string()));
+    let Some((value, name)) = p.series.iter().filter(|s| s.visible).find_map(|s| {
+        s.value
+            .filter(|v| v.is_finite())
+            .map(|v| (v, s.name.as_str()))
+    }) else {
+        let para = Paragraph::new(p.display.no_data_text()).style(Style::default().fg(theme.text));
+        frame.render_widget(para, area);
+        return;
+    };
 
     let min = p.min.unwrap_or(0.0);
     let max = p

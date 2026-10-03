@@ -245,7 +245,7 @@ major gaps.
 | `fieldConfig.defaults.decimals` | ✅ Supported | Controls numeric precision in panel values, graph axes, legends, and exports |
 | `fieldConfig.defaults.color` | ❌ Not Implemented | Uses theme palette instead |
 | `fieldConfig.defaults.mappings` | ❌ Not Implemented | Value mappings not supported; import diagnostics warn when mappings are ignored |
-| `fieldConfig.defaults.noValue` | 🔶 Partial | Used for null Stat/Table values and exports; empty panels still show Grafatui's `No data` state |
+| `fieldConfig.defaults.noValue` | ✅ Supported | Shown for null values and in place of `No data` when a panel's queries return nothing, in the TUI and exports |
 | `fieldConfig.defaults.displayName` | ❌ Not Implemented | |
 | `fieldConfig.defaults.custom` | 🔶 Partial | Used for graph draw style, fill/points, axis placement, stacking metadata, threshold style, and axis grid visibility |
 | `fieldConfig.defaults.custom.lineWidth` | ❌ Not Implemented | TUI limitation |

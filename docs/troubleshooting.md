@@ -73,7 +73,13 @@ A panel keeps showing data when a later fetch has problems, and marks its title:
 | `⚠ warning` | Prometheus returned the data with warnings, such as partial results |
 
 Select the panel to see the error or warning in the footer. A panel that has
-never loaded data shows the full error instead. Prometheus rejects a query with
+never loaded data shows the full error instead. A long title is shortened so
+the marker stays in view.
+
+Prometheus 3 also returns informational notices, such as `metric might not be a
+counter` for `rate()` over a counter whose name does not end in `_total`. The
+data is fine, so these get no marker: select the panel to see them in the
+footer as `info:`. Prometheus rejects a query with
 a 4xx status the same way every time, so only connection failures and 5xx or
 429 responses are retried.
 

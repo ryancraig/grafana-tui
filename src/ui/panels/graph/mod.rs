@@ -196,6 +196,12 @@ pub(super) fn render_graph_panel(
     } else {
         Vec::new()
     };
+    // Hidden series still have points, so their legend stays to show them.
+    if annotation_events.is_empty() && p.series.iter().all(|s| s.points.is_empty()) {
+        let para = Paragraph::new(p.display.no_data_text()).style(Style::default().fg(theme.text));
+        frame.render_widget(para, area);
+        return None;
+    }
     let strong_data_mask_mode = strong_data_mask_mode(&annotation_events);
 
     // If inspecting, find values at cursor

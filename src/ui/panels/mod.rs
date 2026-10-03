@@ -21,6 +21,7 @@ mod heatmap;
 mod stat;
 mod table;
 
+use super::tabs::truncate_title;
 use crate::app::{AppState, PanelState, PanelType};
 use ratatui::{
     prelude::*,
@@ -58,6 +59,33 @@ pub(crate) fn data_notice(p: &PanelState) -> Option<(&'static str, NoticeLevel)>
     } else {
         None
     }
+}
+
+/// Title columns kept before a notice shrinks to its icon.
+const MIN_TITLE_COLUMNS: usize = 6;
+
+/// The notice icon alone, for panels too narrow for the whole notice.
+const NOTICE_ICON: &str = "⚠";
+
+/// Fits a panel title and its notice in `columns`, with a space between
+/// them. The title is cut short first, then the notice shrinks to its icon,
+/// so the notice stays in view in narrow panels.
+pub(crate) fn fit_panel_title(
+    title: &str,
+    notice: Option<&'static str>,
+    columns: usize,
+) -> (String, Option<&'static str>) {
+    let to_u16 = |columns: usize| u16::try_from(columns).unwrap_or(u16::MAX);
+    if let Some(notice) = notice {
+        let title_width = Span::raw(title).width();
+        for badge in [notice, NOTICE_ICON] {
+            let room = columns.saturating_sub(Span::raw(badge).width() + 1);
+            if room >= title_width.min(MIN_TITLE_COLUMNS) {
+                return (truncate_title(title, to_u16(room)), Some(badge));
+            }
+        }
+    }
+    (truncate_title(title, to_u16(columns)), None)
 }
 
 /// Renders a single panel.
@@ -118,17 +146,20 @@ pub(crate) fn render_panel(
     }
 
     // Render the outer block (Panel container)
-    let mut title = vec![Span::styled(
-        p.title.clone(),
-        Style::default().fg(theme.title),
-    )];
-    if let Some((notice, level)) = data_notice(p) {
+    let notice = data_notice(p);
+    let (title_text, badge) = fit_panel_title(
+        &p.title,
+        notice.map(|(text, _)| text),
+        usize::from(area.width.saturating_sub(2)),
+    );
+    let mut title = vec![Span::styled(title_text, Style::default().fg(theme.title))];
+    if let (Some(badge), Some((_, level))) = (badge, notice) {
         let color = match level {
             NoticeLevel::Error => theme.error,
             NoticeLevel::Warning => theme.warning,
         };
         title.push(Span::styled(
-            format!(" {notice}"),
+            format!(" {badge}"),
             Style::default().fg(color),
         ));
     }
@@ -174,5 +205,41 @@ pub(crate) fn render_panel(
             render_heatmap(frame, inner_area, p, app);
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fit_panel_title;
+
+    #[test]
+    fn titles_shorten_before_the_notice_does() {
+        let title = "Upstream connect failures";
+        let notice = Some("⚠ warning");
+
+        assert_eq!(
+            fit_panel_title(title, notice, 40),
+            (title.to_string(), notice)
+        );
+        // 20 columns leave 10 for the title beside " ⚠ warning".
+        assert_eq!(
+            fit_panel_title(title, notice, 20),
+            ("Upstream …".to_string(), notice)
+        );
+        // Too narrow for 6 title columns: the notice shrinks to its icon.
+        assert_eq!(
+            fit_panel_title(title, notice, 12),
+            ("Upstream …".to_string(), Some("⚠"))
+        );
+        // Short titles keep the whole notice for as long as they fit.
+        assert_eq!(
+            fit_panel_title("CPU", notice, 14),
+            ("CPU".to_string(), notice)
+        );
+        assert_eq!(
+            fit_panel_title(title, None, 9),
+            ("Upstream…".to_string(), None)
+        );
+        assert_eq!(fit_panel_title(title, notice, 0), (String::new(), None));
     }
 }
