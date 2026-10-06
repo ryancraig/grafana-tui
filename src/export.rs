@@ -1466,23 +1466,6 @@ fn render_sparkline(series: &SeriesView, rect: PlotRect, color: &str, out: &mut 
     .unwrap();
 }
 
-/// A graph legend laid out in rows.
-struct LegendLayout {
-    entries: Vec<LegendEntry>,
-    /// Where "+N more" starts on the last row, and the text, when some
-    /// entries did not fit.
-    more: Option<(f64, String)>,
-    rows: usize,
-}
-
-/// One legend label, with its series index and its place in the legend.
-struct LegendEntry {
-    index: usize,
-    label: String,
-    x: f64,
-    row: usize,
-}
-
 /// The legend's labels, as series index and text: each visible series with
 /// its value at the cursor, or its latest value.
 fn legend_items(app: &AppState, panel: &PanelState) -> Vec<(usize, String)> {
@@ -1504,62 +1487,25 @@ fn legend_items(app: &AppState, panel: &PanelState) -> Vec<(usize, String)> {
         .collect()
 }
 
-/// Lays legend entries out in rows of `width` pixels, shortening any label
-/// wider than a row. Past `max_rows`, the last row ends with "+N more".
-fn layout_legend(items: Vec<(usize, String)>, width: f64, max_rows: usize) -> LegendLayout {
-    let entry_width = |label: &str| LEGEND_SWATCH + text_width(label, SMALL_FONT_SIZE);
-    let mut entries: Vec<LegendEntry> = Vec::new();
-    let (mut x, mut row) = (0.0, 0);
-    for (index, label) in items {
-        let label = fit_text(&label, width - LEGEND_SWATCH, SMALL_FONT_SIZE).0;
-        let label_width = entry_width(&label);
-        if x > 0.0 && x + label_width > width {
-            x = 0.0;
-            row += 1;
-        }
-        entries.push(LegendEntry {
-            index,
-            label,
-            x,
-            row,
-        });
-        x += label_width + LEGEND_GAP;
-    }
-    let rows = entries.last().map_or(0, |entry| entry.row + 1);
-    if rows <= max_rows {
-        return LegendLayout {
-            entries,
-            more: None,
-            rows,
-        };
-    }
-
-    let total = entries.len();
-    let last_row = max_rows.max(1) - 1;
-    entries.retain(|entry| entry.row <= last_row);
-    loop {
-        let label = format!("+{} more", total - entries.len());
-        let x = match entries.last() {
-            Some(entry) if entry.row == last_row => {
-                entry.x + entry_width(&entry.label) + LEGEND_GAP
-            }
-            _ => 0.0,
-        };
-        if x == 0.0 || x + text_width(&label, SMALL_FONT_SIZE) <= width {
-            return LegendLayout {
-                entries,
-                more: Some((x, label)),
-                rows: last_row + 1,
-            };
-        }
-        entries.pop();
-    }
+/// Lays legend entries out in rows of `width` pixels.
+fn layout_legend(items: Vec<(usize, String)>, width: f64, max_rows: usize) -> ui::LegendLayout {
+    ui::layout_legend(
+        items,
+        width,
+        max_rows,
+        &ui::LegendMetrics {
+            swatch: LEGEND_SWATCH,
+            gap: LEGEND_GAP,
+            width: &|label| text_width(label, SMALL_FONT_SIZE),
+            shorten: &|label, width| fit_text(label, width, SMALL_FONT_SIZE).0,
+        },
+    )
 }
 
 fn render_legend(
     app: &AppState,
     panel: &PanelState,
-    legend: &LegendLayout,
+    legend: &ui::LegendLayout,
     left: f64,
     top: f64,
     out: &mut String,
@@ -1587,7 +1533,7 @@ fn render_legend(
         );
     }
     if let Some((x, more)) = &legend.more {
-        let muted = color_hex(app.grid_color(), "#6d6d6d");
+        let muted = color_hex(app.theme.text_muted, "#6d6d6d");
         write_text(
             out,
             left + x,
@@ -3231,6 +3177,35 @@ mod tests {
         let (value, size, _) = stat_value(&svg);
         assert_eq!(size, SMALL_FONT_SIZE, "{svg}");
         assert!(value.ends_with('…'), "{value}");
+    }
+
+    #[test]
+    fn test_fullscreen_exports_show_the_whole_legend() {
+        let mut app = test_app_with_panel_type(PanelType::Graph);
+        let points = app.panels[0].series[0].points.clone();
+        app.panels[0].series = (1..=10)
+            .map(|index| SeriesView {
+                name: format!("nomad-client-{index}"),
+                value: Some(index as f64),
+                points: points.clone(),
+                visible: true,
+            })
+            .collect();
+        let shown = |svg: &str| {
+            (1..=10)
+                .filter(|index| svg.contains(&format!(">nomad-client-{index} (")))
+                .count()
+        };
+
+        let svg = render_svg(&app, Rect::new(0, 0, 100, 40));
+        let left_out = 10 - shown(&svg);
+        assert!(left_out > 0, "{svg}");
+        assert!(svg.contains(&format!(">+{left_out} more<")), "{svg}");
+
+        app.mode = AppMode::Fullscreen;
+        let svg = render_svg(&app, Rect::new(0, 0, 100, 40));
+        assert_eq!(shown(&svg), 10, "{svg}");
+        assert!(!svg.contains(" more<"), "{svg}");
     }
 
     #[test]
