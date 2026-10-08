@@ -59,7 +59,7 @@ These features are shipped and available today:
 | Distribution | **Install script** | Checksum-verified `install.sh` into `~/.local/bin` or any directory on `PATH`; no third-party package managers |
 
 For a field-by-field breakdown of Grafana JSON compatibility, see the
-[compatibility matrix](docs/grafana-compatibility.md). Keep that document
+[compatibility matrix](docs/src/content/docs/grafana-compatibility.md). Keep that document
 refreshed alongside parity work so it stays aligned with the current release.
 
 ### External Annotation Iterations
@@ -379,9 +379,9 @@ Roadmap items are especially useful when PRs include:
 
 - A small Grafana JSON fixture that demonstrates the supported field.
 - Unit tests for parsing and display behavior.
-- A short note in `docs/grafana-compatibility.md` explaining the TUI mapping or
+- A short note in `docs/src/content/docs/grafana-compatibility.md` explaining the TUI mapping or
   limitation.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, and
-[docs/grafana-compatibility.md](docs/grafana-compatibility.md) for the full Grafana JSON
+[the compatibility matrix](docs/src/content/docs/grafana-compatibility.md) for the full Grafana JSON
 feature-parity breakdown.

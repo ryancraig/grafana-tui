@@ -1,0 +1,53 @@
+---
+title: grafana-tui
+description: Grafana-like Prometheus dashboards in your terminal.
+template: splash
+hero:
+  tagline: Grafana-like Prometheus dashboards in your terminal. Fast, keyboard-first, and at home over SSH.
+  actions:
+    - text: Get Started
+      link: /grafana-tui/installation/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/ryancraig/grafana-tui
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+grafana-tui is a terminal user interface for Prometheus dashboards. It is designed for fast inspection, SSH sessions, local debugging, and environments where opening a browser-based Grafana instance is inconvenient.
+
+grafana-tui reads Prometheus directly and can import Grafana dashboard JSON files. It renders supported panels as terminal charts, tables, gauges, stats, and heatmaps while keeping the workflow keyboard-first.
+
+<CardGrid>
+  <Card title="Grafana dashboards" icon="document">
+    Import Classic JSON and V2 resource JSON or YAML, with rows, tabs, auto-grid,
+    repeats, and conditional rendering. See [Grafana Dashboard Import](/grafana-tui/grafana-dashboard-import/).
+  </Card>
+  <Card title="Secured backends" icon="approve-check">
+    Bearer and basic auth, custom headers, a corporate CA, and mTLS client
+    certificates. See [Configuration](/grafana-tui/configuration/).
+  </Card>
+  <Card title="Keyboard first" icon="seti:shell">
+    Row, tab, and panel search, fullscreen panels, zoom and pan, value
+    inspection, and a live theme picker. See [Keyboard and Mouse](/grafana-tui/keyboard-and-mouse/).
+  </Card>
+  <Card title="Export and annotate" icon="pencil">
+    SVG and PNG snapshots, changed-frame recordings, and read-only JSONL
+    annotations. See [Exporting and Recording](/grafana-tui/exporting-and-recording/).
+  </Card>
+</CardGrid>
+
+## When grafana-tui fits
+
+Use grafana-tui when you want:
+
+- A lightweight Prometheus dashboard in your terminal.
+- A familiar way to inspect exported Grafana dashboards.
+- Fast startup and low resource usage.
+- A dashboard that works well over SSH.
+- SVG or PNG snapshots of the current TUI view.
+
+grafana-tui is not a Grafana server replacement. It does not manage users, alerts, annotations, dashboard editing, plugins, or browser-only visualizations. The [Grafana compatibility matrix](/grafana-tui/grafana-compatibility/) lists what is supported.

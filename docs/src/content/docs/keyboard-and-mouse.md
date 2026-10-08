@@ -1,4 +1,7 @@
-# Keyboard and Mouse
+---
+title: Keyboard and Mouse
+description: Keyboard shortcuts and mouse interactions.
+---
 
 grafana-tui is designed for keyboard-first dashboard inspection.
 
@@ -14,7 +17,7 @@ grafana-tui is designed for keyboard-first dashboard inspection.
 | `Up` / `Down` or `k` / `j` | Select previous or next visible row or panel |
 | `Enter` / `Space` | Toggle the selected row, or enter the selected tab bar's active tab |
 | `Left` / `Right` | Collapse / expand the selected row, or switch tabs on the selected tab bar |
-| `Tab` / `Shift+Tab` | Show the next / previous dashboard, with [several dashboards](grafana-dashboard-import.md#several-dashboards) |
+| `Tab` / `Shift+Tab` | Show the next / previous dashboard, with [several dashboards](/grafana-tui/grafana-dashboard-import/#several-dashboards) |
 | `PgUp` / `PgDn` | Scroll vertically, or select panels in fullscreen |
 | `Home` / `End` | Jump to top or bottom |
 | `y` | Toggle Y-axis mode |
@@ -67,4 +70,4 @@ restores the theme the picker opened with, which is marked `•`. Mouse input is
 ignored while the picker is open.
 
 The choice lasts for the current session. To keep it, set `theme` in the
-[configuration file](configuration.md#themes).
+[configuration file](/grafana-tui/configuration/#themes).

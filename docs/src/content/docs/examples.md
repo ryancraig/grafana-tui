@@ -1,4 +1,7 @@
-# Examples
+---
+title: Examples
+description: Example dashboards and demo environments shipped with the repository.
+---
 
 The repository includes example Grafana dashboards and a local demo environment.
 Every example dashboard is a Grafana 13 V2 resource. The core examples were

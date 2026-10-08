@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-Before filing, please check the [user guide](https://ryancraig.github.io/grafana-tui/), especially [Troubleshooting](https://ryancraig.github.io/grafana-tui/troubleshooting.html) and the [Grafana compatibility matrix](https://ryancraig.github.io/grafana-tui/grafana-compatibility.html).
+Before filing, please check the [user guide](https://ryancraig.github.io/grafana-tui/), especially [Troubleshooting](https://ryancraig.github.io/grafana-tui/troubleshooting/) and the [Grafana compatibility matrix](https://ryancraig.github.io/grafana-tui/grafana-compatibility/).
 
 **Describe the bug**
 A clear and concise description of what the bug is.

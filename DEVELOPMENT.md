@@ -78,13 +78,13 @@ grafana-tui/
 │           ├── heatmap.rs       # Heatmap renderer
 │           ├── stat.rs          # Stat renderer
 │           └── table.rs         # Table renderer
-├── docs/                        # mdBook user guide source
-│   ├── SUMMARY.md               # mdBook table of contents
-│   └── grafana-compatibility.md # Grafana JSON compatibility matrix
+├── docs/                        # User guide: Astro Starlight site, built with bun
+│   ├── astro.config.mjs         # Site base, sidebar, and edit links
+│   └── src/content/docs/        # Guide pages, including grafana-compatibility.md
 ├── examples/                    # Example dashboards and local demo stack
 │   ├── dashboards/              # Grafana dashboard JSON fixtures
 │   └── demo/                    # Docker Compose Prometheus/node-exporter/vLLM demo
-├── book.toml                    # mdBook configuration
+├── Makefile                     # Docs site targets (docs-dev, docs-build, ...)
 └── Cargo.toml                   # Crate metadata and dependencies
 ```
 
@@ -103,6 +103,30 @@ cargo test test_calculate_y_bounds
 # Build optimized release
 cargo build --release
 ```
+
+## Documentation Site
+
+The user guide in `docs/` is an [Astro](https://astro.build/) site using the
+[Starlight](https://starlight.astro.build/) theme. Pages are Markdown files in
+`docs/src/content/docs/`, and the sidebar is set in `docs/astro.config.mjs`.
+Link between pages with the site base, for example
+`[Configuration](/grafana-tui/configuration/)`.
+
+It needs [bun](https://bun.sh/) 1.3.9 or newer. From the repository root:
+
+```bash
+# Serve with live reload at http://localhost:4321/grafana-tui/
+make docs-dev
+
+# Build the static site into docs/dist, as CI does
+make docs-build
+
+# Serve the built site to check a production build
+make docs-preview
+```
+
+The `Docs` workflow builds the site for pull requests that touch `docs/`, and
+publishes it to <https://ryancraig.github.io/grafana-tui/> from `main`.
 
 ## Code Style
 

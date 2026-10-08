@@ -1,4 +1,7 @@
-# Grafana Dashboard Import
+---
+title: Grafana Dashboard Import
+description: Import Grafana Classic and V2 dashboards from JSON or YAML.
+---
 
 grafana-tui imports Grafana dashboards exported as JSON or YAML and renders their
 supported panels in the terminal.
@@ -336,8 +339,8 @@ grafana-tui expands the following Grafana-style variables:
 
 `$__interval` is the query's step, which scales with the time range and honors
 panel `maxDataPoints` and `interval` and target `interval`. See
-[query resolution](configuration.md#query-resolution).
+[query resolution](/grafana-tui/configuration/#query-resolution).
 
 ## Compatibility Details
 
-See the [Grafana compatibility matrix](grafana-compatibility.md) for field-by-field support details.
+See the [Grafana compatibility matrix](/grafana-tui/grafana-compatibility/) for field-by-field support details.

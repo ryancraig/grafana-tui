@@ -1,4 +1,7 @@
-# Grafana Dashboard JSON Compatibility
+---
+title: Grafana Dashboard JSON Compatibility
+description: Field-by-field support for Grafana dashboard JSON.
+---
 
 This document provides a comprehensive feature-parity table between the
 [Grafana dashboard JSON models](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/view-dashboard-json-model/)
@@ -21,7 +24,7 @@ and what grafana-tui currently supports.
 grafana-tui imports the non-resource Classic JSON model and Grafana 13's V2
 Resource model, as JSON or YAML. Both share one importer, so the field tables
 after this section apply to V2 panels, queries, and variables too. See the
-[dashboard import guide](grafana-dashboard-import.md) for export steps.
+[dashboard import guide](/grafana-tui/grafana-dashboard-import/) for export steps.
 
 | Model | Status | Notes |
 |---|---|---|
@@ -39,16 +42,16 @@ after this section apply to V2 panels, queries, and variables too. See the
 | Grafana 13 **Export as code** and API output | ✅ Supported | Absent or `null` lists and objects (`links`, `transformations`, `options`, `overrides`, `variables`, …) are treated as empty, as Grafana's API serializes them |
 | **Share dashboard with another instance** exports | ✅ Supported | Queries without a `datasource` use the configured Prometheus; cleared query variable selections resolve dynamically |
 | `spec.layout.kind: GridLayout` | ✅ Supported | `GridLayoutItem` coordinates map to grafana-tui's fixed 24-column grid |
-| `spec.layout.kind: AutoGridLayout` | ✅ Supported | Panels flow row-major into equal-width columns that reflow with the terminal width; see [auto grid sizing](grafana-dashboard-import.md#auto-grid-layouts) |
+| `spec.layout.kind: AutoGridLayout` | ✅ Supported | Panels flow row-major into equal-width columns that reflow with the terminal width; see [auto grid sizing](/grafana-tui/grafana-dashboard-import/#auto-grid-layouts) |
 | `AutoGridLayout` `maxColumnCount`, `columnWidthMode`/`columnWidth`, `rowHeightMode`/`rowHeight` | ✅ Supported | Grafana's named and custom pixel sizes are converted to terminal cells and grid rows |
 | `AutoGridLayout` `fillScreen`, `fitContent`, min/max height modes | ⛔ Not Applicable | Accepted and ignored |
 | `spec.layout.kind: RowsLayout` | ✅ Supported | Rows nest any layout and preserve titles, collapsed state, and hidden-header transparency |
 | `RowsLayoutRow.spec.fillScreen` | ⛔ Not Applicable | Accepted and ignored; terminal rows size to their content |
 | `spec.layout.kind: TabsLayout` | ✅ Supported | Tabs nest any layout and show one active tab per group |
-| `repeat` on grid items, auto grid items, rows, and tabs | ✅ Supported | Expanded once per selected value of the variable, with each copy's title and queries using its value; see [repeats](grafana-dashboard-import.md#repeats) |
+| `repeat` on grid items, auto grid items, rows, and tabs | ✅ Supported | Expanded once per selected value of the variable, with each copy's title and queries using its value; see [repeats](/grafana-tui/grafana-dashboard-import/#repeats) |
 | `GridLayoutItem` `repeat.direction` and `repeat.maxPerRow` | ✅ Supported | Horizontal copies share the full grid width, up to `maxPerRow` (default 4) per row; vertical copies stack; panels below move down |
-| `conditionalRendering` on rows, tabs, and auto grid items | ✅ Supported | Variable, data, and time range conditions show or hide items as variables, data, and the range change; see [conditional rendering](grafana-dashboard-import.md#conditional-rendering) |
-| Row and tab `variables` | ✅ Supported | Apply to the row or tab and everything inside it, shadowing dashboard variables; query variables resolve per row or tab copy; see [row and tab variables](grafana-dashboard-import.md#row-and-tab-variables) |
+| `conditionalRendering` on rows, tabs, and auto grid items | ✅ Supported | Variable, data, and time range conditions show or hide items as variables, data, and the range change; see [conditional rendering](/grafana-tui/grafana-dashboard-import/#conditional-rendering) |
+| Row and tab `variables` | ✅ Supported | Apply to the row or tab and everything inside it, shadowing dashboard variables; query variables resolve per row or tab copy; see [row and tab variables](/grafana-tui/grafana-dashboard-import/#row-and-tab-variables) |
 | Top-level `spec.variables` | 🔶 Partial | Query, custom, constant, text, interval, datasource, group-by, and switch variables map to grafana-tui variables; ad hoc filters emit diagnostics |
 | `spec.timeSettings.autoRefresh` | ✅ Supported | Used as the dashboard refresh interval |
 | `data.spec.queryOptions` `interval`, `maxDataPoints` | ✅ Supported | As for Classic panel `interval` and `maxDataPoints`; a query's `interval` sets its min step |
@@ -147,7 +150,7 @@ dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
 | `id` | ❌ Not Implemented | Not used |
 | `description` | ❌ Not Implemented | Not displayed |
 | `timeFrom` / `timeShift` / `hideTimeOverride` | ❌ Not Implemented | Ignored without a diagnostic; panels use the dashboard range |
-| `interval` | ✅ Supported | Panel min interval, including `>` prefixes and variables; invalid values emit a diagnostic. See [query resolution](configuration.md#query-resolution) |
+| `interval` | ✅ Supported | Panel min interval, including `>` prefixes and variables; invalid values emit a diagnostic. See [query resolution](/grafana-tui/configuration/#query-resolution) |
 | `maxDataPoints` | ✅ Supported | Sets how many steps a range query divides the time range into; defaults to 1000 |
 | `transparent` | ⛔ Not Applicable | TUI panels always have borders |
 | `links` | ⛔ Not Applicable | No browser navigation |

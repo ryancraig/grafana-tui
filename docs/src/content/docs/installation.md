@@ -1,4 +1,7 @@
-# Installation
+---
+title: Installation
+description: Install grafana-tui into ~/.local/bin or another directory on your PATH.
+---
 
 ## Installer Script
 

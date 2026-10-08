@@ -1,4 +1,7 @@
-# Troubleshooting
+---
+title: Troubleshooting
+description: Diagnose connection, TLS, variable, and rendering problems.
+---
 
 ## Prometheus Connection Refused
 
@@ -23,7 +26,7 @@ When an `https://` connection fails during TLS, the title bar names the cause.
 The panel error repeats it, with what to check and the underlying error.
 grafana-tui retries with the same growing delay as for an unreachable server, so
 it recovers once the certificates are fixed. Settings are described in
-[Connecting to an mTLS Prometheus](configuration.md#connecting-to-an-mtls-prometheus).
+[Connecting to an mTLS Prometheus](/grafana-tui/configuration/#connecting-to-an-mtls-prometheus).
 
 ### `TLS: unknown issuer`
 
@@ -113,7 +116,7 @@ Override variables explicitly with `--var`:
 grafana-tui --grafana-json ./dashboard.json --var instance=localhost:9090
 ```
 
-If a Grafana dashboard uses multi-select formatting modifiers such as `${var:csv}` or `${var:regex}`, check the [compatibility matrix](grafana-compatibility.md). Not every Grafana interpolation mode is implemented.
+If a Grafana dashboard uses multi-select formatting modifiers such as `${var:csv}` or `${var:regex}`, check the [compatibility matrix](/grafana-tui/grafana-compatibility/). Not every Grafana interpolation mode is implemented.
 
 ## Demo Port Conflict
 

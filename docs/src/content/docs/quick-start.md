@@ -1,4 +1,7 @@
-# Quick Start
+---
+title: Quick Start
+description: Run grafana-tui against Prometheus and open your first dashboard.
+---
 
 ## Connect to Prometheus
 
@@ -28,7 +31,7 @@ Grafana 13 exports V2 resources as JSON or YAML, and both import directly.
 Exports reference library panels by uid only, so enable **Share dashboard with
 another instance** when exporting a dashboard that uses them. V1 Resource files
 are unsupported.
-See [Grafana Dashboard Import](grafana-dashboard-import.md) for the full format
+See [Grafana Dashboard Import](/grafana-tui/grafana-dashboard-import/) for the full format
 requirements.
 
 Override dashboard variables with repeated `--var` options; repeating a name

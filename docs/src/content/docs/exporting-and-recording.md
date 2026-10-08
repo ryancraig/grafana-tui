@@ -1,4 +1,7 @@
-# Exporting and Recording
+---
+title: Exporting and Recording
+description: Export the dashboard as SVG or PNG and record changed frames.
+---
 
 grafana-tui can export the current dashboard view as SVG, PNG, or both. It can also record changed dashboard states into a timestamped frame bundle.
 
