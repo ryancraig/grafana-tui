@@ -131,7 +131,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!(
-            "grafatui-provider-{name}-{}-{suffix}.jsonl",
+            "grafana-tui-provider-{name}-{}-{suffix}.jsonl",
             std::process::id()
         ))
     }
@@ -160,7 +160,7 @@ mod tests {
     async fn builds_command_provider_that_identifies_spawn_failure() {
         let missing_program = std::env::temp_dir()
             .join(format!(
-                "grafatui-missing-provider-factory-{}",
+                "grafana-tui-missing-provider-factory-{}",
                 std::process::id()
             ))
             .to_string_lossy()

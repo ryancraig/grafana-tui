@@ -3,15 +3,15 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Runs grafatui against a private config file so the user's own config never leaks in.
+/// Runs grafana-tui against a private config file so the user's own config never leaks in.
 fn run_with_config(name: &str, config: &str, args: &[&str]) -> Output {
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let path: PathBuf = std::env::temp_dir().join(format!("grafatui-{name}-{stamp}.toml"));
+    let path: PathBuf = std::env::temp_dir().join(format!("grafana-tui-{name}-{stamp}.toml"));
     fs::write(&path, config).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .arg("--config")
         .arg(&path)
         .args(args)

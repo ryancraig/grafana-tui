@@ -24,7 +24,7 @@ done
 printf '%s\n' "${url}" >> "${TEST_DOWNLOAD_LOG}"
 
 case "${url}" in
-  */grafatui-checksums.txt)
+  */grafana-tui-checksums.txt)
     if [ "${TEST_CHECKSUM_MODE}" = 'missing' ]; then
       printf '  HTTP/1.1 404 Not Found\n' >&2
       exit 8

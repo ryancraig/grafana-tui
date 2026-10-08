@@ -31,7 +31,7 @@ done
 printf '%s\n' "${url}" >> "${TEST_DOWNLOAD_LOG}"
 
 case "${url}" in
-  */grafatui-checksums.txt)
+  */grafana-tui-checksums.txt)
     if [ "${TEST_CHECKSUM_MODE}" = 'missing' ]; then
       [ -z "${write_out}" ] || printf '404'
       exit 22

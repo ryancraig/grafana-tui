@@ -45,7 +45,7 @@ jobs:
       
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
-          bin: grafatui
+          bin: grafana-tui
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ inputs.release_tag != '' && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
@@ -65,7 +65,7 @@ jobs:
           # Ensure target/release directory exists and copy binary there for packaging tools
           # This is needed because cargo-generate-rpm reads paths from Cargo.toml which points to target/release
           mkdir -p target/release
-          cp target/${{ matrix.target }}/release/grafatui target/release/grafatui
+          cp target/${{ matrix.target }}/release/grafana-tui target/release/grafana-tui
 
           # cargo-deb automatically uses target/release
           cargo deb --target ${{ matrix.target }}
@@ -127,10 +127,10 @@ jobs:
           set -euo pipefail
 
           base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
-          checksum_dir="$(mktemp -d "${RUNNER_TEMP}/grafatui-checksums.XXXXXX")"
+          checksum_dir="$(mktemp -d "${RUNNER_TEMP}/grafana-tui-checksums.XXXXXX")"
           cleanup() {
             case "${checksum_dir}" in
-              "${RUNNER_TEMP}"/grafatui-checksums.*)
+              "${RUNNER_TEMP}"/grafana-tui-checksums.*)
                 rm -rf "${checksum_dir}"
                 ;;
             esac
@@ -138,10 +138,10 @@ jobs:
           trap cleanup EXIT
 
           assets=(
-            grafatui-x86_64-apple-darwin.tar.gz
-            grafatui-aarch64-apple-darwin.tar.gz
-            grafatui-x86_64-unknown-linux-gnu.tar.gz
-            grafatui-aarch64-unknown-linux-gnu.tar.gz
+            grafana-tui-x86_64-apple-darwin.tar.gz
+            grafana-tui-aarch64-apple-darwin.tar.gz
+            grafana-tui-x86_64-unknown-linux-gnu.tar.gz
+            grafana-tui-aarch64-unknown-linux-gnu.tar.gz
           )
 
           for asset in "${assets[@]}"; do
@@ -152,11 +152,11 @@ jobs:
 
           (
             cd "${checksum_dir}"
-            sha256sum "${assets[@]}" > grafatui-checksums.txt
+            sha256sum "${assets[@]}" > grafana-tui-checksums.txt
           )
 
           gh release upload "${RELEASE_TAG}" \
-            "${checksum_dir}/grafatui-checksums.txt" \
+            "${checksum_dir}/grafana-tui-checksums.txt" \
             --repo "${GITHUB_REPOSITORY}" \
             --clobber
 
@@ -192,7 +192,7 @@ jobs:
       - name: Checkout Homebrew tap
         uses: actions/checkout@v4
         with:
-          repository: fedexist/homebrew-grafatui
+          repository: ryancraig/homebrew-grafana-tui
           token: ${{ secrets.COMMITTER_TOKEN }}
           path: homebrew-tap
           fetch-depth: 0
@@ -203,15 +203,15 @@ jobs:
           set -euo pipefail
 
           version="${RELEASE_TAG#v}"
-          base_url="https://github.com/fedexist/grafatui/releases/download/${RELEASE_TAG}"
-          formula_path="homebrew-tap/Formula/grafatui.rb"
+          base_url="https://github.com/ryancraig/grafana-tui/releases/download/${RELEASE_TAG}"
+          formula_path="homebrew-tap/Formula/grafana-tui.rb"
           tmpdir="$(mktemp -d)"
           trap 'rm -rf "${tmpdir}"' EXIT
 
-          mac_intel_asset="grafatui-x86_64-apple-darwin.tar.gz"
-          mac_arm_asset="grafatui-aarch64-apple-darwin.tar.gz"
-          linux_intel_asset="grafatui-x86_64-unknown-linux-gnu.tar.gz"
-          linux_arm_asset="grafatui-aarch64-unknown-linux-gnu.tar.gz"
+          mac_intel_asset="grafana-tui-x86_64-apple-darwin.tar.gz"
+          mac_arm_asset="grafana-tui-aarch64-apple-darwin.tar.gz"
+          linux_intel_asset="grafana-tui-x86_64-unknown-linux-gnu.tar.gz"
+          linux_arm_asset="grafana-tui-aarch64-unknown-linux-gnu.tar.gz"
 
           for asset in \
             "${mac_intel_asset}" \
@@ -278,12 +278,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          if git diff --quiet -- Formula/grafatui.rb; then
+          if git diff --quiet -- Formula/grafana-tui.rb; then
             exit 0
           fi
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/grafatui.rb
+          git add Formula/grafana-tui.rb
           git commit -m "brew: update formula to ${RELEASE_TAG}"
           git push origin HEAD:main

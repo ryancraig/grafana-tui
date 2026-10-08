@@ -305,7 +305,7 @@ fn import_panel(panel: model::Panel, out: &mut DashboardImport) -> Result<Option
         out.diagnostics.push(ImportDiagnostic::new(
             "ignored_field",
             path,
-            "`options.reduceOptions` is not supported yet; Grafatui will use default value selection",
+            "`options.reduceOptions` is not supported yet; grafana-tui will use default value selection",
         ));
     }
 

@@ -1,6 +1,6 @@
 # Keyboard and Mouse
 
-Grafatui is designed for keyboard-first dashboard inspection.
+grafana-tui is designed for keyboard-first dashboard inspection.
 
 ## Keyboard Controls
 

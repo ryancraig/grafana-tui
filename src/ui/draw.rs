@@ -564,7 +564,7 @@ mod tests {
         assert!(active_cell.modifier.contains(Modifier::BOLD));
         assert!(active_cell.modifier.contains(Modifier::UNDERLINED));
 
-        if let Ok(directory) = std::env::var("GRAFATUI_TABS_CAPTURE_DIR") {
+        if let Ok(directory) = std::env::var("GRAFANA_TUI_TABS_CAPTURE_DIR") {
             let directory = std::path::PathBuf::from(directory).join("tabs-switch");
             std::fs::create_dir_all(&directory).unwrap();
             capture_buffer(&terminal, &directory.join("initial-100x40.json"));
@@ -701,7 +701,7 @@ mod tests {
     fn draw_contract_capture(app: &mut AppState, width: u16, height: u16, name: &str) -> String {
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal.draw(|frame| draw_ui(frame, app)).unwrap();
-        if let Ok(root) = std::env::var("GRAFATUI_TABS_CAPTURE_DIR") {
+        if let Ok(root) = std::env::var("GRAFANA_TUI_TABS_CAPTURE_DIR") {
             let directory = std::path::PathBuf::from(root).join(name);
             std::fs::create_dir_all(&directory).unwrap();
             capture_buffer(

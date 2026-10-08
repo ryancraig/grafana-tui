@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-Before filing, please check the [user guide](https://fedexist.github.io/grafatui/), especially [Troubleshooting](https://fedexist.github.io/grafatui/troubleshooting.html) and the [Grafana compatibility matrix](https://fedexist.github.io/grafatui/grafana-compatibility.html).
+Before filing, please check the [user guide](https://ryancraig.github.io/grafana-tui/), especially [Troubleshooting](https://ryancraig.github.io/grafana-tui/troubleshooting.html) and the [Grafana compatibility matrix](https://ryancraig.github.io/grafana-tui/grafana-compatibility.html).
 
 **Describe the bug**
 A clear and concise description of what the bug is.
@@ -28,7 +28,7 @@ If applicable, add screenshots to help explain your problem.
 **Environment (please complete the following information):**
  - OS: [e.g. macOS, Linux]
  - Terminal: [e.g. iTerm2, Alacritty]
- - Grafatui Version: [e.g. 0.1.0]
+ - grafana-tui Version: [e.g. 0.1.0]
 
 **Additional context**
 Add any other context about the problem here.

@@ -47,7 +47,7 @@ mod cli;
 use annotations::{AnnotationCommandConfig, AnnotationSourceConfig};
 use cli::Args;
 
-/// Main entry point for the Grafatui application.
+/// Main entry point for the grafana-tui application.
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
                 clap_complete::generate(
                     shell,
                     &mut Args::command(),
-                    "grafatui",
+                    "grafana-tui",
                     &mut std::io::stdout(),
                 );
             }
@@ -175,7 +175,7 @@ async fn main() -> Result<()> {
         .export_dir
         .or(config.export_dir)
         .map(|p| config::expand_path(&p))
-        .unwrap_or_else(|| std::path::PathBuf::from("./grafatui-exports"));
+        .unwrap_or_else(|| std::path::PathBuf::from("./grafana-tui-exports"));
     let export_format = args
         .export_format
         .or(config.export_format)
@@ -205,7 +205,11 @@ async fn main() -> Result<()> {
     let (title, panels, skipped_panels) = match dashboard_paths.as_slice() {
         [] => {
             merge_user_vars(&mut variables, config.vars.clone(), &args.var);
-            ("grafatui".to_string(), app::default_queries(args.query), 0)
+            (
+                "grafana-tui".to_string(),
+                app::default_queries(args.query),
+                0,
+            )
         }
         [path] => {
             let d = grafana::load_grafana_dashboard(path)?;
@@ -322,7 +326,7 @@ async fn main() -> Result<()> {
     res.and(finalized)
 }
 
-/// Signals asking Grafatui to stop: SIGINT, and on Unix SIGTERM or SIGHUP (the
+/// Signals asking grafana-tui to stop: SIGINT, and on Unix SIGTERM or SIGHUP (the
 /// terminal closing).
 ///
 /// Handlers are installed when this is created, replacing the default action
@@ -883,7 +887,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!(
-            "grafatui-{name}-{}-{suffix}.toml",
+            "grafana-tui-{name}-{}-{suffix}.toml",
             std::process::id()
         ))
     }
@@ -1089,7 +1093,7 @@ mod tests {
                 }
             ]
         }"#;
-        let path = std::env::temp_dir().join("grafatui-validate-helper-test.json");
+        let path = std::env::temp_dir().join("grafana-tui-validate-helper-test.json");
         std::fs::write(&path, json).unwrap();
         let dashboard = grafana::load_grafana_dashboard(&path).unwrap();
         std::fs::remove_file(path).unwrap();

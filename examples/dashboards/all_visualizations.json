@@ -619,7 +619,7 @@
       "hideTimepicker": false,
       "fiscalYearStartMonth": 0
     },
-    "title": "Grafatui Test Dashboard - All Visualizations",
+    "title": "grafana-tui Test Dashboard - All Visualizations",
     "variables": [
       {
         "kind": "QueryVariable",

@@ -395,7 +395,7 @@ fn collect_variable_diagnostics(
                         "unsupported_variable_modifier",
                         path,
                         format!(
-                            "unsupported Grafana variable modifier `{token}`; Grafatui expands only unmodified variables"
+                            "unsupported Grafana variable modifier `{token}`; grafana-tui expands only unmodified variables"
                         ),
                     ),
                 );
@@ -2243,7 +2243,7 @@ mod tests {
         ))
         .unwrap();
 
-        assert_eq!(dashboard.title, "Grafatui native V2");
+        assert_eq!(dashboard.title, "grafana-tui native V2");
         assert_eq!(dashboard.refresh_rate_ms, Some(30_000));
         let titles: Vec<_> = dashboard.queries.iter().map(|q| q.title.as_str()).collect();
         assert_eq!(titles, ["Scrape duration", "Targets up"]);
@@ -3226,7 +3226,7 @@ mod tests {
             ]
         }
         "#;
-        let path = std::env::temp_dir().join("grafatui-axis-grid-test.json");
+        let path = std::env::temp_dir().join("grafana-tui-axis-grid-test.json");
         std::fs::write(&path, json).unwrap();
 
         let dashboard = load_grafana_dashboard(&path).unwrap();
@@ -3262,7 +3262,7 @@ mod tests {
             ]
         }
         "#;
-        let path = std::env::temp_dir().join("grafatui-display-format-test.json");
+        let path = std::env::temp_dir().join("grafana-tui-display-format-test.json");
         std::fs::write(&path, json).unwrap();
 
         let dashboard = load_grafana_dashboard(&path).unwrap();
@@ -3440,7 +3440,7 @@ mod tests {
             ]
         }
         "#;
-        let path = std::env::temp_dir().join("grafatui-instant-mode-test.json");
+        let path = std::env::temp_dir().join("grafana-tui-instant-mode-test.json");
         std::fs::write(&path, json).unwrap();
 
         let dashboard = load_grafana_dashboard(&path).unwrap();
@@ -3504,7 +3504,7 @@ mod tests {
             }
         }
         "#;
-        let path = std::env::temp_dir().join("grafatui-query-vars-test.json");
+        let path = std::env::temp_dir().join("grafana-tui-query-vars-test.json");
         std::fs::write(&path, json).unwrap();
 
         let dashboard = load_grafana_dashboard(&path).unwrap();
@@ -3536,7 +3536,7 @@ mod tests {
             ]
         }
         "#;
-        let path = std::env::temp_dir().join("grafatui-refresh-test.json");
+        let path = std::env::temp_dir().join("grafana-tui-refresh-test.json");
         std::fs::write(&path, json).unwrap();
 
         let dashboard = load_grafana_dashboard(&path).unwrap();
@@ -3642,7 +3642,7 @@ mod tests {
                 { "type": "text", "title": "Notes" }
             ]
         }"#;
-        let path = std::env::temp_dir().join("grafatui-skipped-panel-diagnostics.json");
+        let path = std::env::temp_dir().join("grafana-tui-skipped-panel-diagnostics.json");
         std::fs::write(&path, json).unwrap();
 
         let dashboard = load_grafana_dashboard(&path).unwrap();
@@ -3686,7 +3686,7 @@ mod tests {
                 }
             ]
         }"#;
-        let path = std::env::temp_dir().join("grafatui-ignored-fields-diagnostics.json");
+        let path = std::env::temp_dir().join("grafana-tui-ignored-fields-diagnostics.json");
         std::fs::write(&path, json).unwrap();
 
         let dashboard = load_grafana_dashboard(&path).unwrap();
@@ -3719,7 +3719,7 @@ mod tests {
                 }
             ]
         }"#;
-        let path = std::env::temp_dir().join("grafatui-hidden-targets-test.json");
+        let path = std::env::temp_dir().join("grafana-tui-hidden-targets-test.json");
         std::fs::write(&path, json).unwrap();
 
         let dashboard = load_grafana_dashboard(&path).unwrap();
@@ -3753,7 +3753,7 @@ mod tests {
                 }
             ]
         }"#;
-        let path = std::env::temp_dir().join("grafatui-nested-row-diagnostics.json");
+        let path = std::env::temp_dir().join("grafana-tui-nested-row-diagnostics.json");
         std::fs::write(&path, json).unwrap();
 
         let dashboard = load_grafana_dashboard(&path).unwrap();
@@ -3790,7 +3790,7 @@ mod tests {
                 }
             ]
         }"#;
-        let path = std::env::temp_dir().join("grafatui-variable-diagnostics.json");
+        let path = std::env::temp_dir().join("grafana-tui-variable-diagnostics.json");
         std::fs::write(&path, json).unwrap();
 
         let dashboard = load_grafana_dashboard(&path).unwrap();

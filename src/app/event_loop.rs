@@ -172,7 +172,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("grafatui-event-loop-{name}-{suffix}"))
+        std::env::temp_dir().join(format!("grafana-tui-event-loop-{name}-{suffix}"))
     }
 
     fn test_app(export: ExportOptions) -> AppState {

@@ -131,7 +131,7 @@ impl MinInterval {
 }
 
 /// Whether `reduceOptions` asks for something other than the last value,
-/// which Grafatui always shows. Grafana's default is `lastNotNull`, and
+/// which grafana-tui always shows. Grafana's default is `lastNotNull`, and
 /// Prometheus results have no nulls, so `last` and `lastNotNull` match it.
 pub(super) fn reduce_options_are_custom(options: &Value) -> bool {
     let all_values = options.get("values").and_then(Value::as_bool) == Some(true);
