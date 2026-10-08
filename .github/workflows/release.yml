@@ -1,0 +1,121 @@
+name: Release
+
+# Cut a release by pushing a version tag that matches Cargo.toml (see
+# RELEASE_PROCESS.md):
+#
+#   git tag vX.Y.Z && git push origin vX.Y.Z
+#
+# Every build job is read-only. Only `publish` can write, and it only creates
+# this tag's GitHub release, with the archives and the checksum manifest that
+# install.sh verifies.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Tag matches the Cargo.toml version
+        run: |
+          version="$(make -s version)"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match Cargo.toml version ${version}"
+            exit 1
+          fi
+
+  package:
+    name: package (${{ matrix.target }})
+    needs: verify
+    strategy:
+      matrix:
+        include:
+          # Ubuntu 22.04 links against glibc 2.35, so the Linux binaries also
+          # run on distributions older than the current runner image.
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04-arm
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --target ${{ matrix.target }}
+          rustup default stable
+      - run: make package TARGET=${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+
+  package-windows:
+    needs: verify
+    runs-on: windows-latest
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --target $env:TARGET
+          rustup default stable
+      - run: cargo build --release --locked --target $env:TARGET
+      - name: Zip the binary with the license files
+        run: |
+          $stage = New-Item -ItemType Directory -Path "$env:RUNNER_TEMP\stage"
+          Copy-Item "target\$env:TARGET\release\grafana-tui.exe", README.md, LICENSE, NOTICE $stage
+          New-Item -ItemType Directory -Path dist | Out-Null
+          Compress-Archive -Path "$stage\*" -DestinationPath "dist\grafana-tui-$env:TARGET.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-x86_64-pc-windows-msvc
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: [package, package-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - run: make checksums
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes

@@ -1,52 +1,119 @@
-# Release Automation Setup
+# Release Process
 
-This document explains the automated versioning and release process for grafana-tui.
+grafana-tui is released by pushing a version tag. There is no release bot:
+no workflow bumps versions, opens pull requests, or creates tags. The only
+workflow that can write to the repository is `release.yml`, and it only
+creates the GitHub release for the tag you pushed.
 
-## Overview
+GitHub Releases are the only distribution channel. grafana-tui is not
+published to crates.io or any third-party package manager. Users install the
+release archives with `install.sh`, or by hand into `~/.local/bin` or another
+directory on their `PATH`.
 
-This project uses **automated semantic versioning** based on [Conventional Commits](https://www.conventionalcommits.org/). The toolchain consists of:
+## Workflows
 
-- **Conventional Commits**: Standardized commit message format
-- **git-cliff**: Changelog generation
-- **release-plz**: Automated version bumping and release PR creation
-- **GitHub Actions**: CI/CD automation
+| Workflow | Runs on | Permissions | Does |
+|---|---|---|---|
+| `ci.yml` | Every push to `main`, every pull request | read | The quality gate below |
+| `docs-release.yml` | Pushes to `main` that touch `docs/` | Pages | Builds the user guide and deploys it to GitHub Pages |
+| `release.yml` | Pushing a `vX.Y.Z` tag | read; `publish` job only: write | Builds the archives and creates the GitHub release |
 
-## How It Works
+### The quality gate
 
-### 1. Developer Workflow
+`ci.yml` runs the same checks as `make check`, on Linux and macOS:
 
-When making changes:
+- `make fmt`, failing if it changes anything
+- `make lint`: clippy over every target, with warnings denied
+- `make test`
+- `make test-install`: the `install.sh` behavior tests
+- `make cover-check`: fails below 95% line coverage
+- `make vuln`: `cargo audit` against the RustSec advisory database
 
-1. Write code as usual
-2. Commit using Conventional Commits format:
+It also runs:
+
+- **`windows-build`:** `cargo build` and clippy on Windows.
+- **`release-shape`:** `make tidy` (fails if `Cargo.lock` is stale), then
+  `make package`. It checks that the archive holds a working `grafana-tui` at
+  its root, where `install.sh` expects it.
+- **`docs`:** `make docs-build`, so a broken page fails review instead of the
+  deploy.
+
+A pull request that fails the gate is not mergeable.
+
+## Cutting a Release
+
+1. Start from an up-to-date `main` whose CI run passed.
+2. Choose the version. grafana-tui follows [Semantic Versioning](https://semver.org/)
+   and is pre-1.0: a breaking change bumps the minor version, and anything else
+   bumps the patch version.
+3. Set `version` in `Cargo.toml`, then refresh `Cargo.lock`:
+
    ```bash
-   git commit -m "feat(zoom): add pan left/right functionality"
+   cargo update --workspace
    ```
-3. Open a PR and merge it directly into `main`
 
-### 2. Automated Release Process
+4. Regenerate the changelog. This needs
+   [git-cliff](https://git-cliff.org/) (`cargo install --locked git-cliff`):
 
-When commits are pushed to `main`:
+   ```bash
+   make changelog
+   ```
 
-1. **GitHub Action triggers** (`.github/workflows/release-plz.yml`)
-2. **release-plz release** checks whether the current version already has a git tag and GitHub release
-3. **release-plz release-pr** analyzes commits since the last version tag
-4. **Version bump determined**:
-   - `feat:` → MINOR bump (0.1.0 → 0.2.0)
-   - `fix:` → PATCH bump (0.1.0 → 0.1.1)
-   - `BREAKING CHANGE:` → MAJOR bump (0.1.0 → 1.0.0)
-5. **Release Pull Request created or updated** with:
-   - Updated `Cargo.toml` version
-   - Generated `CHANGELOG.md` entries
-6. **Maintainer reviews and merges** the Release PR when ready
-7. **GitHub release and git tag created** automatically
-8. **Release assets built** and uploaded automatically, with a SHA-256 checksum manifest
+   It prepends a section built from the conventional commits since the last
+   tag, through `cliff.toml`, and leaves earlier entries as they are. The
+   first release of the fork has no tag to start from, so pass the commit
+   that completed the 0.1.12 changelog: `make changelog SINCE=ee4c529`.
+   Review the new section and edit it by hand if needed.
+5. Commit, tag, and push:
 
-GitHub Releases are the only distribution channel. grafana-tui is not published to crates.io or any third-party package manager; users install the release archives with `install.sh` or by hand into `~/.local/bin` or another directory on their `PATH`.
+   ```bash
+   git commit -am "chore(release): prepare for v$(make -s version)"
+   git push origin main
+   git tag "v$(make -s version)"
+   git push origin "v$(make -s version)"
+   ```
+
+Pushing the tag starts `release.yml`:
+
+1. **`verify`:** fails unless the tag matches the `Cargo.toml` version.
+2. **`package`:** each archive is built natively by `make package`, on
+   read-only runners:
+   - `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`, on Ubuntu
+     22.04, so the binaries need only glibc 2.35
+   - `x86_64-apple-darwin` and `aarch64-apple-darwin`
+   - `x86_64-pc-windows-msvc`, as a `.zip`
+3. **`publish`:** the only job with write access. It runs `make checksums` to
+   write `grafana-tui-checksums.txt`, then `gh release create` with every
+   archive and the manifest, and GitHub-generated notes.
+
+Afterwards, confirm that the release lists five archives and
+`grafana-tui-checksums.txt`, and that `install.sh` installs it:
+
+```bash
+GRAFANA_TUI_VERSION="v$(make -s version)" bash install.sh
+```
+
+If a release job fails, fix the cause on `main`, then delete the tag and push
+it again:
+
+```bash
+git push --delete origin vX.Y.Z && git tag -d vX.Y.Z
+```
+
+## Building Release Archives Locally
+
+```bash
+make package                                  # host target, into ./dist
+make package TARGET=aarch64-unknown-linux-gnu # needs that target's toolchain
+make checksums                                # dist/grafana-tui-checksums.txt
+```
+
+Each tarball holds `grafana-tui`, `README.md`, `LICENSE` and `NOTICE` at its
+root.
 
 ## Commit Message Format
 
-### Structure
+The changelog is built from [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
 <type>(<scope>): <description>
@@ -56,173 +123,33 @@ GitHub Releases are the only distribution channel. grafana-tui is not published 
 [optional footer]
 ```
 
-### Types
+| Type | Use for | Changelog |
+|------|---------|-----------|
+| `feat` | New feature | Features |
+| `fix` | Bug fix | Bug Fixes |
+| `docs` | Documentation only | Documentation |
+| `perf` | Performance improvement | Performance |
+| `refactor` | Code refactoring | Refactor |
+| `style` | Code style/formatting | Styling |
+| `test` | Adding tests | Testing |
+| `chore`, `ci` | Maintenance | Miscellaneous Tasks |
 
-| Type | Description | Version Bump |
-|------|-------------|--------------|
-| `feat` | New feature | MINOR |
-| `fix` | Bug fix | PATCH |
-| `docs` | Documentation only | none |
-| `style` | Code style/formatting | none |
-| `refactor` | Code refactoring | none |
-| `perf` | Performance improvement | PATCH |
-| `test` | Adding tests | none |
-| `chore` | Maintenance | none |
-| `ci` | CI/CD changes | none |
+`chore(release): prepare for …` and `chore(deps…)` commits are left out.
 
-### Scopes (Optional)
+Mark breaking changes with `!` after the type, or a `BREAKING CHANGE:` footer:
 
-Recommended scopes for this project:
-- `app` - Core application logic
-- `ui` - User interface
-- `prom` - Prometheus integration
-- `grafana` - Grafana import features
-- `config` - Configuration handling
-- `zoom` - Zoom/pan functionality
-- `theme` - Theme system
-
-### Examples
-
-**Feature:**
-```bash
-git commit -m "feat(zoom): add keyboard shortcuts for time panning"
-```
-
-**Bug fix:**
-```bash
-git commit -m "fix(ui): correct color assignment for series"
-```
-
-**Documentation:**
-```bash
-git commit -m "docs(readme): update installation instructions"
-```
-
-**Breaking change:**
 ```bash
 git commit -m "refactor(app)!: change AppState constructor signature
 
 BREAKING CHANGE: AppState::new() now requires a Theme parameter"
 ```
 
-## Helper Tool: git-commitizen
+Recommended scopes: `app`, `ui`, `prom`, `grafana`, `config`, `zoom`, `theme`.
 
-To make writing conventional commits easier, install `git-commitizen`:
+## Repository Settings
 
-```bash
-cargo install git-commitizen
-```
-
-Then use instead of `git commit`:
-```bash
-git cz
-```
-
-This provides an interactive prompt that guides you through creating a properly formatted commit.
-
-## Configuration Files
-
-### `cliff.toml`
-Configures changelog generation format and commit parsing rules.
-
-### `release-plz.toml`
-Configures release-plz behavior:
-- Only runs on `main` branch
-- Uses git tags as the release source of truth
-- Uses git-cliff for changelog generation
-- Never publishes to a package registry (`publish = false`)
-
-### `.github/workflows/release-plz.yml`
-GitHub Actions workflow that:
-- Triggers on push to `main`
-- Can also be run manually with `workflow_dispatch`
-- Runs `release-plz release` to create a GitHub Release and tag when the Release PR lands
-- Runs `release-plz release-pr` to create or update the Release PR after normal changes land on `main`
-
-### `.github/workflows/release-assets.yml`
-GitHub Actions workflow that:
-- Triggers on GitHub release creation or manual dispatch
-- Builds and uploads a release archive for each supported target (`.tar.gz` for Linux and macOS, `.zip` for Windows)
-- Publishes `grafana-tui-checksums.txt` with SHA-256 hashes for the Unix archives, which `install.sh` requires
-
-## Manual Operations
-
-### Preview Changelog
-
-To see what the next changelog would look like:
-
-```bash
-# Install git-cliff
-cargo install git-cliff
-
-# Generate unreleased changes
-git cliff --unreleased
-```
-
-### Manual Version Bump
-
-If you need to manually bump the version:
-
-1. Edit `Cargo.toml`
-2. Edit `CHANGELOG.md`
-3. Commit with: `chore(release): prepare for vX.Y.Z`
-4. Create tag: `git tag vX.Y.Z`
-5. Push: `git push --tags`
-
-## Secrets Configuration
-
-For the GitHub Action to work, ensure the repository has:
-
-- `GITHUB_TOKEN` - Automatically provided by GitHub Actions
-
-No other secrets are needed.
-
-## First Release
-
-For the first release after setting this up:
-
-1. Ensure `Cargo.toml` has the desired starting version (currently `0.1.0`)
-2. Make a commit using conventional format
-3. Push to `main`
-4. release-plz will create a PR bumping from `0.1.0` to the next version
-
-## Troubleshooting
-
-### PR not created
-
-- Check GitHub Actions tab for errors
-- Ensure commits follow Conventional Commits format
-- Verify `GITHUB_TOKEN` has write permissions
-
-### Wrong version bump
-
-- Review commit messages for correct types
-- Use `git cliff --unreleased` to preview interpretation
-- Adjust commit message and force-push if needed
-
-### Changelog not updating
-
-- Check `cliff.toml` configuration
-- Verify `release-plz.toml` has correct paths
-- Ensure commits are not filtered by `commit_parsers`
-
-## Trigger Release Automation Manually
-
-If the automated Release PR was not created or updated, open the GitHub Actions tab and run the `Release` workflow manually. This runs the same `release-plz release` and `release-plz release-pr` jobs that run after pushes to `main`.
-
-## Solo Maintainer Checklist
-
-1. Merge normal feature and fix PRs directly into `main`.
-2. Wait for the `Release` workflow to create or update the `release-plz-*` Release PR.
-3. Review the generated version bump and `CHANGELOG.md` entries.
-4. Merge the Release PR when you want to publish.
-5. Confirm the GitHub release exists and its archives and `grafana-tui-checksums.txt` were uploaded.
-6. Confirm `install.sh` installs the new release into `~/.local/bin`.
-
-## Resources
-
-- [Conventional Commits Specification](https://www.conventionalcommits.org/)
-- [release-plz Quickstart](https://release-plz.dev/docs/github/quickstart/)
-- [release-plz Configuration](https://release-plz.dev/docs/config/)
-- [git-cliff Documentation](https://git-cliff.org/)
-- [Semantic Versioning](https://semver.org/)
+- **Actions → General → Workflow permissions:** read repository contents
+  (the default). Leave "Allow GitHub Actions to create and approve pull
+  requests" off; no workflow needs it.
+- **Pages → Source:** GitHub Actions.
+- **Secrets:** none. Every workflow uses its own short-lived `GITHUB_TOKEN`.
