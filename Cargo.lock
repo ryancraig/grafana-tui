@@ -1067,7 +1067,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "grafatui"
+name = "grafana-tui"
 version = "0.1.12"
 dependencies = [
  "anyhow",

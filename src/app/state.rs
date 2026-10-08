@@ -108,7 +108,7 @@ pub(crate) struct QueryResolution {
     pub(crate) target_min_intervals: Vec<Option<String>>,
 }
 
-/// Visualization types supported by Grafatui.
+/// Visualization types supported by grafana-tui.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum PanelType {
     Graph,
@@ -1108,7 +1108,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!(
-            "grafatui-app-{name}-{}-{suffix}.jsonl",
+            "grafana-tui-app-{name}-{}-{suffix}.jsonl",
             std::process::id()
         ))
     }

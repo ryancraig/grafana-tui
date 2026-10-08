@@ -2,8 +2,8 @@
 
 set -eu
 
-PROGRAM='grafatui'
-REPOSITORY='fedexist/grafatui'
+PROGRAM='grafana-tui'
+REPOSITORY='ryancraig/grafana-tui'
 tmp_dir=''
 staged_binary=''
 
@@ -91,7 +91,7 @@ cleanup() {
   fi
 
   case "${tmp_dir}" in
-    "${TMPDIR:-/tmp}"/grafatui-install.*)
+    "${TMPDIR:-/tmp}"/grafana-tui-install.*)
       if [ -d "${tmp_dir}" ] && [ ! -L "${tmp_dir}" ]; then
         rm -rf "${tmp_dir}"
       fi
@@ -127,23 +127,23 @@ case "$(uname -m)" in
     ;;
 esac
 
-if [ -n "${GRAFATUI_INSTALL_DIR:-}" ]; then
-  install_dir="${GRAFATUI_INSTALL_DIR}"
+if [ -n "${GRAFANA_TUI_INSTALL_DIR:-}" ]; then
+  install_dir="${GRAFANA_TUI_INSTALL_DIR}"
 elif [ -n "${HOME:-}" ]; then
   install_dir="${HOME}/.local/bin"
 else
-  fail 'HOME is not set; set GRAFATUI_INSTALL_DIR to choose an installation directory'
+  fail 'HOME is not set; set GRAFANA_TUI_INSTALL_DIR to choose an installation directory'
 fi
 
 asset="${PROGRAM}-${target_arch}-${target_os}.tar.gz"
-version="${GRAFATUI_VERSION:-latest}"
+version="${GRAFANA_TUI_VERSION:-latest}"
 
 if [ "${version}" = 'latest' ]; then
   release_path='latest/download'
 else
   case "${version}" in
     ''|*[!0-9A-Za-z._-]*)
-      fail "invalid GRAFATUI_VERSION: ${version}"
+      fail "invalid GRAFANA_TUI_VERSION: ${version}"
       ;;
   esac
   case "${version}" in
@@ -155,19 +155,19 @@ fi
 
 base_url="https://github.com/${REPOSITORY}/releases/${release_path}"
 archive_url="${base_url}/${asset}"
-checksums_url="${base_url}/grafatui-checksums.txt"
+checksums_url="${base_url}/grafana-tui-checksums.txt"
 
 if command -v curl >/dev/null 2>&1; then
   downloader='curl'
 elif command -v wget >/dev/null 2>&1; then
   downloader='wget'
 else
-  fail 'curl or wget is required to download grafatui'
+  fail 'curl or wget is required to download grafana-tui'
 fi
 
-tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/grafatui-install.XXXXXX")"
+tmp_dir="$(mktemp -d "${TMPDIR:-/tmp}/grafana-tui-install.XXXXXX")"
 archive="${tmp_dir}/${asset}"
-checksums="${tmp_dir}/grafatui-checksums.txt"
+checksums="${tmp_dir}/grafana-tui-checksums.txt"
 
 say "Downloading ${PROGRAM}..."
 download_status=0

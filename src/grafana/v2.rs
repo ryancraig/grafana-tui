@@ -638,7 +638,7 @@ fn parse_repeat(spec: &JsonObject, spec_path: &str) -> Result<Option<model::Repe
 
 /// Reads the `conditionalRendering` group of a row, tab, or auto grid item spec.
 ///
-/// Condition kinds Grafatui does not know are skipped with a diagnostic, which
+/// Condition kinds grafana-tui does not know are skipped with a diagnostic, which
 /// leaves them undecided, as Grafana treats conditions it cannot evaluate.
 fn parse_condition_group(
     spec: &JsonObject,

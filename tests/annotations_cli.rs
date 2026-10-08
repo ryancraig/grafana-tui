@@ -2,7 +2,7 @@ use std::process::Command;
 
 #[test]
 fn help_lists_annotations_file() {
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .arg("--help")
         .output()
         .unwrap();
@@ -14,11 +14,11 @@ fn help_lists_annotations_file() {
 #[test]
 fn validate_does_not_read_annotations_file() {
     let dashboard = std::env::temp_dir().join(format!(
-        "grafatui-annotations-validate-{}.json",
+        "grafana-tui-annotations-validate-{}.json",
         std::process::id()
     ));
     std::fs::write(&dashboard, r#"{"title":"empty","panels":[]}"#).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args([
             "--validate",
             "--grafana-json",

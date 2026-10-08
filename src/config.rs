@@ -67,18 +67,18 @@ impl Config {
     }
 
     fn get_config_path() -> Option<PathBuf> {
-        if let Some(base_dirs) = ProjectDirs::from("", "", "grafatui") {
+        if let Some(base_dirs) = ProjectDirs::from("", "", "grafana-tui") {
             let config_path = base_dirs.config_dir().join("config.toml");
             if config_path.exists() {
                 return Some(config_path);
             }
-            let config_path = base_dirs.config_dir().join("grafatui.toml");
+            let config_path = base_dirs.config_dir().join("grafana-tui.toml");
             if config_path.exists() {
                 return Some(config_path);
             }
         }
 
-        let cwd_path = PathBuf::from("./grafatui.toml");
+        let cwd_path = PathBuf::from("./grafana-tui.toml");
         if cwd_path.exists() {
             return Some(cwd_path.to_path_buf());
         }
@@ -183,8 +183,8 @@ mod tests {
 
             [tls]
             ca_cert = "~/certs/ca.pem"
-            client_cert = "/etc/grafatui/client.pem"
-            client_key = "/etc/grafatui/client.key"
+            client_cert = "/etc/grafana-tui/client.pem"
+            client_key = "/etc/grafana-tui/client.key"
             "#,
         )
         .unwrap();
@@ -192,11 +192,11 @@ mod tests {
         assert_eq!(config.tls.ca_cert, Some(PathBuf::from("~/certs/ca.pem")));
         assert_eq!(
             config.tls.client_cert,
-            Some(PathBuf::from("/etc/grafatui/client.pem"))
+            Some(PathBuf::from("/etc/grafana-tui/client.pem"))
         );
         assert_eq!(
             config.tls.client_key,
-            Some(PathBuf::from("/etc/grafatui/client.key"))
+            Some(PathBuf::from("/etc/grafana-tui/client.key"))
         );
         assert!(Config::default().tls.is_empty());
     }

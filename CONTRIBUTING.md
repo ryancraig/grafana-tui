@@ -1,4 +1,4 @@
-# Contributing to Grafatui
+# Contributing to grafana-tui
 
 First off, thanks for taking the time to contribute! ❤️
 
@@ -18,13 +18,13 @@ All types of contributions are encouraged and valued. See the [Table of Contents
 
 If you want to ask a question, we assume that you have read the available [Documentation](README.md).
 
-Before you ask a question, it is best to search for existing [Issues](https://github.com/fedexist/grafatui/issues) that might help you. In case you've found a suitable issue and still need clarification, you can write your question in this issue. It is also advisable to search the internet for answers first.
+Before you ask a question, it is best to search for existing [Issues](https://github.com/ryancraig/grafana-tui/issues) that might help you. In case you've found a suitable issue and still need clarification, you can write your question in this issue. It is also advisable to search the internet for answers first.
 
 ## I Want To Contribute
 
 ### Reporting Bugs
 
-This section guides you through submitting a bug report for Grafatui. Following these guidelines helps maintainers and the community understand your report, reproduce the behavior, and find related reports.
+This section guides you through submitting a bug report for grafana-tui. Following these guidelines helps maintainers and the community understand your report, reproduce the behavior, and find related reports.
 
 - **Use a clear and descriptive title** for the issue to identify the problem.
 - **Describe the exact steps which reproduce the problem** in as many details as possible.
@@ -35,7 +35,7 @@ This section guides you through submitting a bug report for Grafatui. Following 
 
 ### Suggesting Enhancements
 
-This section guides you through submitting an enhancement suggestion for Grafatui, including completely new features and minor improvements to existing functionality.
+This section guides you through submitting an enhancement suggestion for grafana-tui, including completely new features and minor improvements to existing functionality.
 
 - **Use a clear and descriptive title** for the issue to identify the suggestion.
 - **Provide a step-by-step description of the suggested enhancement** in as many details as possible.
@@ -44,10 +44,10 @@ This section guides you through submitting an enhancement suggestion for Grafatu
 
 ### Your First Code Contribution
 
-Unsure where to begin contributing to Grafatui? You can start by looking through these `good-first-issue` and `help-wanted` issues:
+Unsure where to begin contributing to grafana-tui? You can start by looking through these `good-first-issue` and `help-wanted` issues:
 
-- [Good First Issues](https://github.com/fedexist/grafatui/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22) - issues which should only require a few lines of code, and a test or two.
-- [Help Wanted Issues](https://github.com/fedexist/grafatui/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22) - issues which should be a bit more involved than beginner issues.
+- [Good First Issues](https://github.com/ryancraig/grafana-tui/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22) - issues which should only require a few lines of code, and a test or two.
+- [Help Wanted Issues](https://github.com/ryancraig/grafana-tui/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22) - issues which should be a bit more involved than beginner issues.
 
 ## Development Workflow
 

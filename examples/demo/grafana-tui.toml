@@ -1,4 +1,4 @@
-# Grafatui Demo Configuration
+# grafana-tui Demo Configuration
 
 # Prometheus URL (pointing to the docker-compose instance)
 prometheus_url = "http://localhost:19090"

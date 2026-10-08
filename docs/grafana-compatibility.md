@@ -2,10 +2,10 @@
 
 This document provides a comprehensive feature-parity table between the
 [Grafana dashboard JSON models](https://grafana.com/docs/grafana/latest/visualizations/dashboards/build-dashboards/view-dashboard-json-model/)
-and what Grafatui currently supports.
+and what grafana-tui currently supports.
 
-> **Snapshot**: Grafatui `main` after v0.1.12, with Grafana V2 support. The roadmap prioritizes Grafana parity first,
-> then user-visible product value. See the [roadmap](https://github.com/fedexist/grafatui/blob/main/ROADMAP.md) for milestone
+> **Snapshot**: grafana-tui `main` after v0.1.12, with Grafana V2 support. The roadmap prioritizes Grafana parity first,
+> then user-visible product value. See the [roadmap](https://github.com/ryancraig/grafana-tui/blob/main/ROADMAP.md) for milestone
 > slices built from this compatibility ladder.
 
 **Legend**:
@@ -18,7 +18,7 @@ and what Grafatui currently supports.
 
 ## Dashboard Schema Models
 
-Grafatui imports the non-resource Classic JSON model and Grafana 13's V2
+grafana-tui imports the non-resource Classic JSON model and Grafana 13's V2
 Resource model, as JSON or YAML. Both share one importer, so the field tables
 after this section apply to V2 panels, queries, and variables too. See the
 [dashboard import guide](grafana-dashboard-import.md) for export steps.
@@ -38,7 +38,7 @@ after this section apply to V2 panels, queries, and variables too. See the
 | Exact `apiVersion: dashboard.grafana.app/v2` | ✅ Supported | Other resource versions are rejected |
 | Grafana 13 **Export as code** and API output | ✅ Supported | Absent or `null` lists and objects (`links`, `transformations`, `options`, `overrides`, `variables`, …) are treated as empty, as Grafana's API serializes them |
 | **Share dashboard with another instance** exports | ✅ Supported | Queries without a `datasource` use the configured Prometheus; cleared query variable selections resolve dynamically |
-| `spec.layout.kind: GridLayout` | ✅ Supported | `GridLayoutItem` coordinates map to Grafatui's fixed 24-column grid |
+| `spec.layout.kind: GridLayout` | ✅ Supported | `GridLayoutItem` coordinates map to grafana-tui's fixed 24-column grid |
 | `spec.layout.kind: AutoGridLayout` | ✅ Supported | Panels flow row-major into equal-width columns that reflow with the terminal width; see [auto grid sizing](grafana-dashboard-import.md#auto-grid-layouts) |
 | `AutoGridLayout` `maxColumnCount`, `columnWidthMode`/`columnWidth`, `rowHeightMode`/`rowHeight` | ✅ Supported | Grafana's named and custom pixel sizes are converted to terminal cells and grid rows |
 | `AutoGridLayout` `fillScreen`, `fitContent`, min/max height modes | ⛔ Not Applicable | Accepted and ignored |
@@ -49,7 +49,7 @@ after this section apply to V2 panels, queries, and variables too. See the
 | `GridLayoutItem` `repeat.direction` and `repeat.maxPerRow` | ✅ Supported | Horizontal copies share the full grid width, up to `maxPerRow` (default 4) per row; vertical copies stack; panels below move down |
 | `conditionalRendering` on rows, tabs, and auto grid items | ✅ Supported | Variable, data, and time range conditions show or hide items as variables, data, and the range change; see [conditional rendering](grafana-dashboard-import.md#conditional-rendering) |
 | Row and tab `variables` | ✅ Supported | Apply to the row or tab and everything inside it, shadowing dashboard variables; query variables resolve per row or tab copy; see [row and tab variables](grafana-dashboard-import.md#row-and-tab-variables) |
-| Top-level `spec.variables` | 🔶 Partial | Query, custom, constant, text, interval, datasource, group-by, and switch variables map to Grafatui variables; ad hoc filters emit diagnostics |
+| Top-level `spec.variables` | 🔶 Partial | Query, custom, constant, text, interval, datasource, group-by, and switch variables map to grafana-tui variables; ad hoc filters emit diagnostics |
 | `spec.timeSettings.autoRefresh` | ✅ Supported | Used as the dashboard refresh interval |
 | `data.spec.queryOptions` `interval`, `maxDataPoints` | ✅ Supported | As for Classic panel `interval` and `maxDataPoints`; a query's `interval` sets its min step |
 | `spec.timeSettings` `from`, `to`, `timezone` | ❌ Not Implemented | As for Classic `time` and `timezone`: use `--range`; times display in UTC |
@@ -57,7 +57,7 @@ after this section apply to V2 panels, queries, and variables too. See the
 | Prometheus `PanelQuery` queries | ✅ Supported | `prometheus`, `grafana-amazonprometheus-datasource`, and `grafana-azureprometheus-datasource` query groups are imported; other datasources emit import diagnostics and are skipped |
 | `vizConfig.spec.fieldConfig` | 🔶 Partial | The supported Classic-equivalent field configuration subset applies |
 | `LibraryPanel` elements | ❌ Not Implemented | Exports reference library panels by uid only; they are skipped with a diagnostic. Export with **Share dashboard with another instance** enabled to inline them |
-| `spec.annotations` | ❌ Not Implemented | As for Classic `annotations`; Grafatui's external annotation sources are separate |
+| `spec.annotations` | ❌ Not Implemented | As for Classic `annotations`; grafana-tui's external annotation sources are separate |
 
 Grafana's V2 schema also includes settings for its browser editor and other
 datasources; those not listed here are ignored. Use a Classic export for
@@ -75,7 +75,7 @@ dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
 | `version` | ❌ Not Implemented | Not used |
 | `tags` | ❌ Not Implemented | Ignored |
 | `timezone` | ❌ Not Implemented | All timestamps displayed in UTC |
-| `editable` | ⛔ Not Applicable | Grafatui is read-only |
+| `editable` | ⛔ Not Applicable | grafana-tui is read-only |
 | `style` | ⛔ Not Applicable | TUI has its own theme system |
 | `schemaVersion` | ❌ Not Implemented | Not validated |
 | `refresh` | ✅ Supported | Used as the default data refresh interval; overridden by config or `--refresh-rate` |
@@ -123,7 +123,7 @@ dashboards from Grafana 12, whose V2 resources are `v2alpha1` or `v2beta1`.
 
 ### Graph & Timeseries Parity
 
-| Feature | JSON Field | Behavior | Grafana | Grafatui |
+| Feature | JSON Field | Behavior | Grafana | grafana-tui |
 |---|---|---|---|---|
 | **Draw styles** | `fieldConfig.defaults.custom.drawStyle` | Line, points, and bars map to terminal graph styles | 🟡 | ✅ |
 | **Point display** | `fieldConfig.defaults.custom.showPoints` | `always` overlays visible point markers; `never` suppresses area/line point markers | 🟡 | 🔶 |
@@ -239,7 +239,7 @@ major gaps.
 |---|---|---|
 | `fieldConfig` | 🔶 Partial | Parsed for supported defaults/custom fields below |
 | `fieldConfig.defaults` | 🔶 Partial | Parsed for min/max, thresholds, and selected custom fields |
-| `fieldConfig.defaults.unit` | 🔶 Partial | Common units are formatted as Grafana does: data (`bytes`/`bits` and `kbytes`–`gbytes` in IEC 1024 steps, their `dec*` forms in SI 1000 steps), data rate (`bps` bits/s and `Bps` bytes/s, which differ only by case, plus `binbps`/`binBps`), time (`ns` through `d`, scaled up or down to fit), `percent`, `percentunit`, `ops`, and request rate. Unknown units fall back to Grafatui's compact SI formatter |
+| `fieldConfig.defaults.unit` | 🔶 Partial | Common units are formatted as Grafana does: data (`bytes`/`bits` and `kbytes`–`gbytes` in IEC 1024 steps, their `dec*` forms in SI 1000 steps), data rate (`bps` bits/s and `Bps` bytes/s, which differ only by case, plus `binbps`/`binBps`), time (`ns` through `d`, scaled up or down to fit), `percent`, `percentunit`, `ops`, and request rate. Unknown units fall back to grafana-tui's compact SI formatter |
 | `fieldConfig.defaults.min` | ✅ Supported | Used for Graph y-axis lower bounds, percentage thresholds, and Gauge limits |
 | `fieldConfig.defaults.max` | ✅ Supported | Used for Graph y-axis upper bounds, gauge scaling, and threshold boundaries |
 | `fieldConfig.defaults.decimals` | ✅ Supported | Controls numeric precision in panel values, graph axes, legends, and exports |
@@ -253,7 +253,7 @@ major gaps.
 | `fieldConfig.defaults.custom.pointSize` | ⛔ Not Applicable | TUI points use fixed terminal-cell markers |
 | `fieldConfig.defaults.custom.axisLabel` | ❌ Not Implemented | |
 | `fieldConfig.defaults.custom.axisGridShow` | ✅ Supported | Controls per-panel autogrid guide lines for graph/time-series panels |
-| `fieldConfig.defaults.custom.thresholdsStyle` | 🔶 Partial | `mode` is parsed for threshold rendering; glyph style is also controlled by Grafatui's marker setting |
+| `fieldConfig.defaults.custom.thresholdsStyle` | 🔶 Partial | `mode` is parsed for threshold rendering; glyph style is also controlled by grafana-tui's marker setting |
 | `fieldConfig.defaults.custom.scaleDistribution` | ❌ Not Implemented | Always linear |
 | `fieldConfig.overrides` | ❌ Not Implemented | Ignored without a diagnostic |
 
@@ -271,14 +271,14 @@ major gaps.
 
 ## Panel Options (`options`)
 
-Panel-specific `options` are not parsed yet. Grafatui currently applies its own
+Panel-specific `options` are not parsed yet. grafana-tui currently applies its own
 compact TUI defaults for legends, stat sparklines, gauges, and inspect-mode
 tooltips.
 
 | JSON Field | Status | Notes |
 |---|---|---|
 | `options` | ❌ Not Implemented | Panel-specific options object is ignored |
-| `options.legend` | ❌ Not Implemented | Grafatui uses its own compact legend |
+| `options.legend` | ❌ Not Implemented | grafana-tui uses its own compact legend |
 | `options.legend.displayMode` | ❌ Not Implemented | Always shows inline legend |
 | `options.legend.placement` | ❌ Not Implemented | Always bottom |
 | `options.legend.calcs` | ❌ Not Implemented | No calculated legend values (min/max/avg) |
@@ -301,8 +301,8 @@ tooltips.
 | `annotations` | ❌ Not Implemented | External file/command providers do not implement this Grafana field. |
 | `annotations.list` | ❌ Not Implemented | External file/command providers do not implement this Grafana field. |
 
-Grafatui external file/command JSONL events are a separate, opt-in read-only source.
-`panel_titles` is Grafatui's external-source routing field: it matches eligible
+grafana-tui external file/command JSONL events are a separate, opt-in read-only source.
+`panel_titles` is grafana-tui's external-source routing field: it matches eligible
 graph/timeseries panel titles exactly, not Grafana panel IDs. It does not imply
 compatibility with Grafana annotation queries, APIs, `annotations`, or
 `annotations.list`.
@@ -378,11 +378,11 @@ Based on user feedback, the following missing features are most commonly expecte
 
 ---
 
-## What Grafatui Does Instead
+## What grafana-tui Does Instead
 
-Grafatui provides several TUI-native capabilities that don't map directly to Grafana JSON features:
+grafana-tui provides several TUI-native capabilities that don't map directly to Grafana JSON features:
 
-| Grafatui Feature | Description |
+| grafana-tui Feature | Description |
 |---|---|
 | **19 color themes** | Tokyo Night (night, storm, moon, day), Catppuccin (mocha, macchiato, frappe, latte), Gruvbox (dark and light, each hard, medium and soft), `dracula`, `monokai`, `solarized-dark`, `solarized-light`, `terminal` |
 | **Keyboard navigation** | Vim-style (`j`/`k`), arrow keys, page up/down |
@@ -400,4 +400,4 @@ Grafatui provides several TUI-native capabilities that don't map directly to Gra
 
 ---
 
-*This document was reviewed against the Grafatui source code on `main` after v0.1.12. If you notice any inaccuracies, please open an issue or PR.*
+*This document was reviewed against the grafana-tui source code on `main` after v0.1.12. If you notice any inaccuracies, please open an issue or PR.*

@@ -285,7 +285,7 @@ pub(crate) mod test_support {
             Duration::from_secs(300),
             Duration::from_secs(5),
             Duration::from_secs(1),
-            "grafatui".to_string(),
+            "grafana-tui".to_string(),
             setup.panels,
             0,
             Theme::default(),

@@ -1,6 +1,6 @@
 # Development Notes
 
-This document contains useful information for developing and testing grafatui.
+This document contains useful information for developing and testing grafana-tui.
 
 ## Testing Visualizations
 
@@ -52,7 +52,7 @@ example must remain compatible with the bundled mock/demo environment.
 ## Project Structure
 
 ```
-grafatui/
+grafana-tui/
 ├── src/                         # Rust source code
 │   ├── main.rs                  # Program entry point and app wiring
 │   ├── cli.rs                   # clap CLI argument and subcommand definitions

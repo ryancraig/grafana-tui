@@ -2,7 +2,7 @@
   "kind": "Dashboard",
   "apiVersion": "dashboard.grafana.app/v2",
   "metadata": {
-    "name": "grafatui-repeats",
+    "name": "grafana-tui-repeats",
     "namespace": "default",
     "uid": "83d25359-2898-42c2-a969-f8e8904e77b5",
     "resourceVersion": "1790888212953016",
@@ -296,7 +296,7 @@
       "hideTimepicker": false,
       "fiscalYearStartMonth": 0
     },
-    "title": "Grafatui repeats",
+    "title": "grafana-tui repeats",
     "variables": [
       {
         "kind": "CustomVariable",

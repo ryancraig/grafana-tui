@@ -76,7 +76,7 @@ pub(crate) struct ExportOptions {
 impl Default for ExportOptions {
     fn default() -> Self {
         Self {
-            dir: PathBuf::from("./grafatui-exports"),
+            dir: PathBuf::from("./grafana-tui-exports"),
             format: ExportFormat::Svg,
             record_max_frames: 300,
         }
@@ -166,7 +166,7 @@ impl PlotRect {
 
 pub(crate) fn export_current(app: &mut AppState, viewport: Rect) -> Result<Vec<PathBuf>> {
     let svg = render_svg(app, viewport);
-    let stem = format!("grafatui-{}", timestamp_id());
+    let stem = format!("grafana-tui-{}", timestamp_id());
     let paths = write_outputs(&svg, &app.export.dir, &stem, app.export.format)?;
     app.export_status = Some(format!("Exported {}", display_paths(&paths)));
     Ok(paths)
@@ -231,7 +231,7 @@ fn start_recording(app: &mut AppState, viewport: Rect) -> Result<()> {
     let dir = app
         .export
         .dir
-        .join(format!("grafatui-recording-{}", timestamp_id()));
+        .join(format!("grafana-tui-recording-{}", timestamp_id()));
     fs::create_dir_all(&dir)
         .with_context(|| format!("failed to create recording directory {}", dir.display()))?;
     app.recording = Some(RecordingState {
@@ -2212,7 +2212,10 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir().join(format!("grafatui-{name}-{}-{suffix}", std::process::id()))
+        std::env::temp_dir().join(format!(
+            "grafana-tui-{name}-{}-{suffix}",
+            std::process::id()
+        ))
     }
 
     fn test_app(export: ExportOptions) -> AppState {
@@ -2236,7 +2239,7 @@ mod tests {
     #[test]
     fn atomic_writes_replace_files_and_leave_nothing_behind_on_failure() {
         let dir = std::env::temp_dir().join(format!(
-            "grafatui-atomic-{}-{}",
+            "grafana-tui-atomic-{}-{}",
             std::process::id(),
             timestamp_id()
         ));
@@ -2327,7 +2330,7 @@ mod tests {
         assert_eq!(render_svg(&app, viewport), after);
         capture_recording_frame(&mut app, viewport).unwrap();
         assert_eq!(app.recording.as_ref().unwrap().frame_count, 2);
-        if let Ok(root) = std::env::var("GRAFATUI_TABS_CAPTURE_DIR") {
+        if let Ok(root) = std::env::var("GRAFANA_TUI_TABS_CAPTURE_DIR") {
             let directory = std::path::PathBuf::from(root).join("tabs-export");
             std::fs::create_dir_all(&directory).unwrap();
             std::fs::write(directory.join("tabs-export-100x40.svg"), &after).unwrap();

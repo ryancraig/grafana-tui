@@ -7,7 +7,7 @@ metadata:
   generation: 1
   labels:
     grafana.app/deprecatedInternalID: "2574140023058432"
-  name: grafatui-native
+  name: grafana-tui-native
   namespace: default
   resourceVersion: "1790886129271982"
   uid: 63291995-b5ce-4946-975d-1851ad76ed4b
@@ -152,7 +152,7 @@ spec:
     from: now-1h
     hideTimepicker: false
     to: now
-  title: Grafatui native V2
+  title: grafana-tui native V2
   variables:
   - kind: QueryVariable
     spec:

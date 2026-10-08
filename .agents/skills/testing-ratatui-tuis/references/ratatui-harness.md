@@ -262,7 +262,7 @@ fn capture(app: &AppState, width: u16, height: u16) -> Result<Capture, Box<dyn E
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let app = AppState { title: "Grafatui".to_owned(), focused: true };
+    let app = AppState { title: "grafana-tui".to_owned(), focused: true };
     let capture = capture(&app, 80, 24)?;
     let stdout = std::io::stdout();
     let mut output = stdout.lock();
@@ -282,7 +282,7 @@ above; assert them separately if they matter to behavior.
 
 ### API verification
 
-Grafatui's `ratatui = 0.30.2` resolves to `ratatui-core 0.1.2`. The capture
+grafana-tui's `ratatui = 0.30.2` resolves to `ratatui-core 0.1.2`. The capture
 pattern was checked against the installed source with:
 
 ```bash

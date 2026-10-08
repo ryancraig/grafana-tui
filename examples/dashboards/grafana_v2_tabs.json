@@ -1,7 +1,7 @@
 {
   "apiVersion": "dashboard.grafana.app/v2",
   "kind": "Dashboard",
-  "metadata": {"name": "grafatui-tabs-example"},
+  "metadata": {"name": "grafana-tui-tabs-example"},
   "spec": {
     "title": "Grafana V2 Tabs",
     "elements": {

@@ -45,50 +45,10 @@ jobs:
       
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
-          bin: grafatui
+          bin: grafana-tui
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: ${{ inputs.release_tag != '' && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
-
-      - name: Install cargo-deb & cargo-generate-rpm (Linux x86_64)
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
-        run: |
-          cargo install cargo-deb
-          cargo install cargo-generate-rpm
-
-      - name: Build DEB & RPM (Linux x86_64)
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
-        run: |
-          # Build release binary first if not already present (release-action might have cleaned up)
-          cargo build --release --target ${{ matrix.target }}
-          
-          # Ensure target/release directory exists and copy binary there for packaging tools
-          # This is needed because cargo-generate-rpm reads paths from Cargo.toml which points to target/release
-          mkdir -p target/release
-          cp target/${{ matrix.target }}/release/grafatui target/release/grafatui
-
-          # cargo-deb automatically uses target/release
-          cargo deb --target ${{ matrix.target }}
-          # cargo-generate-rpm needs the binary in place
-          cargo generate-rpm
-
-      - name: Upload DEB (Linux x86_64)
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: target/${{ matrix.target }}/debian/*.deb
-          file_glob: true
-          tag: ${{ inputs.release_tag || github.ref }}
-
-      - name: Upload RPM (Linux x86_64)
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: target/generate-rpm/*.rpm
-          file_glob: true
-          tag: ${{ inputs.release_tag || github.ref }}
 
   publish-checksums:
     needs: upload-assets
@@ -127,10 +87,10 @@ jobs:
           set -euo pipefail
 
           base_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}"
-          checksum_dir="$(mktemp -d "${RUNNER_TEMP}/grafatui-checksums.XXXXXX")"
+          checksum_dir="$(mktemp -d "${RUNNER_TEMP}/grafana-tui-checksums.XXXXXX")"
           cleanup() {
             case "${checksum_dir}" in
-              "${RUNNER_TEMP}"/grafatui-checksums.*)
+              "${RUNNER_TEMP}"/grafana-tui-checksums.*)
                 rm -rf "${checksum_dir}"
                 ;;
             esac
@@ -138,10 +98,10 @@ jobs:
           trap cleanup EXIT
 
           assets=(
-            grafatui-x86_64-apple-darwin.tar.gz
-            grafatui-aarch64-apple-darwin.tar.gz
-            grafatui-x86_64-unknown-linux-gnu.tar.gz
-            grafatui-aarch64-unknown-linux-gnu.tar.gz
+            grafana-tui-x86_64-apple-darwin.tar.gz
+            grafana-tui-aarch64-apple-darwin.tar.gz
+            grafana-tui-x86_64-unknown-linux-gnu.tar.gz
+            grafana-tui-aarch64-unknown-linux-gnu.tar.gz
           )
 
           for asset in "${assets[@]}"; do
@@ -152,138 +112,10 @@ jobs:
 
           (
             cd "${checksum_dir}"
-            sha256sum "${assets[@]}" > grafatui-checksums.txt
+            sha256sum "${assets[@]}" > grafana-tui-checksums.txt
           )
 
           gh release upload "${RELEASE_TAG}" \
-            "${checksum_dir}/grafatui-checksums.txt" \
+            "${checksum_dir}/grafana-tui-checksums.txt" \
             --repo "${GITHUB_REPOSITORY}" \
             --clobber
-
-  update-homebrew:
-    needs: publish-checksums
-    runs-on: ubuntu-latest
-    steps:
-      - name: Resolve release tag
-        shell: bash
-        env:
-          INPUT_RELEASE_TAG: ${{ inputs.release_tag || '' }}
-          EVENT_RELEASE_TAG: ${{ github.event.release.tag_name || '' }}
-          REF_NAME: ${{ github.ref_name || '' }}
-        run: |
-          set -euo pipefail
-
-          release_tag="${INPUT_RELEASE_TAG:-}"
-          if [[ -z "${release_tag}" ]]; then
-            release_tag="${EVENT_RELEASE_TAG:-}"
-          fi
-          if [[ -z "${release_tag}" ]]; then
-            release_tag="${REF_NAME:-}"
-          fi
-
-          release_tag="${release_tag#refs/tags/}"
-          if [[ -z "${release_tag}" ]]; then
-            echo "::error::Unable to resolve release tag."
-            exit 1
-          fi
-
-          echo "RELEASE_TAG=${release_tag}" >> "${GITHUB_ENV}"
-
-      - name: Checkout Homebrew tap
-        uses: actions/checkout@v4
-        with:
-          repository: fedexist/homebrew-grafatui
-          token: ${{ secrets.COMMITTER_TOKEN }}
-          path: homebrew-tap
-          fetch-depth: 0
-
-      - name: Update Homebrew formula
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          version="${RELEASE_TAG#v}"
-          base_url="https://github.com/fedexist/grafatui/releases/download/${RELEASE_TAG}"
-          formula_path="homebrew-tap/Formula/grafatui.rb"
-          tmpdir="$(mktemp -d)"
-          trap 'rm -rf "${tmpdir}"' EXIT
-
-          mac_intel_asset="grafatui-x86_64-apple-darwin.tar.gz"
-          mac_arm_asset="grafatui-aarch64-apple-darwin.tar.gz"
-          linux_intel_asset="grafatui-x86_64-unknown-linux-gnu.tar.gz"
-          linux_arm_asset="grafatui-aarch64-unknown-linux-gnu.tar.gz"
-
-          for asset in \
-            "${mac_intel_asset}" \
-            "${mac_arm_asset}" \
-            "${linux_intel_asset}" \
-            "${linux_arm_asset}"; do
-            curl --fail --location --retry 5 --retry-all-errors --silent --show-error \
-              --output "${tmpdir}/${asset}" \
-              "${base_url}/${asset}"
-          done
-
-          mac_intel_sha="$(sha256sum "${tmpdir}/${mac_intel_asset}" | awk '{print $1}')"
-          mac_arm_sha="$(sha256sum "${tmpdir}/${mac_arm_asset}" | awk '{print $1}')"
-          linux_intel_sha="$(sha256sum "${tmpdir}/${linux_intel_asset}" | awk '{print $1}')"
-          linux_arm_sha="$(sha256sum "${tmpdir}/${linux_arm_asset}" | awk '{print $1}')"
-
-          export FORMULA_PATH="${formula_path}"
-          export FORMULA_VERSION="${version}"
-          export BASE_URL="${base_url}"
-          export MAC_INTEL_ASSET="${mac_intel_asset}"
-          export MAC_ARM_ASSET="${mac_arm_asset}"
-          export LINUX_INTEL_ASSET="${linux_intel_asset}"
-          export LINUX_ARM_ASSET="${linux_arm_asset}"
-          export MAC_INTEL_SHA="${mac_intel_sha}"
-          export MAC_ARM_SHA="${mac_arm_sha}"
-          export LINUX_INTEL_SHA="${linux_intel_sha}"
-          export LINUX_ARM_SHA="${linux_arm_sha}"
-
-          ruby <<'RUBY'
-          path = ENV.fetch("FORMULA_PATH")
-          text = File.read(path)
-
-          replacements = [
-            [/(\bversion\s+)"[^"]+"/, "\\1\"#{ENV.fetch('FORMULA_VERSION')}\""],
-            [
-              /(if OS\.mac\?\n\s+if Hardware::CPU\.intel\?\n\s+url )"[^"]+"(\n\s+sha256 )"[^"]+"/m,
-              "\\1\"#{ENV.fetch('BASE_URL')}/#{ENV.fetch('MAC_INTEL_ASSET')}\"\\2\"#{ENV.fetch('MAC_INTEL_SHA')}\"",
-            ],
-            [
-              /(if OS\.mac\?.*?\n\s+elsif Hardware::CPU\.arm\?\n\s+url )"[^"]+"(\n\s+sha256 )"[^"]+"/m,
-              "\\1\"#{ENV.fetch('BASE_URL')}/#{ENV.fetch('MAC_ARM_ASSET')}\"\\2\"#{ENV.fetch('MAC_ARM_SHA')}\"",
-            ],
-            [
-              /(elsif OS\.linux\?\n\s+if Hardware::CPU\.intel\?\n\s+url )"[^"]+"(\n\s+sha256 )"[^"]+"/m,
-              "\\1\"#{ENV.fetch('BASE_URL')}/#{ENV.fetch('LINUX_INTEL_ASSET')}\"\\2\"#{ENV.fetch('LINUX_INTEL_SHA')}\"",
-            ],
-            [
-              /(elsif OS\.linux\?.*?\n\s+elsif Hardware::CPU\.arm\?\n\s+url )"[^"]+"(\n\s+sha256 )"[^"]+"/m,
-              "\\1\"#{ENV.fetch('BASE_URL')}/#{ENV.fetch('LINUX_ARM_ASSET')}\"\\2\"#{ENV.fetch('LINUX_ARM_SHA')}\"",
-            ],
-          ]
-
-          replacements.each do |pattern, replacement|
-            raise "failed to match formula using #{pattern.inspect}" unless pattern.match?(text)
-            text = text.sub(pattern, replacement)
-          end
-
-          File.write(path, text)
-          RUBY
-
-      - name: Commit and push Homebrew formula
-        shell: bash
-        working-directory: homebrew-tap
-        run: |
-          set -euo pipefail
-
-          if git diff --quiet -- Formula/grafatui.rb; then
-            exit 0
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Formula/grafatui.rb
-          git commit -m "brew: update formula to ${RELEASE_TAG}"
-          git push origin HEAD:main

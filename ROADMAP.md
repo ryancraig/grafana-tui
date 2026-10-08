@@ -1,6 +1,6 @@
-# Grafatui Roadmap
+# grafana-tui Roadmap
 
-Grafatui is a terminal-based Grafana-like UI for Prometheus. The roadmap is
+grafana-tui is a terminal-based Grafana-like UI for Prometheus. The roadmap is
 oriented around three priorities:
 
 1. **Production readiness** - the data path must be correct, responsive, and
@@ -56,7 +56,7 @@ These features are shipped and available today:
 | Config | **Config file** | TOML-based persistent configuration |
 | Distribution | **Shell completions and man page** | Bash, Zsh, Fish, PowerShell, Elvish, plus generated man page |
 | Distribution | **Cross-platform binaries** | Linux, macOS, and Windows release assets |
-| Distribution | **Package formats** | `.deb`, `.rpm`, Homebrew formula support |
+| Distribution | **Install script** | Checksum-verified `install.sh` into `~/.local/bin` or any directory on `PATH`; no third-party package managers |
 
 For a field-by-field breakdown of Grafana JSON compatibility, see the
 [compatibility matrix](docs/grafana-compatibility.md). Keep that document
@@ -78,7 +78,7 @@ which remain unsupported.
 | Item | User value | Complexity | Status |
 |---|---|---|---|
 | Independent provider scheduling and redraw | Refresh slow providers without coupling them to Prometheus redraws | 🟡 | 📋 |
-| Stable public Rust provider API | Build supported native providers outside Grafatui | 🟡 | 📋 |
+| Stable public Rust provider API | Build supported native providers outside grafana-tui | 🟡 | 📋 |
 | Possible Python SDK | Make provider authoring accessible without Rust | 🟡 | 💡 |
 | Long-running providers | Reuse authenticated clients and streams safely | 🔴 | 📋 |
 | Multiple annotation sources | Combine independent event systems in one overlay | 🔴 | 📋 |
@@ -246,7 +246,7 @@ This is the main backlog, ordered by Grafana parity domain.
 
 ### 9. Grafana Dashboard Schema v2
 
-Grafatui accepts JSON and YAML resources with the exact
+grafana-tui accepts JSON and YAML resources with the exact
 `dashboard.grafana.app/v2` API version. V2 semantics with a terminal equivalent
 are implemented; browser-only settings, such as viewport-filling rows, are
 accepted and ignored. Semantics that are not implemented yet fail with a clear
@@ -312,7 +312,7 @@ constraints.
 
 ### v0.5 - Exploration Workflow
 
-Goal: after import fidelity improves, make Grafatui a stronger daily terminal
+Goal: after import fidelity improves, make grafana-tui a stronger daily terminal
 tool for investigating Prometheus data.
 
 | Item | User value | Complexity | Status |

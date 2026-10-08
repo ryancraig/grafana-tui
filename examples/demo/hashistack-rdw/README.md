@@ -4,7 +4,7 @@ Operator dashboards for the infrashift hashistack
 remote-dev-workspace (RDW) platform: Consul, Nomad and Vault, the Consul Connect
 (Envoy) mesh, the hosts, the developer workspaces and Prometheus itself. They
 are Grafana 13 V2 resources (`dashboard.grafana.app/v2`). They are written to run
-unchanged in Grafana 13 and in grafatui against the platform's mTLS Prometheus.
+unchanged in Grafana 13 and in grafana-tui against the platform's mTLS Prometheus.
 
 Unlike the other examples, these need a running hashistack datacenter. The
 bundled docker-compose stack does not expose any of these metrics.
@@ -27,16 +27,16 @@ bundled docker-compose stack does not expose any of these metrics.
 
 ## Quick Start
 
-Build the config from the settings in [`grafatui.toml.example`](grafatui.toml.example)
+Build the config from the settings in [`grafana-tui.toml.example`](grafana-tui.toml.example)
 followed by the reader-cert output. The settings must come first; the example
 file explains why. Keep the result outside this repository.
 
 ```bash
-{ sed -n '/^# --- settings/,/^# --- end/p' examples/demo/hashistack-rdw/grafatui.toml.example
+{ sed -n '/^# --- settings/,/^# --- end/p' examples/demo/hashistack-rdw/grafana-tui.toml.example
   make -s -C <collection>/terraform/live/prometheus DC=gcloud-dc reader-cert READER=$USER </dev/null
-} > ~/.config/grafatui/gcloud-dc.toml
+} > ~/.config/grafana-tui/gcloud-dc.toml
 
-cargo run --release -- --config ~/.config/grafatui/gcloud-dc.toml \
+cargo run --release -- --config ~/.config/grafana-tui/gcloud-dc.toml \
   $(printf -- '--grafana-json %s ' examples/demo/hashistack-rdw/*.json)
 ```
 
@@ -78,7 +78,7 @@ but the tiles are cramped. Use `PgUp`/`PgDn` to move between rows.
   config at another datacenter's Prometheus to switch.
 - **Grafana.** Every query references the `${datasource}` variable (a Prometheus
   datasource picker). Legends, tooltips and table column overrides are set for
-  Grafana; grafatui ignores them.
+  Grafana; grafana-tui ignores them.
 
 ### What empty or odd-looking panels mean
 
@@ -112,7 +112,7 @@ cargo test --test validate_cli validate_strict_accepts_every_hashistack_rdw_dash
 ```
 
 The generator uses only the Python 3 standard library. It never emits value
-mappings or transformations, because grafatui's `--strict` validation rejects
+mappings or transformations, because grafana-tui's `--strict` validation rejects
 them.
 
 ## Troubleshooting

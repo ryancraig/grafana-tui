@@ -2444,7 +2444,7 @@
         "spec": {
           "id": 26,
           "title": "HTTP API requests",
-          "description": "API load by handler (grafatui uses query_range, labels and series).",
+          "description": "API load by handler (grafana-tui uses query_range, labels and series).",
           "links": [],
           "data": {
             "kind": "QueryGroup",

@@ -17,10 +17,10 @@
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
-/// Command-line arguments for Grafatui.
+/// Command-line arguments for grafana-tui.
 #[derive(Debug, Parser, Clone)]
 #[command(
-    name = "grafatui",
+    name = "grafana-tui",
     version,
     about = "Grafana-like Prometheus charts in your terminal"
 )]
@@ -148,7 +148,7 @@ pub(crate) struct Args {
     #[arg(long, value_name = "COUNT")]
     pub(crate) record_max_frames: Option<usize>,
 
-    /// Configuration file path (e.g., ./grafatui.toml).
+    /// Configuration file path (e.g., ./grafana-tui.toml).
     #[arg(long, value_name = "FILE")]
     pub(crate) config: Option<PathBuf>,
 
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn parses_tls_files() {
         let args = Args::parse_from([
-            "grafatui",
+            "grafana-tui",
             "--prometheus-url",
             "https://10.60.1.21:9090",
             "--ca-cert",
@@ -216,7 +216,12 @@ mod tests {
 
     #[test]
     fn test_parse_validate_with_grafana_json() {
-        let args = Args::parse_from(["grafatui", "--validate", "--grafana-json", "dashboard.json"]);
+        let args = Args::parse_from([
+            "grafana-tui",
+            "--validate",
+            "--grafana-json",
+            "dashboard.json",
+        ]);
 
         assert!(args.validate);
         assert_eq!(args.grafana_json, [PathBuf::from("dashboard.json")]);
@@ -225,7 +230,7 @@ mod tests {
     #[test]
     fn grafana_json_repeats_for_several_dashboards() {
         let args = Args::parse_from([
-            "grafatui",
+            "grafana-tui",
             "--grafana-json",
             "nodes.json",
             "--grafana-dashboard",
@@ -240,7 +245,7 @@ mod tests {
 
     #[test]
     fn grafana_dashboard_is_an_alias_for_grafana_json() {
-        let args = Args::parse_from(["grafatui", "--grafana-dashboard", "dashboard.yaml"]);
+        let args = Args::parse_from(["grafana-tui", "--grafana-dashboard", "dashboard.yaml"]);
 
         assert_eq!(args.grafana_json, [PathBuf::from("dashboard.yaml")]);
     }
@@ -248,7 +253,7 @@ mod tests {
     #[test]
     fn test_parse_validate_strict_and_json_format() {
         let args = Args::parse_from([
-            "grafatui",
+            "grafana-tui",
             "--validate",
             "--strict",
             "--format",
@@ -264,14 +269,14 @@ mod tests {
 
     #[test]
     fn test_parse_annotations_file() {
-        let args = Args::parse_from(["grafatui", "--annotations-file", "events.jsonl"]);
+        let args = Args::parse_from(["grafana-tui", "--annotations-file", "events.jsonl"]);
         assert_eq!(args.annotations_file, Some(PathBuf::from("events.jsonl")));
     }
 
     #[test]
     fn parses_annotation_command_with_ordered_hyphen_arguments() {
         let args = Args::try_parse_from([
-            "grafatui",
+            "grafana-tui",
             "--annotations-command",
             "./provider",
             "--annotations-command-arg=--environment",
@@ -288,10 +293,10 @@ mod tests {
 
     #[test]
     fn rejects_partial_or_conflicting_annotation_command_flags() {
-        assert!(Args::try_parse_from(["grafatui", "--annotations-command-arg=x"]).is_err());
+        assert!(Args::try_parse_from(["grafana-tui", "--annotations-command-arg=x"]).is_err());
         assert!(
             Args::try_parse_from([
-                "grafatui",
+                "grafana-tui",
                 "--annotations-file",
                 "events.jsonl",
                 "--annotations-command",

@@ -5,23 +5,23 @@
 If Prometheus is already running locally:
 
 ```bash
-grafatui --prometheus-url http://localhost:9090
+grafana-tui --prometheus-url http://localhost:9090
 ```
 
-Point Grafatui at another Prometheus server with the same option:
+Point grafana-tui at another Prometheus server with the same option:
 
 ```bash
-grafatui --prometheus-url http://prometheus.example.com:9090
+grafana-tui --prometheus-url http://prometheus.example.com:9090
 ```
 
 ## Import a Grafana Dashboard
 
-Grafatui imports either a Classic JSON dashboard or an exact
+grafana-tui imports either a Classic JSON dashboard or an exact
 `dashboard.grafana.app/v2` JSON resource that uses recursive grid, row, or tab
 containers:
 
 ```bash
-grafatui --prometheus-url http://localhost:9090 --grafana-json ./dashboard.json
+grafana-tui --prometheus-url http://localhost:9090 --grafana-json ./dashboard.json
 ```
 
 Grafana 13 exports V2 resources as JSON or YAML, and both import directly.
@@ -35,7 +35,7 @@ Override dashboard variables with repeated `--var` options; repeating a name
 selects several values:
 
 ```bash
-grafatui --grafana-json ./dash.json --var job=node --var instance=server-01
+grafana-tui --grafana-json ./dash.json --var job=node --var instance=server-01
 ```
 
 ## Run the Demo
@@ -43,8 +43,8 @@ grafatui --grafana-json ./dash.json --var job=node --var instance=server-01
 The repository includes a Prometheus demo stack and sample dashboards:
 
 ```bash
-git clone https://github.com/fedexist/grafatui.git
-cd grafatui
+git clone https://github.com/ryancraig/grafana-tui.git
+cd grafana-tui
 cd examples/demo && docker-compose up -d && sleep 5 && cd ../..
 cargo run -- --grafana-json examples/dashboards/prometheus_demo.json --prometheus-url http://localhost:19090
 ```

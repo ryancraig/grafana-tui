@@ -1,6 +1,6 @@
 # Configuration
 
-Grafatui can be configured with CLI options, a TOML configuration file, or both. CLI options override values from the configuration file.
+grafana-tui can be configured with CLI options, a TOML configuration file, or both. CLI options override values from the configuration file.
 
 ## Common CLI Options
 
@@ -27,7 +27,7 @@ Grafatui can be configured with CLI options, a TOML configuration file, or both.
 | `--transparent-background` | Keep the terminal's background instead of painting the theme's | `false` |
 | `--threshold-marker <MARKER>` | Marker for threshold lines | `dashed` |
 | `--autogrid-color <COLOR>` | Color for automatic graph grid lines and labels | theme grid color |
-| `--export-dir <DIR>` | Directory for exports and recordings | `./grafatui-exports` |
+| `--export-dir <DIR>` | Directory for exports and recordings | `./grafana-tui-exports` |
 | `--export-format <FORMAT>` | `svg`, `png`, or `both` | `svg` |
 | `--record-max-frames <COUNT>` | Maximum changed frames per recording | `300` |
 | `--refresh-rate <MS>` | Data fetch interval in milliseconds, for every dashboard | the dashboard's auto-refresh, else `1000` |
@@ -36,12 +36,12 @@ Grafatui can be configured with CLI options, a TOML configuration file, or both.
 Run the full help output with:
 
 ```bash
-grafatui --help
+grafana-tui --help
 ```
 
 ## Configuration File
 
-Create `grafatui.toml` in `~/.config/grafatui/`, or pass a custom path with `--config`.
+Create `grafana-tui.toml` in `~/.config/grafana-tui/`, or pass a custom path with `--config`.
 
 ```toml
 prometheus_url = "http://localhost:9090"
@@ -52,12 +52,12 @@ scrape_interval = "15s"
 theme = "dracula"
 transparent_background = false
 threshold_marker = "dashed"
-export_dir = "./grafatui-exports"
+export_dir = "./grafana-tui-exports"
 export_format = "svg"
 record_max_frames = 300
 autogrid = true
 autogrid_color = "dark-gray"  # omit to use the theme's grid color
-grafana_json = "~/.config/grafatui/my-dashboard.json"  # or a list: ["a.json", "b.json"]
+grafana_json = "~/.config/grafana-tui/my-dashboard.json"  # or a list: ["a.json", "b.json"]
 annotations_file = "./events.jsonl"
 
 [vars]
@@ -77,15 +77,15 @@ certificates, set the `[tls]` table:
 prometheus_url = "https://10.60.1.21:9090"
 
 [tls]
-ca_cert     = "~/.config/grafatui/tls/ca.pem"
-client_cert = "~/.config/grafatui/tls/client.pem"
-client_key  = "~/.config/grafatui/tls/client.key"
+ca_cert     = "~/.config/grafana-tui/tls/ca.pem"
+client_cert = "~/.config/grafana-tui/tls/client.pem"
+client_key  = "~/.config/grafana-tui/tls/client.key"
 ```
 
 The CLI flags do the same. Each one overrides only its own `[tls]` key:
 
 ```bash
-grafatui --prometheus-url https://10.60.1.21:9090 \
+grafana-tui --prometheus-url https://10.60.1.21:9090 \
   --ca-cert ca.pem --client-cert client.pem --client-key client.key
 ```
 
@@ -105,7 +105,7 @@ grafatui --prometheus-url https://10.60.1.21:9090 \
 - `[tls]` rejects unknown keys, so a misspelled option is an error rather than
   silently ignored.
 
-Grafatui checks the files at startup and exits with an error that names the
+grafana-tui checks the files at startup and exits with an error that names the
 file and the problem when:
 
 - a TLS option is set but `prometheus_url` isn't `https://`;
@@ -158,7 +158,7 @@ timeout = "10s"
 to `10s`. The matching CLI source is:
 
 ```bash
-grafatui \
+grafana-tui \
   --annotations-command ./target/debug/examples/git_annotation_provider \
   --annotations-command-arg=. \
   --annotations-command-timeout 10s
@@ -172,7 +172,7 @@ file or complete command configuration rather than merging individual fields.
 
 ## Themes
 
-The default theme is `tokyo-night`. Run `grafatui --list-themes` to print every
+The default theme is `tokyo-night`. Run `grafana-tui --list-themes` to print every
 available name; the theme currently selected is marked `(current)`.
 
 | Family | Themes | Aliases |
@@ -185,7 +185,7 @@ available name; the theme currently selected is marked `(current)`.
 `terminal` uses the terminal's own ANSI colors and background. Theme names are
 case-insensitive, and an unknown name is an error that lists the valid ones.
 
-Press `T` while Grafatui runs to preview and switch themes live; see
+Press `T` while grafana-tui runs to preview and switch themes live; see
 [Theme Picker](keyboard-and-mouse.md#theme-picker).
 
 Every theme colors the whole interface: panel chrome, popups, axes, grid,
@@ -199,7 +199,7 @@ Exports always use the theme's background.
 Use a theme from the CLI:
 
 ```bash
-grafatui --theme catppuccin-latte
+grafana-tui --theme catppuccin-latte
 ```
 
 ### Custom Themes

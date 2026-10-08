@@ -481,7 +481,8 @@ pub(crate) mod tests {
 
     /// A fresh directory for one test's files.
     pub(crate) fn test_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("grafatui-tls-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("grafana-tui-tls-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

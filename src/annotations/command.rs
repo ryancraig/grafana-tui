@@ -448,7 +448,7 @@ mod tests {
                 let source = Path::new(env!("CARGO_MANIFEST_DIR"))
                     .join("tests/fixtures/annotation_provider.rs");
                 let output = std::env::temp_dir().join(format!(
-                    "grafatui-annotation-provider-fixture-{}{}",
+                    "grafana-tui-annotation-provider-fixture-{}{}",
                     std::process::id(),
                     std::env::consts::EXE_SUFFIX,
                 ));
@@ -503,7 +503,7 @@ mod tests {
     #[cfg(unix)]
     fn shell_provider(script: &str, timeout: Duration) -> (CommandProvider, std::path::PathBuf) {
         let pid_file = std::env::temp_dir().join(format!(
-            "grafatui-provider-group-{}-{}",
+            "grafana-tui-provider-group-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -750,7 +750,10 @@ mod tests {
     async fn command_provider_reports_spawn_failure_without_arguments() {
         let secret = "secret-looking-argument-never-report-this";
         let missing = std::env::temp_dir()
-            .join(format!("grafatui-missing-provider-{}", std::process::id()))
+            .join(format!(
+                "grafana-tui-missing-provider-{}",
+                std::process::id()
+            ))
             .to_string_lossy()
             .into_owned();
         let mut provider = CommandProvider::new(AnnotationCommandConfig {

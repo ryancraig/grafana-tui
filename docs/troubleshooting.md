@@ -2,7 +2,7 @@
 
 ## Prometheus Connection Refused
 
-Grafatui keeps responding to keys while Prometheus is slow or down, and the
+grafana-tui keeps responding to keys while Prometheus is slow or down, and the
 title bar shows the connection state:
 
 | Title bar | Meaning |
@@ -12,7 +12,7 @@ title bar shows the connection state:
 | `✗ Prometheus unreachable` | Every query in the last refresh failed to connect |
 | `✗ Prometheus unreachable (TLS: …)` | The connection failed during TLS; see [TLS Errors](#tls-errors) |
 
-While Prometheus is unreachable, Grafatui retries with a growing delay, up to 30
+While Prometheus is unreachable, grafana-tui retries with a growing delay, up to 30
 seconds between attempts, and recovers on its own when Prometheus answers again.
 Press `r` to retry immediately. Queries that Prometheus rejects, such as invalid
 PromQL, show as panel errors rather than as unreachable.
@@ -21,13 +21,13 @@ PromQL, show as panel errors rather than as unreachable.
 
 When an `https://` connection fails during TLS, the title bar names the cause.
 The panel error repeats it, with what to check and the underlying error.
-Grafatui retries with the same growing delay as for an unreachable server, so
+grafana-tui retries with the same growing delay as for an unreachable server, so
 it recovers once the certificates are fixed. Settings are described in
 [Connecting to an mTLS Prometheus](configuration.md#connecting-to-an-mtls-prometheus).
 
 ### `TLS: unknown issuer`
 
-The server's certificate isn't signed by a CA Grafatui trusts. With `ca_cert`
+The server's certificate isn't signed by a CA grafana-tui trusts. With `ca_cert`
 unset, only the built-in web PKI roots are trusted, so a server with a private
 CA always fails this way. Set `ca_cert` to the CA bundle. If it is already set,
 check that the bundle has the CA that signed the server's certificate. During
@@ -102,7 +102,7 @@ Prometheus may need a few scrape intervals before data is available. Wait 10 to 
 Also confirm that the dashboard queries match labels in your Prometheus server:
 
 ```bash
-grafatui --prometheus-url http://localhost:9090 --grafana-json ./dashboard.json --var job=prometheus
+grafana-tui --prometheus-url http://localhost:9090 --grafana-json ./dashboard.json --var job=prometheus
 ```
 
 ## Dashboard Variables Do Not Match
@@ -110,21 +110,21 @@ grafatui --prometheus-url http://localhost:9090 --grafana-json ./dashboard.json 
 Override variables explicitly with `--var`:
 
 ```bash
-grafatui --grafana-json ./dashboard.json --var instance=localhost:9090
+grafana-tui --grafana-json ./dashboard.json --var instance=localhost:9090
 ```
 
 If a Grafana dashboard uses multi-select formatting modifiers such as `${var:csv}` or `${var:regex}`, check the [compatibility matrix](grafana-compatibility.md). Not every Grafana interpolation mode is implemented.
 
 ## Demo Port Conflict
 
-The demo Prometheus service uses host port `19090`. If that port is already in use, edit `examples/demo/docker-compose.yml` and run Grafatui with the updated URL.
+The demo Prometheus service uses host port `19090`. If that port is already in use, edit `examples/demo/docker-compose.yml` and run grafana-tui with the updated URL.
 
 ## Export Directory Problems
 
 Set an explicit export directory:
 
 ```bash
-grafatui --export-dir ./grafatui-exports
+grafana-tui --export-dir ./grafana-tui-exports
 ```
 
 Make sure the directory is writable by your current user.

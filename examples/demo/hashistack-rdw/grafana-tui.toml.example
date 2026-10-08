@@ -1,4 +1,4 @@
-# grafatui config for the hashistack-rdw dashboards.
+# grafana-tui config for the hashistack-rdw dashboards.
 #
 # Do not fill in the connection by hand. `make reader-cert` in the hashistack
 # collection's terraform/live/prometheus root prints prometheus_url and the
@@ -6,9 +6,9 @@
 # settings block below followed by that output. The settings must come first:
 # a key written after [tls] belongs to that table, which rejects unknown keys.
 #
-#   { sed -n '/^# --- settings/,/^# --- end/p' examples/demo/hashistack-rdw/grafatui.toml.example
+#   { sed -n '/^# --- settings/,/^# --- end/p' examples/demo/hashistack-rdw/grafana-tui.toml.example
 #     make -s -C <collection>/terraform/live/prometheus DC=gcloud-dc reader-cert READER=$USER
-#   } > ~/.config/grafatui/gcloud-dc.toml
+#   } > ~/.config/grafana-tui/gcloud-dc.toml
 #
 # Keep the result outside this repository: it names a cluster address and
 # private key paths.

@@ -2,7 +2,7 @@
   "apiVersion": "dashboard.grafana.app/v2",
   "kind": "Dashboard",
   "metadata": {
-    "name": "grafatui-native",
+    "name": "grafana-tui-native",
     "labels": {},
     "annotations": {}
   },
@@ -212,7 +212,7 @@
       "hideTimepicker": false,
       "fiscalYearStartMonth": 0
     },
-    "title": "Grafatui native V2",
+    "title": "grafana-tui native V2",
     "variables": [
       {
         "kind": "QueryVariable",

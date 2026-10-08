@@ -2,7 +2,7 @@
   "kind": "Dashboard",
   "apiVersion": "dashboard.grafana.app/v2",
   "metadata": {
-    "name": "grafatui-autogrid",
+    "name": "grafana-tui-autogrid",
     "namespace": "default",
     "uid": "8b14f90c-8c55-416a-aabb-7625681d8f7a",
     "resourceVersion": "1790886717574001",
@@ -409,7 +409,7 @@
       "hideTimepicker": false,
       "fiscalYearStartMonth": 0
     },
-    "title": "Grafatui auto grid",
+    "title": "grafana-tui auto grid",
     "variables": null
   }
 }

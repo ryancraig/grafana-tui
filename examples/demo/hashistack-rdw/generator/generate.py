@@ -858,7 +858,7 @@ prom = dashboard(
             ts("Query latency p99", [(f'prometheus_engine_query_duration_seconds{{quantile="0.99",{P}}}', '{{slice}}')],
                unit="s", w=12, desc="PromQL engine time by phase. Dashboards and rules share this engine."),
             ts("HTTP API requests", [(f'topk(8, sum by (handler) (rate(prometheus_http_requests_total{{{P}}}[{RI}])))',
-                                      '{{handler}}')], unit="reqps", w=12, desc="API load by handler (grafatui uses "
+                                      '{{handler}}')], unit="reqps", w=12, desc="API load by handler (grafana-tui uses "
                                       "query_range, labels and series)."),
         ]),
     ])

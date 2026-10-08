@@ -8,7 +8,7 @@ fn write_dashboard(name: &str, json: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let path = std::env::temp_dir().join(format!("grafatui-{name}-{stamp}.json"));
+    let path = std::env::temp_dir().join(format!("grafana-tui-{name}-{stamp}.json"));
     fs::write(&path, json).unwrap();
     path
 }
@@ -47,7 +47,7 @@ fn validate_strict_exits_nonzero_when_warnings_exist() {
         }"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args(["--validate", "--strict", "--grafana-json"])
         .arg(&path)
         .output()
@@ -75,7 +75,7 @@ fn validate_strict_accepts_classic_transformations_without_warnings() {
         }"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args([
             "--validate",
             "--strict",
@@ -119,7 +119,7 @@ fn validate_json_outputs_machine_readable_summary() {
         }"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args(["--validate", "--format", "json", "--grafana-json"])
         .arg(&path)
         .output()
@@ -139,7 +139,7 @@ fn validate_json_outputs_machine_readable_summary() {
 
 #[test]
 fn validate_accepts_supported_v2_resource_json() {
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args(["--validate", "--format", "json", "--grafana-json"])
         .arg(fixture("v2_compatibility.json"))
         .output()
@@ -162,7 +162,7 @@ fn validate_accepts_grafana13_server_serialized_exports() {
         "v2_grafana13_export.json",
         "v2_grafana13_external_export.json",
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+        let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
             .args(["--validate", "--format", "json", "--grafana-json"])
             .arg(fixture(name))
             .output()
@@ -174,7 +174,7 @@ fn validate_accepts_grafana13_server_serialized_exports() {
             String::from_utf8_lossy(&output.stderr)
         );
         let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(summary["title"], "Grafatui native V2", "{name}");
+        assert_eq!(summary["title"], "grafana-tui native V2", "{name}");
         assert_eq!(summary["panel_count"], 2, "{name}");
         assert_eq!(summary["diagnostics"][0]["code"], "skipped_panel", "{name}");
     }
@@ -182,7 +182,7 @@ fn validate_accepts_grafana13_server_serialized_exports() {
 
 #[test]
 fn validate_accepts_grafana13_yaml_export() {
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args(["--validate", "--format", "json", "--grafana-dashboard"])
         .arg(fixture("v2_grafana13_export.yaml"))
         .output()
@@ -194,7 +194,7 @@ fn validate_accepts_grafana13_yaml_export() {
         String::from_utf8_lossy(&output.stderr)
     );
     let summary: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(summary["title"], "Grafatui native V2");
+    assert_eq!(summary["title"], "grafana-tui native V2");
     assert_eq!(summary["panel_count"], 2);
 }
 
@@ -204,7 +204,7 @@ fn validate_strict_accepts_auto_grid_example_and_grafana13_fixture() {
         example_dashboard("grafana_v2_autogrid.json"),
         fixture("v2_grafana13_autogrid.json"),
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+        let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
             .args(["--validate", "--strict", "--grafana-json"])
             .arg(&path)
             .output()
@@ -225,7 +225,7 @@ fn validate_strict_accepts_repeats_example_and_grafana13_fixture() {
         example_dashboard("grafana_v2_repeats.yaml"),
         fixture("v2_grafana13_repeats.json"),
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+        let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
             .args(["--validate", "--strict", "--grafana-json"])
             .arg(&path)
             .output()
@@ -246,7 +246,7 @@ fn validate_strict_accepts_conditional_example_and_grafana13_fixture() {
         example_dashboard("grafana_v2_conditional.json"),
         fixture("v2_grafana13_conditional.json"),
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+        let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
             .args(["--validate", "--strict", "--grafana-json"])
             .arg(&path)
             .output()
@@ -267,7 +267,7 @@ fn validate_strict_accepts_sections_example_and_grafana13_fixture() {
         example_dashboard("grafana_v2_sections.json"),
         fixture("v2_grafana13_sections.json"),
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+        let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
             .args(["--validate", "--strict", "--grafana-json"])
             .arg(&path)
             .output()
@@ -284,7 +284,7 @@ fn validate_strict_accepts_sections_example_and_grafana13_fixture() {
 
 #[test]
 fn validate_accepts_live_grafana_v2_compatibility_example() {
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args(["--validate", "--format", "json", "--grafana-json"])
         .arg(example_dashboard("grafana_v2_compatibility.json"))
         .output()
@@ -304,7 +304,7 @@ fn validate_accepts_live_grafana_v2_compatibility_example() {
 
 #[test]
 fn validate_accepts_live_grafana_v2_rows_example() {
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args(["--validate", "--format", "json", "--grafana-json"])
         .arg(example_dashboard("grafana_v2_rows.json"))
         .output()
@@ -322,7 +322,7 @@ fn validate_accepts_live_grafana_v2_rows_example() {
 
 #[test]
 fn validate_accepts_v2_rows_layout() {
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args(["--validate", "--format", "json", "--grafana-json"])
         .arg(fixture("v2_rows_layout.json"))
         .output()
@@ -340,7 +340,7 @@ fn validate_accepts_v2_rows_layout() {
 
 #[test]
 fn validate_accepts_v2_tabs_layout() {
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args(["--validate", "--format", "json", "--grafana-json"])
         .arg(fixture("v2_tabs_layout.json"))
         .output()
@@ -358,7 +358,7 @@ fn validate_accepts_v2_tabs_layout() {
 
 #[test]
 fn validate_accepts_live_grafana_v2_tabs_example() {
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args(["--validate", "--format", "json", "--grafana-json"])
         .arg(example_dashboard("grafana_v2_tabs.json"))
         .output()
@@ -390,7 +390,7 @@ fn validate_accepts_nested_v2_tabs_layout() {
     });
     let path = write_dashboard("v2-nested-tabs", &value.to_string());
 
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args(["--validate", "--grafana-json"])
         .arg(&path)
         .output()
@@ -413,7 +413,7 @@ fn validate_strict_rejects_v2_unsupported_datasource_warning() {
         "loki".into();
     let path = write_dashboard("v2-strict", &value.to_string());
 
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args(["--validate", "--strict", "--grafana-json"])
         .arg(&path)
         .output()
@@ -437,7 +437,7 @@ fn validate_strict_accepts_every_hashistack_rdw_dashboard() {
     assert_eq!(paths.len(), 8, "{paths:?}");
 
     for path in paths {
-        let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+        let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
             .args([
                 "--validate",
                 "--strict",
@@ -487,7 +487,7 @@ fn validate_strict_accepts_all_hashistack_rdw_dashboards_at_once() {
         .collect();
     paths.sort();
 
-    let mut command = Command::new(env!("CARGO_BIN_EXE_grafatui"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_grafana-tui"));
     command.args(["--validate", "--strict", "--format", "json"]);
     for path in &paths {
         command.arg("--grafana-json").arg(path);
@@ -525,7 +525,7 @@ fn validate_names_the_file_of_each_warning_with_several_dashboards() {
         r#"{"title": "Warnings", "panels": [{"type": "text", "title": "Notes"}]}"#,
     );
 
-    let output = Command::new(env!("CARGO_BIN_EXE_grafatui"))
+    let output = Command::new(env!("CARGO_BIN_EXE_grafana-tui"))
         .args(["--validate", "--strict", "--grafana-json"])
         .arg(&clean)
         .arg("--grafana-json")

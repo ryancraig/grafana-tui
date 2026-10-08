@@ -3,14 +3,14 @@
 
 [workspace]
 # Repository URL for linking commits/issues
-repo_url = "https://github.com/fedexist/grafatui"
+repo_url = "https://github.com/ryancraig/grafana-tui"
 # Create GitHub releases automatically
 git_release_enable = true
 # Prefix for release PR branches
 pr_branch_prefix = "release-plz-"
-# Use git tags, not crates.io, as the release source of truth
+# Use git tags as the release source of truth
 git_only = true
-# Don't publish to crates.io automatically (require manual trigger)
+# Never publish to a package registry
 publish = false
 # Enable changelog updates
 changelog_update = true
@@ -39,7 +39,7 @@ body = """
     {% for commit in commits %}
         - {% if commit.scope %}**{{ commit.scope }}:** {% endif %}\
             {% if commit.breaking %}[**breaking**] {% endif %}\
-            {{ commit.message | upper_first }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/fedexist/grafatui/commit/{{ commit.id }}))\
+            {{ commit.message | upper_first }} ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/ryancraig/grafana-tui/commit/{{ commit.id }}))\
     {% endfor %}
 {% endfor %}\n
 """
@@ -75,6 +75,6 @@ protect_breaking_commits = false
 
 # Package-specific settings
 [[package]]
-name = "grafatui"
+name = "grafana-tui"
 # Changelog path
 changelog_path = "CHANGELOG.md"

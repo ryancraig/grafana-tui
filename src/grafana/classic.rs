@@ -277,7 +277,7 @@ fn normalize_layout(panels: Vec<RawPanel>, path: &str) -> Vec<model::LayoutNode>
     for (index, panel) in panels.into_iter().enumerate() {
         let source_path = format!("{path}[{index}]");
         if panel.repeat_panel_id.is_some() {
-            // Grafatui expands repeats itself, so drop copies saved by older Grafana.
+            // grafana-tui expands repeats itself, so drop copies saved by older Grafana.
             continue;
         }
         if panel.panel_type == "row" {

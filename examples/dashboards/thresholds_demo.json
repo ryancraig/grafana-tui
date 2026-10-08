@@ -378,7 +378,7 @@
       "hideTimepicker": false,
       "fiscalYearStartMonth": 0
     },
-    "title": "Grafatui Test Dashboard - Thresholds Demo",
+    "title": "grafana-tui Test Dashboard - Thresholds Demo",
     "variables": [
       {
         "kind": "QueryVariable",

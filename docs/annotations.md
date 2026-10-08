@@ -1,9 +1,9 @@
 # External Annotations
 
-Grafatui can overlay read-only, external point events from exactly one source:
+grafana-tui can overlay read-only, external point events from exactly one source:
 a JSONL file or a command provider. It never edits or writes either source.
 External annotations are deliberately separate from Grafana dashboard
-annotations: Grafatui does not implement Grafana annotation queries, APIs,
+annotations: grafana-tui does not implement Grafana annotation queries, APIs,
 `annotations`, or `annotations.list`.
 
 ## Enable Annotations
@@ -12,7 +12,7 @@ Select exactly one source. For a file source, pass the path on the command
 line:
 
 ```bash
-grafatui \
+grafana-tui \
   --grafana-json ./dashboard.json \
   --annotations-file ./events.jsonl
 ```
@@ -36,7 +36,7 @@ timeout = "10s"
 Or select it from the command line:
 
 ```bash
-grafatui \
+grafana-tui \
   --grafana-json ./dashboard.json \
   --annotations-command ./target/debug/examples/git_annotation_provider \
   --annotations-command-arg=.
@@ -49,18 +49,18 @@ File and command sources are mutually exclusive. A TOML configuration that
 sets both is rejected even if the CLI selects a source. A CLI file or command
 replaces the complete TOML annotation source; it never mixes a CLI program,
 arguments, or timeout with TOML values. Sources are opt-in and read-only;
-Grafatui does not create, edit, or otherwise write them.
+grafana-tui does not create, edit, or otherwise write them.
 
 ## Command Provider Protocol
 
-Grafatui writes exactly one version-1 request line to the command's standard
+grafana-tui writes exactly one version-1 request line to the command's standard
 input, then closes stdin. The request defines the complete refresh window:
 
 ```json
 {"version":1,"range":{"from":"2026-08-12T10:00:00Z","to":"2026-08-12T10:05:00Z"}}
 ```
 
-`range.from` and `range.to` are inclusive UTC RFC 3339 bounds. Grafatui
+`range.from` and `range.to` are inclusive UTC RFC 3339 bounds. grafana-tui
 defensively applies its visible-range filtering to the events returned.
 
 The provider writes zero or more existing JSONL events to stdout and diagnostics
@@ -69,12 +69,12 @@ snapshot; an empty successful stdout clears it. A spawn failure, timeout,
 nonzero exit, invalid UTF-8 or JSONL, or oversized stdout keeps the last valid
 snapshot and shows a warning.
 
-The default timeout is 10 seconds. Grafatui accepts at most 10 MiB of stdout
+The default timeout is 10 seconds. grafana-tui accepts at most 10 MiB of stdout
 and captures at most 64 KiB of stderr. A provider must finish its work before
 it exits: on Linux and macOS it runs in its own process group, and when the
-refresh ends (successfully, with an error or timeout, or because Grafatui
+refresh ends (successfully, with an error or timeout, or because grafana-tui
 quits) any processes it started are killed. On Windows only the provider
-process itself is stopped. Providers inherit Grafatui's current
+process itself is stopped. Providers inherit grafana-tui's current
 directory and environment. Put credentials in that environment or use standard
 credential tooling; never place secrets in dashboard JSON or command arguments.
 
@@ -106,9 +106,9 @@ are interpolated (so a repeated panel's copies each have their own title).
 `null`, an empty array, and blank titles are validation errors.
 
 If a title occurs on multiple eligible panels, the event fans out to all of
-them and Grafatui shows one warning for that duplicate title. A title that is
+them and grafana-tui shows one warning for that duplicate title. A title that is
 missing, or exists only on a non-graph panel, shows one warning and renders no
-marker for that title. These titles are Grafatui routing labels, not Grafana
+marker for that title. These titles are grafana-tui routing labels, not Grafana
 panel IDs.
 
 Events are ordered by timestamp. Unknown JSON fields are ignored. Times with
@@ -127,10 +127,10 @@ First, start the bundled Prometheus demo stack from the repository root:
 cd examples/demo && docker-compose up -d && sleep 5 && cd ../..
 ```
 
-Then create the annotation file and run Grafatui:
+Then create the annotation file and run grafana-tui:
 
 ```bash
-annotation_demo_file=/tmp/grafatui-annotations-demo.jsonl
+annotation_demo_file=/tmp/grafana-tui-annotations-demo.jsonl
 annotation_demo_time="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 printf '{"time":"%s","text":"Maintenance window","tags":["maintenance"]}\n' \
@@ -151,16 +151,16 @@ with `Space`, and press `Enter`; only the targeted deployment remains. Press
 `v`, move the cursor to the marker, and press `Enter`; the selected panel's
 cluster list and selected-event detail pane open.
 
-While Grafatui is running, append an event in a second terminal:
+While grafana-tui is running, append an event in a second terminal:
 
 ```bash
-annotation_demo_file=/tmp/grafatui-annotations-demo.jsonl
+annotation_demo_file=/tmp/grafana-tui-annotations-demo.jsonl
 annotation_demo_time="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 printf '{"time":"%s","text":"Rollback started","tags":["rollback","production"],"panel_titles":["HTTP Request Rate by Status Code"]}\n' \
   "$annotation_demo_time" >> "$annotation_demo_file"
 ```
 
-The new event is loaded after the normal refresh; Grafatui does not need to
+The new event is loaded after the normal refresh; grafana-tui does not need to
 restart. With only `deploy` selected, `Rollback started` remains hidden. Press
 `t`, then `c`, and press `Enter` to apply the cleared filter and reveal the
 rollback marker. Alternatively, select `rollback` in the filter and apply it.
@@ -188,7 +188,7 @@ event details.
 
 ## Automatic Reload, Rendering, and Exports
 
-Grafatui refreshes both source types during each normal refresh, including
+grafana-tui refreshes both source types during each normal refresh, including
 while markers are hidden. It checks a file source's metadata and, when it
 changes, reads, parses, and validates the full candidate file before atomically
 replacing the snapshot. A zero-byte file is a valid update that clears all
@@ -209,7 +209,7 @@ the tag-filter and cluster modal chrome is not.
 
 ## Errors and Last Valid Snapshot
 
-If a file is missing, unreadable, or contains a malformed event, Grafatui keeps
+If a file is missing, unreadable, or contains a malformed event, grafana-tui keeps
 rendering the last valid snapshot and shows an annotation warning. Command
 provider failures follow the same rule. A bad update does not replace the
 previously loaded events, fail startup, or fail the Prometheus refresh.
@@ -218,18 +218,18 @@ previously loaded events, fail startup, or fail the Prometheus refresh.
 
 ```text
 CI workflow → durable deployment/release record → command provider query
-            → normalized JSONL point events → Grafatui overlay
+            → normalized JSONL point events → grafana-tui overlay
 ```
 
 GitHub Actions is a useful concrete pattern: let a workflow record deployment,
 release, or workflow outcomes in an API, object store, database, or shared event
-log. A local provider receives Grafatui's requested range and queries that
+log. A local provider receives grafana-tui's requested range and queries that
 system of record, then emits normalized JSONL point events. Useful tags include
 repository, workflow, environment, status, commit, and deployment.
 
 Give the provider credentials through its environment or standard credential
 tooling, never dashboard JSON or command arguments. A shared JSONL file is a
-reasonable source only when the workflow and Grafatui genuinely share storage;
+reasonable source only when the workflow and grafana-tui genuinely share storage;
 do not commit an ever-growing event log to the application repository.
 Vendor-specific providers should normally live as user or community plugins.
 Built-in integrations remain demand-driven.

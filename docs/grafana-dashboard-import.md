@@ -1,6 +1,6 @@
 # Grafana Dashboard Import
 
-Grafatui imports Grafana dashboards exported as JSON or YAML and renders their
+grafana-tui imports Grafana dashboards exported as JSON or YAML and renders their
 supported panels in the terminal.
 
 | Format | Status | Requirements |
@@ -28,19 +28,19 @@ both. On top of that, V2 dashboards support:
 - `timeSettings.autoRefresh` as the default refresh interval.
 
 Settings that only make sense in a browser, such as rows and auto grids that fill
-the viewport, are accepted and ignored. Layout kinds Grafatui does not know, and
+the viewport, are accepted and ignored. Layout kinds grafana-tui does not know, and
 malformed fields, are import errors that name the field's path, such as
 `spec.layout.spec.rows[0].spec.repeat.direction`.
 
 Grafana's resource API writes empty lists and objects as `null` (for example
 `links`, `transformations`, `options`, and `variables`), and its exporter may
-omit them entirely. Grafatui treats both the same as an empty value, so
+omit them entirely. grafana-tui treats both the same as an empty value, so
 dashboards exported from Grafana 13 import unchanged. Exports made with
 **Share dashboard with another instance** enabled also work: their queries carry
 no datasource and run against the Prometheus server given by `--prometheus-url`.
 
 Library panels are exported as a reference to the library panel's uid, without
-the panel itself, so Grafatui skips them with an import diagnostic. Enable
+the panel itself, so grafana-tui skips them with an import diagnostic. Enable
 **Share dashboard with another instance** when exporting to inline library
 panels into the dashboard.
 
@@ -53,9 +53,9 @@ is the number of minimum-width columns that fit, capped by `maxColumnCount`
 panels than columns stretches them across the full width. Resizing the terminal
 reflows the grid.
 
-Grafana sizes auto grids in CSS pixels. Grafatui converts them as follows:
+Grafana sizes auto grids in CSS pixels. grafana-tui converts them as follows:
 
-| Setting | Grafana size | Grafatui size |
+| Setting | Grafana size | grafana-tui size |
 |---|---|---|
 | `columnWidthMode: narrow` | 192px minimum column width | 24 terminal columns |
 | `columnWidthMode: standard` (default) | 448px | 56 terminal columns |
@@ -77,7 +77,7 @@ unit as a fixed-grid panel's `height` (30px plus an 8px margin in Grafana).
 A V2 row or tab can define `variables` of its own. As in Grafana, they apply to
 the row or tab itself (its title, repeat, and conditions) and to everything
 inside it, and they shadow a dashboard variable with the same name there; the
-rest of the dashboard keeps the dashboard's value. Every variable kind Grafatui
+rest of the dashboard keeps the dashboard's value. Every variable kind grafana-tui
 supports at the dashboard level is supported here, with the same selection,
 multi-value, and `All` rules.
 
@@ -92,7 +92,7 @@ tab variable with the same name still wins inside its row or tab.
 ## Conditional Rendering
 
 V2 rows, tabs, and auto grid items can carry a `conditionalRendering` group that
-shows or hides them. Grafatui evaluates these groups as Grafana 13 does:
+shows or hides them. grafana-tui evaluates these groups as Grafana 13 does:
 
 | Condition | Holds when |
 |---|---|
@@ -125,14 +125,14 @@ Grafana 13 exports dashboards in the V2 Resource model by default:
 4. If the dashboard uses library panels, enable **Share dashboard with another
    instance** so they are inlined.
 5. Download the file, or copy it into a local `.json` or `.yaml` file.
-6. Run Grafatui with `--grafana-json`.
+6. Run grafana-tui with `--grafana-json`.
 
 ```bash
-grafatui --prometheus-url http://localhost:9090 --grafana-json ./node-exporter.yaml
+grafana-tui --prometheus-url http://localhost:9090 --grafana-json ./node-exporter.yaml
 ```
 
 Grafana 12 exports dynamic dashboards as `v2alpha1` or `v2beta1` resources,
-which Grafatui does not accept. Export those, or any dashboard from an older
+which grafana-tui does not accept. Export those, or any dashboard from an older
 Grafana, with the Classic model instead: under **Export as code**, expand
 **Advanced options**, set **Model** to **Classic**, and save the JSON. Grafana
 documents the available models and export controls in
@@ -140,7 +140,7 @@ documents the available models and export controls in
 
 ## Supported Panel Types
 
-Grafatui currently supports:
+grafana-tui currently supports:
 
 - `graph`
 - `timeseries`
@@ -157,7 +157,7 @@ children remain visible.
 
 ## Variables
 
-Grafatui reads dashboard variables from `templating.list` (Classic) or
+grafana-tui reads dashboard variables from `templating.list` (Classic) or
 `spec.variables` (V2) and expands `$var` and `${var}` in PromQL expressions and
 in panel, row, and tab titles. Names are matched whole, so `$job_name` never
 expands a variable called `job`.
@@ -166,7 +166,7 @@ Defaults come from the dashboard's saved selection; a variable without one
 selects its first option, as Grafana does. Override them from the CLI:
 
 ```bash
-grafatui --grafana-json ./dash.json --var job=node --var instance=server-01
+grafana-tui --grafana-json ./dash.json --var job=node --var instance=server-01
 ```
 
 Prometheus query variables such as `label_values(up, instance)` and
@@ -176,7 +176,7 @@ that Prometheus still offers is kept; otherwise the first value is selected.
 
 A query variable's **Refresh** setting decides when its query runs again:
 
-| Grafana setting | Grafatui |
+| Grafana setting | grafana-tui |
 |---|---|
 | On dashboard load | Once, when the dashboard opens |
 | On time range change | When the dashboard opens, and again after zooming, panning, returning to live, or pressing `r` |
@@ -205,7 +205,7 @@ Repeat `--var` for one name to select several values. A single `--var` value is
 used verbatim, so it can still be a regex such as `--var job='api|web'`:
 
 ```bash
-grafatui --grafana-json ./dash.json --var instance=server-01 --var instance=server-02
+grafana-tui --grafana-json ./dash.json --var instance=server-01 --var instance=server-02
 ```
 
 ## Repeats
@@ -234,7 +234,7 @@ and collapsed state while its value stays selected.
 
 ## Import Diagnostics
 
-Grafatui prints import warnings before starting the TUI when a dashboard uses
+grafana-tui prints import warnings before starting the TUI when a dashboard uses
 important Grafana features that are skipped or ignored. Diagnostics include
 unsupported panel types, value mappings, reduce options, unresolved variables,
 unsupported V2 datasources, and unsupported variable modifiers such as
@@ -243,7 +243,7 @@ unsupported V2 datasources, and unsupported variable modifiers such as
 Run a non-interactive check with:
 
 ```bash
-grafatui --validate --grafana-json ./dash.json
+grafana-tui --validate --grafana-json ./dash.json
 ```
 
 Warnings do not make validation fail. A dashboard that can be parsed and
@@ -254,8 +254,8 @@ machine-readable summary. Fatal V2 layout errors fail validation in all modes;
 `--strict` additionally fails when import diagnostics are present:
 
 ```bash
-grafatui --validate --strict --grafana-json ./dash.json
-grafatui --validate --format json --grafana-json ./dash.json
+grafana-tui --validate --strict --grafana-json ./dash.json
+grafana-tui --validate --format json --grafana-json ./dash.json
 ```
 
 ## Several Dashboards
@@ -264,7 +264,7 @@ Repeat `--grafana-json` to load several dashboards in one session, or list them
 in the configuration file as `grafana_json = ["a.json", "b.json"]`:
 
 ```bash
-grafatui --grafana-json ./nodes.json --grafana-json ./consul.json --grafana-json ./vault.yaml
+grafana-tui --grafana-json ./nodes.json --grafana-json ./consul.json --grafana-json ./vault.yaml
 ```
 
 Each dashboard is a tab of a tab bar pinned above the dashboards, labelled with
@@ -295,13 +295,13 @@ an entry per file; warnings name their file:
 
 ## Hidden Targets
 
-Grafatui skips hidden queries during import: `targets[].hide` in Classic JSON
+grafana-tui skips hidden queries during import: `targets[].hide` in Classic JSON
 and `PanelQuery` `hidden` in V2 resources. Panels with a mix of hidden and
 visible queries render only the visible ones.
 
 ## Query Modes
 
-Grafatui honors a query's `instant` setting: `targets[].instant` in Classic JSON,
+grafana-tui honors a query's `instant` setting: `targets[].instant` in Classic JSON,
 and `instant` in the Prometheus query `spec` of a V2 `PanelQuery`. Instant
 queries use the Prometheus instant `query` endpoint, while range queries use
 `query_range`.
@@ -312,7 +312,7 @@ to range queries.
 
 ## Field Configuration
 
-Grafatui applies selected `fieldConfig.defaults` values where they map cleanly
+grafana-tui applies selected `fieldConfig.defaults` values where they map cleanly
 to terminal rendering:
 
 - `min` and `max` set explicit Graph y-axis bounds and Gauge limits.
@@ -324,7 +324,7 @@ to terminal rendering:
 
 ## Built-In PromQL Variables
 
-Grafatui expands the following Grafana-style variables:
+grafana-tui expands the following Grafana-style variables:
 
 - `$__interval`
 - `$__interval_ms`

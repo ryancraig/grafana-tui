@@ -1,10 +1,10 @@
-# Grafatui Examples
+# grafana-tui Examples
 
-This directory contains example Grafana dashboards and a demo environment for testing grafatui.
+This directory contains example Grafana dashboards and a demo environment for testing grafana-tui.
 
 ## Quick Demo
 
-Want to try grafatui instantly? Use the pre-configured demo environment:
+Want to try grafana-tui instantly? Use the pre-configured demo environment:
 
 ```bash
 cd demo
@@ -39,7 +39,7 @@ tag filtering, inspection, reload behavior, and limitations.
 
 ### Git Command Provider
 
-`git_annotation_provider.rs` turns commits in Grafatui's requested time window
+`git_annotation_provider.rs` turns commits in grafana-tui's requested time window
 into external JSONL annotations. Build it from the repository root:
 
 ```bash
@@ -183,11 +183,11 @@ cargo run -- --grafana-json examples/dashboards/all_visualizations.json --var in
 
 ## Creating Your Own
 
-You can export any Grafana dashboard as JSON and use it with grafatui:
+You can export any Grafana dashboard as JSON and use it with grafana-tui:
 1. In Grafana, go to Dashboard Settings → JSON Model
 2. Copy the JSON
 3. Save it to a file
-4. Run: `grafatui --grafana-json your-dashboard.json`
+4. Run: `grafana-tui --grafana-json your-dashboard.json`
 
 ## Supported Panel Types
 

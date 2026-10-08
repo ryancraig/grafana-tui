@@ -1,46 +1,34 @@
-# Grafatui
+# grafana-tui
 
-[![CI](https://github.com/fedexist/grafatui/workflows/CI/badge.svg)](https://github.com/fedexist/grafatui/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/grafatui.svg)](https://crates.io/crates/grafatui)
+[![CI](https://github.com/ryancraig/grafana-tui/workflows/CI/badge.svg)](https://github.com/ryancraig/grafana-tui/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Rust Version](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
-[![docs.rs](https://img.shields.io/docsrs/grafatui)](https://docs.rs/grafatui)
 
-**Grafatui** is a terminal user interface for Prometheus, inspired by Grafana. It lets you inspect time-series dashboards from a fast, keyboard-driven TUI that works well over SSH and in minimal environments.
+**grafana-tui** is a terminal user interface for Prometheus, inspired by Grafana. It lets you inspect time-series dashboards from a fast, keyboard-driven TUI that works well over SSH and in minimal environments.
 
 [![asciicast](https://asciinema.org/a/vMRNEjG0FEDKGP31.svg)](https://asciinema.org/a/vMRNEjG0FEDKGP31)
 
 ## Quick Start
 
-Install with Homebrew on macOS or Linux:
+Install the latest prebuilt binary into `~/.local/bin`:
 
 ```bash
-brew install fedexist/grafatui/grafatui
+bash -o pipefail -c 'curl --proto =https --tlsv1.2 -LsSf https://raw.githubusercontent.com/ryancraig/grafana-tui/main/install.sh | bash'
 ```
 
-Or install the latest prebuilt binary:
-
-```bash
-bash -o pipefail -c 'curl --proto =https --tlsv1.2 -LsSf https://raw.githubusercontent.com/fedexist/grafatui/main/install.sh | bash'
-```
-
-Or install from crates.io:
-
-```bash
-cargo install grafatui
-```
+See [Installation](https://ryancraig.github.io/grafana-tui/installation.html) for other directories, pinned versions, manual downloads, and building from source.
 
 Run against a Prometheus instance:
 
 ```bash
-grafatui --prometheus-url http://localhost:9090
+grafana-tui --prometheus-url http://localhost:9090
 ```
 
 Or try the included demo:
 
 ```bash
-git clone https://github.com/fedexist/grafatui.git
-cd grafatui
+git clone https://github.com/ryancraig/grafana-tui.git
+cd grafana-tui
 cd examples/demo && docker-compose up -d && sleep 5 && cd ../..
 cargo run -- --grafana-json examples/dashboards/prometheus_demo.json --prometheus-url http://localhost:19090
 ```
@@ -58,41 +46,39 @@ cargo run -- --grafana-json examples/dashboards/prometheus_demo.json --prometheu
 
 ## Documentation
 
-- [User guide](https://fedexist.github.io/grafatui/)
-- [Installation](https://fedexist.github.io/grafatui/installation.html)
-- [Quick start](https://fedexist.github.io/grafatui/quick-start.html)
-- [Configuration](https://fedexist.github.io/grafatui/configuration.html)
-- [External annotations](https://fedexist.github.io/grafatui/annotations.html)
-- [Grafana dashboard import](https://fedexist.github.io/grafatui/grafana-dashboard-import.html)
-- [Grafana compatibility matrix](https://fedexist.github.io/grafatui/grafana-compatibility.html)
+- [User guide](https://ryancraig.github.io/grafana-tui/)
+- [Installation](https://ryancraig.github.io/grafana-tui/installation.html)
+- [Quick start](https://ryancraig.github.io/grafana-tui/quick-start.html)
+- [Configuration](https://ryancraig.github.io/grafana-tui/configuration.html)
+- [External annotations](https://ryancraig.github.io/grafana-tui/annotations.html)
+- [Grafana dashboard import](https://ryancraig.github.io/grafana-tui/grafana-dashboard-import.html)
+- [Grafana compatibility matrix](https://ryancraig.github.io/grafana-tui/grafana-compatibility.html)
 - [Examples](examples/README.md)
-
-Rust API documentation is available on [docs.rs](https://docs.rs/grafatui).
 
 ## Common Commands
 
 ```bash
 # Import a Grafana dashboard
-grafatui --prometheus-url http://localhost:9090 --grafana-json ./dashboard.json
+grafana-tui --prometheus-url http://localhost:9090 --grafana-json ./dashboard.json
 
 # Load several dashboards, one per tab (Tab / Shift+Tab to switch)
-grafatui --grafana-json ./nodes.json --grafana-json ./consul.json
+grafana-tui --grafana-json ./nodes.json --grafana-json ./consul.json
 
 # Override Grafana template variables
-grafatui --grafana-json ./dash.json --var job=node --var instance=server-01
+grafana-tui --grafana-json ./dash.json --var job=node --var instance=server-01
 
 # Use a theme (run --list-themes for every name)
-grafatui --theme catppuccin-latte
+grafana-tui --theme catppuccin-latte
 
 # Overlay read-only JSONL point events
-grafatui --grafana-json ./dashboard.json --annotations-file ./events.jsonl
+grafana-tui --grafana-json ./dashboard.json --annotations-file ./events.jsonl
 
 # Query read-only annotations through a command provider
-grafatui --grafana-json ./dashboard.json --annotations-command ./target/debug/examples/git_annotation_provider --annotations-command-arg=.
+grafana-tui --grafana-json ./dashboard.json --annotations-command ./target/debug/examples/git_annotation_provider --annotations-command-arg=.
 
 # Generate shell completions or a man page
-grafatui completions zsh
-grafatui man
+grafana-tui completions zsh
+grafana-tui man
 ```
 
 Grafana 13 users can import an exact `dashboard.grafana.app/v2` JSON or YAML
@@ -101,7 +87,7 @@ resource with recursive `GridLayout`, `AutoGridLayout`, `RowsLayout`, and
 rendering, and row and tab variables. Exports reference library panels by uid
 only, so enable **Share dashboard with another instance** when exporting to
 inline them. See the
-[dashboard import guide](https://fedexist.github.io/grafatui/grafana-dashboard-import.html)
+[dashboard import guide](https://ryancraig.github.io/grafana-tui/grafana-dashboard-import.html)
 for the current format requirements.
 
 ## Contributing

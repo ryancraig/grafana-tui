@@ -1,6 +1,6 @@
 # Release Automation Setup
 
-This document explains the automated versioning and release process for grafatui.
+This document explains the automated versioning and release process for grafana-tui.
 
 ## Overview
 
@@ -40,10 +40,9 @@ When commits are pushed to `main`:
    - Generated `CHANGELOG.md` entries
 6. **Maintainer reviews and merges** the Release PR when ready
 7. **GitHub release and git tag created** automatically
-8. **Release assets built** and uploaded automatically
-9. **Homebrew tap updated** automatically
+8. **Release assets built** and uploaded automatically, with a SHA-256 checksum manifest
 
-Crates.io publishing is intentionally separate and manual. After the GitHub release is created, run the `Publish to crates.io` workflow with `dry_run` enabled first, then run it again with `dry_run` disabled when the dry run succeeds.
+GitHub Releases are the only distribution channel. grafana-tui is not published to crates.io or any third-party package manager; users install the release archives with `install.sh` or by hand into `~/.local/bin` or another directory on their `PATH`.
 
 ## Commit Message Format
 
@@ -131,7 +130,7 @@ Configures release-plz behavior:
 - Only runs on `main` branch
 - Uses git tags as the release source of truth
 - Uses git-cliff for changelog generation
-- Does not auto-publish to crates.io (manual trigger required)
+- Never publishes to a package registry (`publish = false`)
 
 ### `.github/workflows/release-plz.yml`
 GitHub Actions workflow that:
@@ -143,18 +142,8 @@ GitHub Actions workflow that:
 ### `.github/workflows/release-assets.yml`
 GitHub Actions workflow that:
 - Triggers on GitHub release creation or manual dispatch
-- Builds and uploads release assets for each supported target
-- Publishes `grafatui-checksums.txt` with SHA-256 hashes for the Unix archives
-- Updates the `fedexist/homebrew-grafatui` tap after assets are uploaded
-- Recomputes all platform-specific SHA256 values in the Homebrew formula
-
-### `.github/workflows/publish-crates-io.yml`
-GitHub Actions workflow that:
-- Runs manually with a version input such as `0.2.0`
-- Checks out the matching tag, for example `v0.2.0`
-- Builds and tests the project
-- Runs `cargo publish --dry-run` by default
-- Publishes to crates.io only when `dry_run` is disabled
+- Builds and uploads a release archive for each supported target (`.tar.gz` for Linux and macOS, `.zip` for Windows)
+- Publishes `grafana-tui-checksums.txt` with SHA-256 hashes for the Unix archives, which `install.sh` requires
 
 ## Manual Operations
 
@@ -185,12 +174,8 @@ If you need to manually bump the version:
 For the GitHub Action to work, ensure the repository has:
 
 - `GITHUB_TOKEN` - Automatically provided by GitHub Actions
-- `CARGO_REGISTRY_TOKEN` - (Optional) Only needed if publishing to crates.io
 
-To add `CARGO_REGISTRY_TOKEN`:
-1. Get token from https://crates.io/me
-2. Go to repository Settings → Secrets → Actions
-3. Add new secret: `CARGO_REGISTRY_TOKEN`
+No other secrets are needed.
 
 ## First Release
 
@@ -231,11 +216,8 @@ If the automated Release PR was not created or updated, open the GitHub Actions 
 2. Wait for the `Release` workflow to create or update the `release-plz-*` Release PR.
 3. Review the generated version bump and `CHANGELOG.md` entries.
 4. Merge the Release PR when you want to publish.
-5. Confirm the GitHub release exists and release assets were uploaded.
-6. Confirm `fedexist/homebrew-grafatui` was updated.
-7. Optionally publish to crates.io with the `Publish to crates.io` workflow:
-   - First run with `dry_run: true`.
-   - If the dry run succeeds, run again with `dry_run: false`.
+5. Confirm the GitHub release exists and its archives and `grafana-tui-checksums.txt` were uploaded.
+6. Confirm `install.sh` installs the new release into `~/.local/bin`.
 
 ## Resources
 

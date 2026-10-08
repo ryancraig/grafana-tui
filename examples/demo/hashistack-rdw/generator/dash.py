@@ -2,7 +2,7 @@
 
 Every panel carries the Grafana-side presentation (legend, tooltip, reduce,
 table overrides) a real Grafana 13 honours, plus the fieldConfig defaults
-grafatui renders. Nothing here emits mappings or transformations.
+grafana-tui renders. Nothing here emits mappings or transformations.
 """
 import json
 import re

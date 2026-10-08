@@ -1,5 +1,5 @@
 {
-    "title": "Grafatui Test Dashboard - All Visualizations",
+    "title": "grafana-tui Test Dashboard - All Visualizations",
     "templating": {
         "list": [
             {

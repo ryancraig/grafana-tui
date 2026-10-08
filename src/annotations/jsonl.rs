@@ -298,7 +298,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         std::env::temp_dir().join(format!(
-            "grafatui-annotations-{name}-{}-{suffix}.jsonl",
+            "grafana-tui-annotations-{name}-{}-{suffix}.jsonl",
             std::process::id()
         ))
     }
