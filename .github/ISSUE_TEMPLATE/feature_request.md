@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-Before filing, please check the [user guide](https://ryancraig.github.io/grafana-tui/) and the [Grafana compatibility matrix](https://ryancraig.github.io/grafana-tui/grafana-compatibility.html) in case the feature is already documented or partially supported.
+Before filing, please check the [user guide](https://ryancraig.github.io/grafana-tui/) and the [Grafana compatibility matrix](https://ryancraig.github.io/grafana-tui/grafana-compatibility/) in case the feature is already documented or partially supported.
 
 **Is your feature request related to a problem? Please describe.**
 A clear and concise description of what the problem is. Ex: I'm always frustrated when [...]

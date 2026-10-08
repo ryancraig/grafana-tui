@@ -16,7 +16,7 @@ Install the latest prebuilt binary into `~/.local/bin`:
 bash -o pipefail -c 'curl --proto =https --tlsv1.2 -LsSf https://raw.githubusercontent.com/ryancraig/grafana-tui/main/install.sh | bash'
 ```
 
-See [Installation](https://ryancraig.github.io/grafana-tui/installation.html) for other directories, pinned versions, manual downloads, and building from source.
+See [Installation](https://ryancraig.github.io/grafana-tui/installation/) for other directories, pinned versions, manual downloads, and building from source.
 
 Run against a Prometheus instance:
 
@@ -47,12 +47,12 @@ cargo run -- --grafana-json examples/dashboards/prometheus_demo.json --prometheu
 ## Documentation
 
 - [User guide](https://ryancraig.github.io/grafana-tui/)
-- [Installation](https://ryancraig.github.io/grafana-tui/installation.html)
-- [Quick start](https://ryancraig.github.io/grafana-tui/quick-start.html)
-- [Configuration](https://ryancraig.github.io/grafana-tui/configuration.html)
-- [External annotations](https://ryancraig.github.io/grafana-tui/annotations.html)
-- [Grafana dashboard import](https://ryancraig.github.io/grafana-tui/grafana-dashboard-import.html)
-- [Grafana compatibility matrix](https://ryancraig.github.io/grafana-tui/grafana-compatibility.html)
+- [Installation](https://ryancraig.github.io/grafana-tui/installation/)
+- [Quick start](https://ryancraig.github.io/grafana-tui/quick-start/)
+- [Configuration](https://ryancraig.github.io/grafana-tui/configuration/)
+- [External annotations](https://ryancraig.github.io/grafana-tui/annotations/)
+- [Grafana dashboard import](https://ryancraig.github.io/grafana-tui/grafana-dashboard-import/)
+- [Grafana compatibility matrix](https://ryancraig.github.io/grafana-tui/grafana-compatibility/)
 - [Examples](examples/README.md)
 
 ## Common Commands
@@ -87,7 +87,7 @@ resource with recursive `GridLayout`, `AutoGridLayout`, `RowsLayout`, and
 rendering, and row and tab variables. Exports reference library panels by uid
 only, so enable **Share dashboard with another instance** when exporting to
 inline them. See the
-[dashboard import guide](https://ryancraig.github.io/grafana-tui/grafana-dashboard-import.html)
+[dashboard import guide](https://ryancraig.github.io/grafana-tui/grafana-dashboard-import/)
 for the current format requirements.
 
 ## Contributing

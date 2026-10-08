@@ -34,7 +34,7 @@ Run it with a dashboard:
 cargo run -- --grafana-json examples/dashboards/prometheus_demo.json --annotations-file examples/annotations.jsonl
 ```
 
-See the [external annotations guide](../docs/annotations.md) for targeting,
+See the [external annotations guide](../docs/src/content/docs/annotations.md) for targeting,
 tag filtering, inspection, reload behavior, and limitations.
 
 ### Git Command Provider

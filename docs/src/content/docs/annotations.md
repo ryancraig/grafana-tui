@@ -1,4 +1,7 @@
-# External Annotations
+---
+title: External Annotations
+description: Overlay read-only point events from a JSONL file or command.
+---
 
 grafana-tui can overlay read-only, external point events from exactly one source:
 a JSONL file or a command provider. It never edits or writes either source.

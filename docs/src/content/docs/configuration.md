@@ -1,4 +1,7 @@
-# Configuration
+---
+title: Configuration
+description: CLI options, the TOML config file, authentication, TLS, and themes.
+---
 
 grafana-tui can be configured with CLI options, a TOML configuration file, or both. CLI options override values from the configuration file.
 
@@ -10,7 +13,7 @@ grafana-tui can be configured with CLI options, a TOML configuration file, or bo
 | `--ca-cert <FILE>` | PEM CA certificates to trust instead of the built-in roots (see [TLS](#connecting-to-an-mtls-prometheus)) | built-in roots |
 | `--client-cert <FILE>` | PEM client certificate for mutual TLS, followed by any intermediate CAs; needs `--client-key` | none |
 | `--client-key <FILE>` | PEM private key for `--client-cert` | none |
-| `--grafana-json <FILE>` | Grafana dashboard file: Classic JSON, or V2 resource JSON or YAML (alias `--grafana-dashboard`). Repeat it to load [several dashboards](grafana-dashboard-import.md#several-dashboards), one per tab | none |
+| `--grafana-json <FILE>` | Grafana dashboard file: Classic JSON, or V2 resource JSON or YAML (alias `--grafana-dashboard`). Repeat it to load [several dashboards](/grafana-tui/grafana-dashboard-import/#several-dashboards), one per tab | none |
 | `--annotations-file <FILE>` | Read-only external JSONL point-event file | none |
 | `--annotations-command <PROGRAM>` | Read-only executable annotation provider | none |
 | `--annotations-command-arg <ARG>` | Argument for `--annotations-command`; repeat to preserve order | none |
@@ -117,7 +120,7 @@ file and the problem when:
 Errors show file paths, never key contents. Failures during the connection,
 such as an unknown issuer or a rejected client certificate, show in the title
 bar instead; see
-[TLS Errors](troubleshooting.md#tls-errors).
+[TLS Errors](/grafana-tui/troubleshooting/#tls-errors).
 
 ## Query Resolution
 
@@ -186,7 +189,7 @@ available name; the theme currently selected is marked `(current)`.
 case-insensitive, and an unknown name is an error that lists the valid ones.
 
 Press `T` while grafana-tui runs to preview and switch themes live; see
-[Theme Picker](keyboard-and-mouse.md#theme-picker).
+[Theme Picker](/grafana-tui/keyboard-and-mouse/#theme-picker).
 
 Every theme colors the whole interface: panel chrome, popups, axes, grid,
 cursor, gauges, heatmaps, status messages, and SVG/PNG exports.
