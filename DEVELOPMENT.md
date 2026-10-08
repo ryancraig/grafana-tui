@@ -84,11 +84,15 @@ grafana-tui/
 ├── examples/                    # Example dashboards and local demo stack
 │   ├── dashboards/              # Grafana dashboard JSON fixtures
 │   └── demo/                    # Docker Compose Prometheus/node-exporter/vLLM demo
-├── Makefile                     # Docs site targets (docs-dev, docs-build, ...)
+├── Makefile                     # Build, check, package, and docs targets (make help)
 └── Cargo.toml                   # Crate metadata and dependencies
 ```
 
 ## Running Tests
+
+`make help` lists every target. `make check` runs everything CI's quality
+gate runs: fmt, clippy with warnings denied, the tests, the installer tests,
+and a 95% line-coverage gate. Install its tools once with `make tools`.
 
 ```bash
 # Run all unit tests
@@ -125,12 +129,12 @@ make docs-build
 make docs-preview
 ```
 
-The `Docs` workflow builds the site for pull requests that touch `docs/`, and
-publishes it to <https://ryancraig.github.io/grafana-tui/> from `main`.
+CI builds the site on every pull request, and `docs-release.yml` publishes it
+to <https://ryancraig.github.io/grafana-tui/> from `main`.
 
 ## Code Style
 
-- Use `rustfmt` for formatting: `cargo fmt`
-- Check lints: `cargo clippy`
+- Use `rustfmt` for formatting: `make fmt`
+- Check lints: `make lint` (clippy over every target, warnings denied)
 - Document public APIs with doc comments (`///`)
 - Keep functions focused and under 100 lines when possible

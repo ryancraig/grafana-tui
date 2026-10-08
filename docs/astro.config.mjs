@@ -2,7 +2,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 // Published at https://ryancraig.github.io/grafana-tui/ by
-// .github/workflows/docs.yml. Links between pages use the /grafana-tui/ base.
+// .github/workflows/docs-release.yml. Links between pages use the /grafana-tui/ base.
 export default defineConfig({
   site: 'https://ryancraig.github.io',
   base: '/grafana-tui',

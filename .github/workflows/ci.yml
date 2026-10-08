@@ -2,30 +2,99 @@ name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
-
-  installer:
-    name: Installer (${{ matrix.os }})
+  check:
+    name: check (${{ matrix.os }})
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
-    - name: Test installer
-      run: tests/install.sh
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt,llvm-tools-preview
+          rustup default stable
+      # The registry, the build tree and the two cargo-installed dev tools.
+      # `make tools` skips a tool that is already installed at its version.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/bin/cargo-audit
+            ~/.cargo/bin/cargo-llvm-cov
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            target
+          key: check-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: check-${{ runner.os }}-
+      - name: Install dev tools
+        run: make tools
+      - name: Formatting is clean
+        run: make fmt && git diff --exit-code
+      - name: Lint, test, installer tests, coverage gate
+        run: make lint test test-install cover-check
+      - name: Vulnerability scan
+        run: make vuln
+
+  windows-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
+      - run: cargo build --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+
+  release-shape:
+    # What release.yml ships: a tarball with the binary at its root, where
+    # install.sh extracts it by name, built from an up-to-date Cargo.lock.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - run: make tidy
+      - run: make package
+      - name: Archive holds a working binary at its root
+        run: |
+          archive="dist/grafana-tui-$(rustc -vV | sed -n 's/^host: //p').tar.gz"
+          tar -tzf "$archive" | grep -qx grafana-tui
+          mkdir -p "$RUNNER_TEMP/shape"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/shape" grafana-tui
+          "$RUNNER_TEMP/shape/grafana-tui" --version
+
+  docs:
+    # docs-release.yml only runs on main; this catches a broken page in review.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+      - run: make docs-build

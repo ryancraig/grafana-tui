@@ -1,5 +1,5 @@
 # Configuration for git-cliff changelog generation
-# Used by release-plz for automatic changelog updates
+# Used by `make changelog` when cutting a release (see RELEASE_PROCESS.md)
 
 [changelog]
 # changelog header
@@ -23,7 +23,7 @@ body = """
 {% endif %}\
 {% for group, commits in commits | group_by(attribute="group") %}
     ### {{ group | striptags | trim | upper_first }}
-    {% for commit in commits %}
+    {% for commit in commits | unique(attribute="message") %}
         - {% if commit.scope %}**{{ commit.scope }}:** {% endif %}\
             {% if commit.breaking %}[**breaking**] {% endif %}\
             {{ commit.message | upper_first }}\
@@ -53,8 +53,12 @@ filter_unconventional = true
 split_commits = false
 # regex for preprocessing the commit messages
 commit_preprocessors = [
+  # main merges each pull request with a merge commit titled like the branch
+  # commit plus " (#N)". Drop the suffix so the template's `unique` filter
+  # lists each change once.
+  { pattern = '(?m)[ \t]+\(#[0-9]+\)$', replace = "" },
   # Replace issue numbers
-  #{ pattern = '\((\w+\s)?#([0-9]+)\)', replace = "([#${2}](https://github.com/yourusername/grafana-tui/issues/${2}))" },
+  #{ pattern = '\((\w+\s)?#([0-9]+)\)', replace = "([#${2}](https://github.com/ryancraig/grafana-tui/issues/${2}))" },
 ]
 # regex for parsing and grouping commits
 commit_parsers = [
