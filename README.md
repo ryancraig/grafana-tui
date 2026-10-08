@@ -1,10 +1,8 @@
 # grafana-tui
 
 [![CI](https://github.com/ryancraig/grafana-tui/workflows/CI/badge.svg)](https://github.com/ryancraig/grafana-tui/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/grafana-tui.svg)](https://crates.io/crates/grafana-tui)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Rust Version](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
-[![docs.rs](https://img.shields.io/docsrs/grafana-tui)](https://docs.rs/grafana-tui)
 
 **grafana-tui** is a terminal user interface for Prometheus, inspired by Grafana. It lets you inspect time-series dashboards from a fast, keyboard-driven TUI that works well over SSH and in minimal environments.
 
@@ -12,23 +10,13 @@
 
 ## Quick Start
 
-Install with Homebrew on macOS or Linux:
-
-```bash
-brew install ryancraig/grafana-tui/grafana-tui
-```
-
-Or install the latest prebuilt binary:
+Install the latest prebuilt binary into `~/.local/bin`:
 
 ```bash
 bash -o pipefail -c 'curl --proto =https --tlsv1.2 -LsSf https://raw.githubusercontent.com/ryancraig/grafana-tui/main/install.sh | bash'
 ```
 
-Or install from crates.io:
-
-```bash
-cargo install grafana-tui
-```
+See [Installation](https://ryancraig.github.io/grafana-tui/installation.html) for other directories, pinned versions, manual downloads, and building from source.
 
 Run against a Prometheus instance:
 
@@ -66,8 +54,6 @@ cargo run -- --grafana-json examples/dashboards/prometheus_demo.json --prometheu
 - [Grafana dashboard import](https://ryancraig.github.io/grafana-tui/grafana-dashboard-import.html)
 - [Grafana compatibility matrix](https://ryancraig.github.io/grafana-tui/grafana-compatibility.html)
 - [Examples](examples/README.md)
-
-Rust API documentation is available on [docs.rs](https://docs.rs/grafana-tui).
 
 ## Common Commands
 

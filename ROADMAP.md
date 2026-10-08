@@ -56,7 +56,7 @@ These features are shipped and available today:
 | Config | **Config file** | TOML-based persistent configuration |
 | Distribution | **Shell completions and man page** | Bash, Zsh, Fish, PowerShell, Elvish, plus generated man page |
 | Distribution | **Cross-platform binaries** | Linux, macOS, and Windows release assets |
-| Distribution | **Package formats** | `.deb`, `.rpm`, Homebrew formula support |
+| Distribution | **Install script** | Checksum-verified `install.sh` into `~/.local/bin` or any directory on `PATH`; no third-party package managers |
 
 For a field-by-field breakdown of Grafana JSON compatibility, see the
 [compatibility matrix](docs/grafana-compatibility.md). Keep that document

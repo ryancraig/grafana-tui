@@ -8,9 +8,9 @@ repo_url = "https://github.com/ryancraig/grafana-tui"
 git_release_enable = true
 # Prefix for release PR branches
 pr_branch_prefix = "release-plz-"
-# Use git tags, not crates.io, as the release source of truth
+# Use git tags as the release source of truth
 git_only = true
-# Don't publish to crates.io automatically (require manual trigger)
+# Never publish to a package registry
 publish = false
 # Enable changelog updates
 changelog_update = true

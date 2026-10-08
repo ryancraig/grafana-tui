@@ -19,6 +19,4 @@ grafana-tui is not a Grafana server replacement. It does not manage users, alert
 ## Project Links
 
 - [Repository](https://github.com/ryancraig/grafana-tui)
-- [Crate](https://crates.io/crates/grafana-tui)
-- [Rust API docs](https://docs.rs/grafana-tui)
 - [Grafana compatibility matrix](grafana-compatibility.md)

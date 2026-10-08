@@ -8,7 +8,7 @@ description = "A Grafana-like TUI for Prometheus"
 license = "Apache-2.0"
 repository = "https://github.com/ryancraig/grafana-tui"
 homepage = "https://ryancraig.github.io/grafana-tui/"
-documentation = "https://docs.rs/grafana-tui"
+publish = false
 readme = "README.md"
 keywords = ["tui", "prometheus", "grafana", "monitoring", "terminal"]
 categories = ["command-line-utilities", "visualization", "development-tools"]
@@ -44,24 +44,3 @@ nix = { version = "0.29", default-features = false, features = ["signal"] }
 [dev-dependencies]
 rcgen = { version = "0.14.10", default-features = false, features = ["crypto", "pem", "ring"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
-
-[package.metadata.deb]
-maintainer = "Federico D'Ambrosio <fedexist@gmail.com>"
-copyright = "2025, Federico D'Ambrosio <fedexist@gmail.com>"
-license-file = ["LICENSE", "4"]
-extended-description = """\
-grafana-tui is a terminal-based user interface (TUI) for Prometheus. \
-It allows you to visualize time-series data directly in your terminal \
-with a lightweight, keyboard-driven interface."""
-assets = [
-    ["target/release/grafana-tui", "usr/bin/", "755"],
-    ["README.md", "usr/share/doc/grafana-tui/README.md", "644"],
-]
-
-
-[package.metadata.generate-rpm]
-assets = [
-    { source = "target/release/grafana-tui", dest = "/usr/bin/grafana-tui", mode = "755" },
-    { source = "README.md", dest = "/usr/share/doc/grafana-tui/README.md", mode = "644" },
-    { source = "LICENSE", dest = "/usr/share/doc/grafana-tui/LICENSE", mode = "644" },
-]

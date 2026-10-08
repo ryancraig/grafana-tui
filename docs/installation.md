@@ -1,13 +1,5 @@
 # Installation
 
-## Homebrew
-
-Install grafana-tui with Homebrew on macOS or Linux:
-
-```bash
-brew install ryancraig/grafana-tui/grafana-tui
-```
-
 ## Installer Script
 
 Install the latest prebuilt release without requiring Rust:
@@ -26,10 +18,11 @@ The script supports Linux and macOS on x86_64 and ARM64. It installs to
 `$HOME/.local/bin` and never invokes `sudo`. Make sure that directory is on
 your `PATH`.
 
-Set `GRAFANA_TUI_INSTALL_DIR` to choose another destination:
+Set `GRAFANA_TUI_INSTALL_DIR` to install into another directory on your `PATH`
+that you can write to:
 
 ```bash
-bash -o pipefail -c 'curl --proto =https --tlsv1.2 -LsSf https://raw.githubusercontent.com/ryancraig/grafana-tui/main/install.sh | GRAFANA_TUI_INSTALL_DIR=/custom/bin bash'
+bash -o pipefail -c 'curl --proto =https --tlsv1.2 -LsSf https://raw.githubusercontent.com/ryancraig/grafana-tui/main/install.sh | GRAFANA_TUI_INSTALL_DIR=$HOME/bin bash'
 ```
 
 Set `GRAFANA_TUI_VERSION` to install a specific release. The leading `v` is
@@ -51,24 +44,38 @@ less install.sh
 bash install.sh
 ```
 
-## From Crates.io
+## Prebuilt Archive
 
-Install the latest published release with Cargo:
+Each [GitHub Release](https://github.com/ryancraig/grafana-tui/releases)
+publishes a `.tar.gz` archive for Linux and macOS on x86_64 and ARM64, plus
+`grafana-tui-checksums.txt` with their SHA-256 hashes. To install one by hand,
+download the archive for your platform and the checksum manifest, verify it,
+and extract the binary into `~/.local/bin`:
 
 ```bash
-cargo install grafana-tui
+asset=grafana-tui-x86_64-unknown-linux-gnu.tar.gz
+base=https://github.com/ryancraig/grafana-tui/releases/latest/download
+curl --proto '=https' --tlsv1.2 -LsSfO "${base}/${asset}"
+curl --proto '=https' --tlsv1.2 -LsSfO "${base}/grafana-tui-checksums.txt"
+sha256sum --check --ignore-missing grafana-tui-checksums.txt
+mkdir -p ~/.local/bin
+tar -xzf "${asset}" -C ~/.local/bin grafana-tui
 ```
 
-grafana-tui currently requires Rust 1.88 or newer.
+On macOS, use `shasum -a 256 --check --ignore-missing` instead of `sha256sum`.
+
+On Windows, download `grafana-tui-x86_64-pc-windows-msvc.zip` and extract
+`grafana-tui.exe` into a directory on your `PATH`.
 
 ## From Source
 
-Clone the repository and install the local checkout:
+grafana-tui requires Rust 1.88 or newer. Clone the repository and install the
+binary into `~/.local/bin`:
 
 ```bash
 git clone https://github.com/ryancraig/grafana-tui.git
 cd grafana-tui
-cargo install --path .
+cargo install --path . --root ~/.local
 ```
 
 For development, use `cargo run` instead:
@@ -77,9 +84,18 @@ For development, use `cargo run` instead:
 cargo run -- --prometheus-url http://localhost:9090
 ```
 
-## Prebuilt Binaries
+## Making Sure It Is on PATH
 
-Prebuilt release assets are published on [GitHub Releases](https://github.com/ryancraig/grafana-tui/releases) for common Linux, macOS, and Windows targets.
+Every method above installs a single self-contained binary; grafana-tui is not
+distributed through crates.io or any third-party package manager. If your
+shell cannot find `grafana-tui`, add the install directory to your `PATH`, for
+example in `~/.bashrc` or `~/.zshrc`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+To uninstall, delete the binary from the directory you installed it into.
 
 ## Shell Completions
 
