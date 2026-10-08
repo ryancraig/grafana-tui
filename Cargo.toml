@@ -1,6 +1,6 @@
 [package]
 name = "grafana-tui"
-version = "0.1.12"
+version = "0.2.0"
 authors = ["Ryan Craig <ryan.s.craig@gmail.com>"]
 edition = "2024"
 rust-version = "1.88"

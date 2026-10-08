@@ -4,6 +4,81 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.2.0] - 2026-10-08
+
+### ⛰️  Features
+
+- Import Grafana v2 rows layouts
+- Preserve Classic dashboard rows
+- Make dashboard state row aware
+- Add interactive dashboard rows
+- Export visible dashboard rows
+- Add Grafana v2 RowsLayout support
+- Add Grafana v2 tabs layout support
+- Add Grafana v2 TabsLayout support
+- Accept Grafana V2 resource YAML
+- Add Grafana V2 AutoGridLayout support
+- Support multi-value variables and dashboard repeats
+- Support Grafana V2 conditional rendering
+- Support Grafana V2 row and tab variables
+- **theme:** Catppuccin, Tokyo Night and Gruvbox flavors
+- **theme:** User-defined themes in config
+- **ui:** Live theme picker
+- **prom:** Trust a custom CA bundle and present a client certificate
+- **examples:** HashiStack RDW operator dashboards for an mTLS Prometheus
+- Load several dashboards, one per tab, querying only the shown one
+- [**breaking**] Rebrand to grafana-tui and drop package-manager distribution
+
+### 🐛 Bug Fixes
+
+- Harden Grafana V2 import against real exports
+- Read Grafana's converted legacy variable queries
+- Harden the Prometheus client against leaks and cancellation
+- Restore the terminal and survive export failures
+- Reclaim repeat copies and keep refreshes from clobbering state
+- Contain annotation command processes and bound file sources
+- Shut down cleanly on SIGTERM and SIGHUP
+- **query:** Scale the range query step with the time range
+- **query:** Key in-flight range queries by millisecond step
+- **app:** Refresh in the background so input never waits on Prometheus
+- **query:** Keep last good data on errors and surface Prometheus warnings
+- **variables:** Honor Grafana's refresh setting and report errors per variable
+- **ui:** Format units, legends and stat/bar gauge values as Grafana does
+- **ui:** Show noValue on empty panels, keep infos off the title, fit export text
+- **hashistack-rdw:** Average Nomad client host CPU by instance
+- **export:** Keep panel text inside its panel and off other text
+- **deps:** Update rustls to 0.23.45 for RUSTSEC-2026-0285
+
+### 📚 Documentation
+
+- Demonstrate interactive Grafana rows
+- Note V2 YAML support in the quick start
+- Describe Grafana V2 schema support
+- Convert example dashboards to Grafana V2
+- Add production-readiness track and correct compatibility matrix
+- **hashistack-rdw:** Sparse series are Nomad's only now -- Vault keeps rare series 24h, Consul 1h
+- **hashistack-rdw:** Empty panels show noValue and infos have no marker since #25
+- Replace mdBook with an Astro Starlight site
+
+### 🚜 Refactor
+
+- Carry dashboard layout through Grafana imports
+- **theme:** Semantic color roles and full theme coverage
+
+### 🎨 Styling
+
+- Apply rustfmt and fix clippy lints
+
+### ⚙️ Miscellaneous Tasks
+
+- Update ratatui to 0.30.2
+- Model the workflows on mrman
+
+### Build
+
+- [**breaking**] Drop Homebrew, crates.io and deb/rpm distribution
+
 ## [0.1.12] - 2026-08-25
 
 ### ⛰️  Features
